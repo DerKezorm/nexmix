@@ -43,7 +43,7 @@ type Toast = { text: string; undo?: () => Promise<void> }
 const codeOf = (error: unknown) => (error instanceof ApiError ? error.code : 'internal_error')
 
 export function PlaylistEditor() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const params = useParams()
   const playlistId = Number(params.id)
   const { me } = useAuth()
@@ -535,7 +535,7 @@ export function PlaylistEditor() {
           />
           {smart && playlist.plex?.total != null && playlist.plex.total > playlist.items.length && (
             <p className="empty" data-testid="smart-shown">
-              {t('sync.smartShown', { shown: playlist.items.length.toLocaleString(), count: playlist.plex.total.toLocaleString() })}
+              {t('sync.smartShown', { shown: playlist.items.length.toLocaleString(i18n.language), count: playlist.plex.total.toLocaleString(i18n.language) })}
             </p>
           )}
         </div>

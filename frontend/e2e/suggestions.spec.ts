@@ -119,7 +119,10 @@ test('▶ plays a preview from the server and ■ stops it, and Plex hears of th
   const begun = (await sound()).starts.length
   const answered = page.waitForResponse((response) => response.url().includes('/api/v1/preview/3001'))
   await play.click()
-  expect((await answered).status()).toBe(200)
+  // WebKit on Linux plays the sound but names every answer to its media 0 (measured with Playwright 1.63); the ring
+  // and the start at the stand-in Plex below show that the server answered.
+  const status = (await answered).status()
+  if (browserName !== 'webkit') expect(status).toBe(200)
   const stop = row.getByRole('button', { name: 'Stop listening to “Northern Lights”' })
   await expect(stop).toHaveClass(/\bon\b/)
   // The browser plays it: the ring fills with the seconds.
@@ -140,7 +143,10 @@ test('▶ plays a preview from the server and ■ stops it, and Plex hears of th
 })
 
 test('a preview asked for in parts, as Safari does, has its length and plays from the one kept on the server', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit' && process.platform === 'win32', 'the WebKit build of the test runner asks for no media at all on Windows')
+  // Safari asks in parts; the WebKit builds of the test runner do not: on Windows they ask for no media at all, on
+  // Linux for the whole sound without a Range (measured with Playwright 1.63), which is the stream of the test above.
+  // Chromium and Firefox ask with a Range and walk the path Safari takes.
+  test.skip(browserName === 'webkit', 'the WebKit builds of the test runner ask for media without a Range, unlike Safari')
   test.setTimeout(60_000)
   await catalogue(page.request)
   await page.goto('/')

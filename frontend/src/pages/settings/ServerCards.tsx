@@ -834,7 +834,7 @@ type LogLine = { time: string; level: string; logger: string; message: string }
 type LogMode = { mode: string; until: string | null; fixed_by_env: boolean; modes: string[] }
 
 export function LogCard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [lines, setLines] = useState<LogLine[] | null>(null)
   const [level, setLevel] = useState('')
   const [words, setWords] = useState('')
@@ -909,7 +909,7 @@ export function LogCard() {
           <Trash2 size={15} /> {t('server.logClear')}
         </Button>
       </div>
-      {mode?.until && <p className="text-xs text-muted">{t('server.logUntil', { time: new Date(mode.until).toLocaleTimeString() })}</p>}
+      {mode?.until && <p className="text-xs text-muted">{t('server.logUntil', { time: new Date(mode.until).toLocaleTimeString(i18n.language) })}</p>}
       <Feedback problem={action.problem} done={action.done} />
       {clearing && (
         <Confirm
