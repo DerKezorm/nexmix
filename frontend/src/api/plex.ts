@@ -1,0 +1,93 @@
+/**
+ * Plex and the catalogue, under `/api/v1/plex` (the operator) and `/api/v1/catalog` (everybody signed in). No answer
+ * carries a token: the browser never sees one.
+ */
+import { api } from './client'
+
+export type PlexLibrary = { key: string; title: string }
+
+export type PlexState =
+  | { connected: false }
+  | { connected: true; via: 'plextv' | 'manual'; server_name: string; owned: boolean; library: PlexLibrary | null; connected_at: string }
+
+export type PlexServerChoice = { index: number; name: string; owned: boolean; libraries: PlexLibrary[] }
+
+export type PinStart = { id: string; url: string; seconds: number }
+export type PinState = { done: false; left: number } | { done: true; offered: number; servers: PlexServerChoice[] }
+
+export type CatalogRun = {
+  kind: 'full' | 'partial'
+  reason: string
+  state: 'running' | 'done' | 'failed' | 'stopped'
+  error: string | null
+  step: string
+  /** Thousandths of the whole run. */
+  progress: number
+  started_at: string | null
+  finished_at: string | null
+  artists: number
+  albums: number
+  tracks: number
+  songs: number
+  changed: number
+  removed: number
+}
+
+export type Analysis = { state: 'unknown' | 'off' | 'running' | 'on'; percent: number | null }
+
+export type CatalogStatus = {
+  connected: boolean
+  library: boolean
+  library_title: string
+  ready: boolean
+  counts: { artists: number; albums: number; tracks: number; songs: number; moods: number }
+  synced_at: string | null
+  full_at: string | null
+  running: CatalogRun | null
+  queued: 'full' | 'partial' | null
+  last: CatalogRun | null
+  analysis: Analysis
+  nightly: string
+  /** Where the interface searches: the whole catalogue in the browser, or for a large one on the server. */
+  search?: 'browser' | 'server'
+}
+
+/** The playlists' sync with Plex, for the Plex card. */
+export type PlaylistSync = {
+  active: boolean
+  playlists: number
+  synced: number
+  pending: number
+  waiting: number
+  error: number
+  smart: number
+  /** At most this many minutes for an order changed in Plex to arrive here (more playlists, longer). */
+  order_minutes?: number
+  polled_at: string | null
+  poll_error: string | null
+}
+
+export const plexApi = {
+  state: () => api<PlexState>('/api/v1/plex'),
+  begin: () => api<PinStart>('/api/v1/plex/pin', { method: 'POST' }),
+  poll: (id: string) => api<PinState>(`/api/v1/plex/pin/${encodeURIComponent(id)}`),
+  cancel: (id: string) => api<void>(`/api/v1/plex/pin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  connectChosen: (pinId: string, server: number) => api<PlexState & { libraries: PlexLibrary[] }>('/api/v1/plex/connect', { method: 'POST', body: { pin_id: pinId, server } }),
+  connectByHand: (url: string, token: string) => api<PlexState & { libraries: PlexLibrary[] }>('/api/v1/plex/connect', { method: 'POST', body: { url, token } }),
+  libraries: () => api<{ libraries: PlexLibrary[] }>('/api/v1/plex/libraries'),
+  chooseLibrary: (key: string) => api<PlexState>('/api/v1/plex/library', { method: 'PUT', body: { key } }),
+  disconnect: () => api<void>('/api/v1/plex', { method: 'DELETE' }),
+  playlists: () => api<PlaylistSync>('/api/v1/plex/playlists'),
+  syncPlaylists: () => api<PlaylistSync>('/api/v1/plex/playlists/sync', { method: 'POST' }),
+}
+
+export const catalogApi = {
+  status: () => api<CatalogStatus>('/api/v1/catalog/status'),
+  sync: () => api<{ started: boolean }>('/api/v1/catalog/sync', { method: 'POST' }),
+  cover: (album: number, size: 80 | 200 | 400 = 200) => `/api/v1/catalog/cover/${album}?s=${size}`,
+}
+
+/** Whether a run is under way or waiting: then the page asks again every few seconds. */
+export function busy(status: CatalogStatus | null): boolean {
+  return Boolean(status && (status.running || status.queued))
+}

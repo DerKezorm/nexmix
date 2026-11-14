@@ -1,0 +1,2834 @@
+[
+ {
+  "case": {
+   "q": ""
+  },
+  "expect": {
+   "total": 23,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    },
+    {
+     "id": 324,
+     "title": "Paper Planes",
+     "artist": "Juno Reyes",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 180,
+     "song": 324,
+     "versions": 1
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 326,
+     "title": "Room One",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 400,
+     "song": 326,
+     "versions": 1
+    },
+    {
+     "id": 327,
+     "title": "Room Two",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 380,
+     "song": 327,
+     "versions": 1
+    },
+    {
+     "id": 328,
+     "title": "Glasshouse",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 260,
+     "song": 328,
+     "versions": 1
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    },
+    {
+     "id": 325,
+     "title": "A",
+     "artist": "Dax Orlo",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 60,
+     "song": 325,
+     "versions": 1
+    },
+    {
+     "id": 329,
+     "title": "Intro",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 40,
+     "song": 329,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "northern lights"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 322,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "lights northern"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 322,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "NORTHERN"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 322,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "live"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 308,
+     "title": "Northern Lights (Live)",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 280,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 309,
+     "title": "Night Drive – Live",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 330,
+     "song": 303,
+     "versions": 2
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "northern live"
+  },
+  "expect": {
+   "total": 1,
+   "items": [
+    {
+     "id": 308,
+     "title": "Northern Lights (Live)",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 280,
+     "song": 301,
+     "versions": 4
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "glasshouse"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 328,
+     "title": "Glasshouse",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 260,
+     "song": 328,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "night drive"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "drive"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "strasse"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "Straße der Träume"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "traume"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "cafe"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "Café"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "zoe"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "orlo"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    },
+    {
+     "id": 325,
+     "title": "A",
+     "artist": "Dax Orlo",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 60,
+     "song": 325,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "a"
+  },
+  "expect": {
+   "total": 23,
+   "items": [
+    {
+     "id": 325,
+     "title": "A",
+     "artist": "Dax Orlo",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 60,
+     "song": 325,
+     "versions": 1
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    },
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 324,
+     "title": "Paper Planes",
+     "artist": "Juno Reyes",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 180,
+     "song": 324,
+     "versions": 1
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 326,
+     "title": "Room One",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 400,
+     "song": 326,
+     "versions": 1
+    },
+    {
+     "id": 327,
+     "title": "Room Two",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 380,
+     "song": 327,
+     "versions": 1
+    },
+    {
+     "id": 328,
+     "title": "Glasshouse",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 260,
+     "song": 328,
+     "versions": 1
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    },
+    {
+     "id": 329,
+     "title": "Intro",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 40,
+     "song": 329,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "ol"
+  },
+  "expect": {
+   "total": 8,
+   "items": [
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 326,
+     "title": "Room One",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 400,
+     "song": 326,
+     "versions": 1
+    },
+    {
+     "id": 327,
+     "title": "Room Two",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 380,
+     "song": 327,
+     "versions": 1
+    },
+    {
+     "id": 328,
+     "title": "Glasshouse",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 260,
+     "song": 328,
+     "versions": 1
+    },
+    {
+     "id": 329,
+     "title": "Intro",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 40,
+     "song": 329,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "lluvia"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    },
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "senorita"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 317,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 205,
+     "song": 317,
+     "versions": 2
+    },
+    {
+     "id": 319,
+     "title": "Café con Leche",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 222,
+     "song": 319,
+     "versions": 1
+    },
+    {
+     "id": 318,
+     "title": "Lluvia de Verano",
+     "artist": "Café Ölberg",
+     "album": "Señorita Lluvia",
+     "album_id": 207,
+     "cover": true,
+     "year": 2018,
+     "duration": 190,
+     "song": 318,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "intro"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 329,
+     "title": "Intro",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 40,
+     "song": 329,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "velvet harbour"
+  },
+  "expect": {
+   "total": 6,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    },
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "glow"
+  },
+  "expect": {
+   "total": 1,
+   "items": [
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "genre": "Electronic"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "nothing like this"
+  },
+  "expect": {
+   "total": 0,
+   "items": []
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "g:calm"
+  },
+  "expect": {
+   "total": 10,
+   "items": [
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 326,
+     "title": "Room One",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 400,
+     "song": 326,
+     "versions": 1
+    },
+    {
+     "id": 328,
+     "title": "Glasshouse",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 260,
+     "song": 328,
+     "versions": 1
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    },
+    {
+     "id": 327,
+     "title": "Room Two",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 380,
+     "song": 327,
+     "versions": 1
+    },
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 329,
+     "title": "Intro",
+     "artist": "Mira Solenne",
+     "album": "Quiet Rooms",
+     "album_id": 210,
+     "cover": true,
+     "year": 2001,
+     "duration": 40,
+     "song": 329,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "g:party"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 309,
+     "title": "Night Drive – Live",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 330,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "Romantic"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    },
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "Energetic"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 309,
+     "title": "Night Drive – Live",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 330,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 320,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 260,
+     "song": 320,
+     "versions": 1
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "No Such Mood"
+  },
+  "expect": {
+   "total": 0,
+   "items": []
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "g:nothing"
+  },
+  "expect": {
+   "total": 0,
+   "items": []
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "decade": 1980
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "decade": 1990
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 331,
+     "title": "Glow",
+     "artist": "Dax Orlo",
+     "album": "Early Tapes",
+     "album_id": 211,
+     "cover": true,
+     "year": 1999,
+     "duration": 199,
+     "song": 331,
+     "versions": 2
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "decade": 2020
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 324,
+     "title": "Paper Planes",
+     "artist": "Juno Reyes",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 180,
+     "song": 324,
+     "versions": 1
+    },
+    {
+     "id": 325,
+     "title": "A",
+     "artist": "Dax Orlo",
+     "album": "Summer Mix 2022",
+     "album_id": 209,
+     "cover": false,
+     "year": 2022,
+     "duration": 60,
+     "song": 325,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "genre": "Rock"
+  },
+  "expect": {
+   "total": 6,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 302,
+     "title": "Glasshouse",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 201,
+     "song": 302,
+     "versions": 2
+    },
+    {
+     "id": 303,
+     "title": "Night Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 312,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 304,
+     "title": "Lanterns",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 188,
+     "song": 304,
+     "versions": 1
+    },
+    {
+     "id": 307,
+     "title": "Drive",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 170,
+     "song": 307,
+     "versions": 1
+    },
+    {
+     "id": 330,
+     "title": "Intro",
+     "artist": "The Velvet Harbour",
+     "album": "Greatest Hits",
+     "album_id": 202,
+     "cover": true,
+     "year": 2005,
+     "duration": 35,
+     "song": 330,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "genre": "Chanson"
+  },
+  "expect": {
+   "total": 5,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 314,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 199,
+     "song": 314,
+     "versions": 1
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    },
+    {
+     "id": 316,
+     "title": "Ölberg",
+     "artist": "Zoë Brandt",
+     "album": "Mädchen im Regen",
+     "album_id": 206,
+     "cover": true,
+     "year": 1996,
+     "duration": 150,
+     "song": 316,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "genre": "No Such Genre"
+  },
+  "expect": {
+   "total": 0,
+   "items": []
+  }
+ },
+ {
+  "case": {
+   "q": "lights",
+   "decade": 1980
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 301,
+     "title": "Northern Lights",
+     "artist": "The Velvet Harbour",
+     "album": "Paper Lanterns",
+     "album_id": 201,
+     "cover": true,
+     "year": 1984,
+     "duration": 245,
+     "song": 301,
+     "versions": 4
+    },
+    {
+     "id": 309,
+     "title": "Night Drive – Live",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 330,
+     "song": 303,
+     "versions": 2
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "mood": "g:feeling",
+   "decade": 1970,
+   "genre": "Chanson"
+  },
+  "expect": {
+   "total": 3,
+   "items": [
+    {
+     "id": 311,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 214,
+     "song": 311,
+     "versions": 2
+    },
+    {
+     "id": 313,
+     "title": "Abendlied",
+     "artist": "Zoë Brandt & Dax Orlo",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 233,
+     "song": 313,
+     "versions": 1
+    },
+    {
+     "id": 312,
+     "title": "Ärger im Café",
+     "artist": "Zoë Brandt",
+     "album": "Straße der Träume",
+     "album_id": 205,
+     "cover": true,
+     "year": 1979,
+     "duration": 176,
+     "song": 312,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "dr",
+   "mood": "Energetic"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 309,
+     "title": "Night Drive – Live",
+     "artist": "The Velvet Harbour",
+     "album": "Harbour Lights Live",
+     "album_id": 203,
+     "cover": true,
+     "year": 1991,
+     "duration": 330,
+     "song": 303,
+     "versions": 2
+    },
+    {
+     "id": 321,
+     "title": "Night Drive",
+     "artist": "Dax Orlo",
+     "album": "Northern Lights",
+     "album_id": 208,
+     "cover": true,
+     "year": 2012,
+     "duration": 301,
+     "song": 321,
+     "versions": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "kind": "albums"
+  },
+  "expect": {
+   "total": 11,
+   "items": [
+    {
+     "id": 211,
+     "title": "Early Tapes",
+     "artist": "Dax Orlo",
+     "artist_id": 104,
+     "year": 1999,
+     "cover": true,
+     "tracks": 1
+    },
+    {
+     "id": 210,
+     "title": "Quiet Rooms",
+     "artist": "Mira Solenne",
+     "artist_id": 106,
+     "year": 2001,
+     "cover": true,
+     "tracks": 4
+    },
+    {
+     "id": 209,
+     "title": "Summer Mix 2022",
+     "artist": "Various Artists",
+     "artist_id": 105,
+     "year": 2022,
+     "cover": false,
+     "tracks": 3
+    },
+    {
+     "id": 208,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "artist_id": 104,
+     "year": 2012,
+     "cover": true,
+     "tracks": 3
+    },
+    {
+     "id": 207,
+     "title": "Señorita Lluvia",
+     "artist": "Café Ölberg",
+     "artist_id": 103,
+     "year": 2018,
+     "cover": true,
+     "tracks": 3
+    },
+    {
+     "id": 206,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "artist_id": 102,
+     "year": 1996,
+     "cover": true,
+     "tracks": 3
+    },
+    {
+     "id": 205,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "artist_id": 102,
+     "year": 1979,
+     "cover": true,
+     "tracks": 3
+    },
+    {
+     "id": 204,
+     "title": "Sing Along (Karaoke Edition)",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 2010,
+     "cover": true,
+     "tracks": 1
+    },
+    {
+     "id": 203,
+     "title": "Harbour Lights Live",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 1991,
+     "cover": true,
+     "tracks": 2
+    },
+    {
+     "id": 202,
+     "title": "Greatest Hits",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 2005,
+     "cover": true,
+     "tracks": 4
+    },
+    {
+     "id": 201,
+     "title": "Paper Lanterns",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 1984,
+     "cover": true,
+     "tracks": 4
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "lights",
+   "kind": "albums"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 203,
+     "title": "Harbour Lights Live",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 1991,
+     "cover": true,
+     "tracks": 2
+    },
+    {
+     "id": 208,
+     "title": "Northern Lights",
+     "artist": "Dax Orlo",
+     "artist_id": 104,
+     "year": 2012,
+     "cover": true,
+     "tracks": 3
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "z",
+   "kind": "albums"
+  },
+  "expect": {
+   "total": 2,
+   "items": [
+    {
+     "id": 206,
+     "title": "Mädchen im Regen",
+     "artist": "Zoë Brandt",
+     "artist_id": 102,
+     "year": 1996,
+     "cover": true,
+     "tracks": 3
+    },
+    {
+     "id": 205,
+     "title": "Straße der Träume",
+     "artist": "Zoë Brandt",
+     "artist_id": 102,
+     "year": 1979,
+     "cover": true,
+     "tracks": 3
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "harbour",
+   "kind": "albums"
+  },
+  "expect": {
+   "total": 4,
+   "items": [
+    {
+     "id": 203,
+     "title": "Harbour Lights Live",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 1991,
+     "cover": true,
+     "tracks": 2
+    },
+    {
+     "id": 202,
+     "title": "Greatest Hits",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 2005,
+     "cover": true,
+     "tracks": 4
+    },
+    {
+     "id": 201,
+     "title": "Paper Lanterns",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 1984,
+     "cover": true,
+     "tracks": 4
+    },
+    {
+     "id": 204,
+     "title": "Sing Along (Karaoke Edition)",
+     "artist": "The Velvet Harbour",
+     "artist_id": 101,
+     "year": 2010,
+     "cover": true,
+     "tracks": 1
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "",
+   "kind": "artists"
+  },
+  "expect": {
+   "total": 6,
+   "items": [
+    {
+     "id": 103,
+     "name": "Café Ölberg",
+     "moods": [
+      "Cheerful"
+     ],
+     "cover": 207,
+     "albums": 1
+    },
+    {
+     "id": 104,
+     "name": "Dax Orlo",
+     "moods": [
+      "Energetic"
+     ],
+     "cover": 208,
+     "albums": 2
+    },
+    {
+     "id": 106,
+     "name": "Mira Solenne",
+     "moods": [
+      "Mellow"
+     ],
+     "cover": 210,
+     "albums": 1
+    },
+    {
+     "id": 101,
+     "name": "The Velvet Harbour",
+     "moods": [
+      "Atmospheric",
+      "Brooding"
+     ],
+     "cover": 204,
+     "albums": 4
+    },
+    {
+     "id": 105,
+     "name": "Various Artists",
+     "moods": [],
+     "cover": null,
+     "albums": 1
+    },
+    {
+     "id": 102,
+     "name": "Zoë Brandt",
+     "moods": [
+      "Romantic",
+      "Warm"
+     ],
+     "cover": 206,
+     "albums": 2
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "the",
+   "kind": "artists"
+  },
+  "expect": {
+   "total": 1,
+   "items": [
+    {
+     "id": 101,
+     "name": "The Velvet Harbour",
+     "moods": [
+      "Atmospheric",
+      "Brooding"
+     ],
+     "cover": 204,
+     "albums": 4
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "br",
+   "kind": "artists"
+  },
+  "expect": {
+   "total": 1,
+   "items": [
+    {
+     "id": 102,
+     "name": "Zoë Brandt",
+     "moods": [
+      "Romantic",
+      "Warm"
+     ],
+     "cover": 206,
+     "albums": 2
+    }
+   ]
+  }
+ },
+ {
+  "case": {
+   "q": "olberg",
+   "kind": "artists"
+  },
+  "expect": {
+   "total": 1,
+   "items": [
+    {
+     "id": 103,
+     "name": "Café Ölberg",
+     "moods": [
+      "Cheerful"
+     ],
+     "cover": 207,
+     "albums": 1
+    }
+   ]
+  }
+ }
+]

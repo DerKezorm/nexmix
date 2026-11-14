@@ -1,0 +1,48 @@
+{
+  "0.1.0": {
+    "lead": "Das ist nexmix 0.1: Playlisten gemeinsam bauen, aus deiner Plex-Mediathek, mit eigenen Konten für den Haushalt und Gästen per Link. Jede Playlist ist zugleich eine Playlist in Plex und damit auch in Plexamp. Es ist der erste Stand, und er ist noch jung.",
+    "sections": [
+      {
+        "title": "Playlisten zusammen",
+        "body": "Eine Playlist gehört der Person, die sie anlegt. Sie teilt sie mit anderen zum Ansehen oder Mitbauen. An jedem Titel steht, wer ihn hinzugefügt hat. Was jemand ändert, sehen alle anderen sofort, und Entferntes kommt mit „Rückgängig“ zurück. Gelöschte Playlisten liegen 30 Tage im Papierkorb.",
+        "where": "Playlisten, Playlist"
+      },
+      {
+        "title": "Suchen in der ganzen Mediathek",
+        "body": "nexmix holt den Katalog einmal von Plex und sucht dann im Browser, ohne Plex beim Tippen zu fragen. Ein Song steht einmal da, auch wenn er auf Album, Best-of und Neuauflage liegt. Filter nach Stimmung, Jahrzehnt und Genre, dazu Alben und Künstler mit allen Titeln.",
+        "where": "Playlist, linke Spalte"
+      },
+      {
+        "title": "Vorschläge und Stimmung",
+        "body": "Rechts schlägt nexmix Titel vor, die zu den letzten Titeln der Liste passen: aus Stimmung, Stil, Genre und Jahrzehnt, aus anderen Playlisten des Haushalts und, sobald Plex die Klanganalyse fertig hat, nach dem Klang. „Mit Stimmung füllen“ stellt eine ganze Liste zusammen, du hakst ab, was rein soll.",
+        "where": "Playlist, rechte Spalte und Mit Stimmung füllen"
+      },
+      {
+        "title": "Reinhören",
+        "body": "Ein Klick auf ▶ spielt 30 Sekunden ab gut einem Drittel des Titels. Der Ton läuft über nexmix, dein Plex-Schlüssel bleibt auf dem Server.",
+        "where": "▶ an jedem Titel"
+      },
+      {
+        "title": "In Plex, in beide Richtungen",
+        "body": "Der Betreiber verbindet Plex über die Anmeldung bei plex.tv. Was in nexmix passiert, landet zwei Sekunden später in Plex. Was in Plex oder Plexamp hinzukommt, umbenannt oder entfernt wird, kommt in nexmix an, und vorhandene Playlisten von Plex erscheinen hier. Ändern beide Seiten zugleich, gehen keine Titel verloren.",
+        "where": "Einstellungen › Plex"
+      },
+      {
+        "title": "Gäste per Link",
+        "body": "Für eine Party lädst du Gäste mit Link oder QR-Code ein. Sie tippen nur ihren Namen ein, ohne Konto und ohne App, und sehen nur diese eine Playlist. Du legst fest, ob sie hinzufügen, sortieren und reinhören dürfen, wie viele Titel jeder beisteuert und wie lange die Einladung gilt.",
+        "where": "Playlist, Gäste einladen"
+      },
+      {
+        "title": "Konten und Anmeldung",
+        "body": "Mitglieder bekommen eine Einladung und ein eigenes Konto, mit Passwort oder über einen Anmeldeanbieter wie authentik, Pocket ID oder Microsoft Entra ID. Dazu ein zweiter Faktor und Passkeys. Ein Plex-Konto braucht niemand außer dem Betreiber.",
+        "where": "Einstellungen › Anmeldung"
+      }
+    ],
+    "smallTitle": "Außerdem",
+    "small": [
+      "Sicherungen der ganzen Datenbank, von Hand oder nach Plan, und das Einspielen an derselben Stelle.",
+      "Hell und dunkel, am Handy wie am Rechner, auf Deutsch und Englisch. Weitere Sprachen lädt der Betreiber hoch.",
+      "Eine Schnittstelle unter /api/v1 für Geräte und Programme, mit Schlüsseln nur zum Lesen."
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "0.1.0": {
+    "lead": "This is nexmix 0.1: build playlists together from your Plex library, with accounts of your own for the household and guests by a link. Every playlist is a playlist in Plex as well, and so in Plexamp. It is the first release, and it is still young.",
+    "sections": [
+      {
+        "title": "Playlists together",
+        "body": "A playlist belongs to the person who makes it. They share it with others to look at or to build along. Every track says who added it. What one person changes, everybody else sees at once, and what was taken out comes back with “Undo”. Deleted playlists stay in the trash for 30 days.",
+        "where": "Playlists, a playlist"
+      },
+      {
+        "title": "Search the whole library",
+        "body": "nexmix fetches the catalogue from Plex once and then searches in the browser, without asking Plex while you type. A song stands there once, even when it is on the album, a best-of and a reissue. Filters by mood, decade and genre, and albums and artists with all their tracks.",
+        "where": "A playlist, left column"
+      },
+      {
+        "title": "Suggestions and moods",
+        "body": "On the right nexmix suggests tracks that fit the last tracks of the list: from mood, style, genre and decade, from the other playlists of the household and, once Plex has finished its sonic analysis, by how they sound. “Fill by mood” puts a whole list together, and you tick what goes in.",
+        "where": "A playlist, right column and Fill by mood"
+      },
+      {
+        "title": "Listening in",
+        "body": "A click on ▶ plays 30 seconds from a good third into the track. The sound goes through nexmix, your Plex key stays on the server.",
+        "where": "▶ at every track"
+      },
+      {
+        "title": "In Plex, both ways",
+        "body": "The operator connects Plex by signing in at plex.tv. What happens in nexmix reaches Plex two seconds later. What is added, renamed or taken out in Plex or Plexamp arrives in nexmix, and the playlists Plex already has show up here. When both sides change at once, no track gets lost.",
+        "where": "Settings › Plex"
+      },
+      {
+        "title": "Guests by a link",
+        "body": "For a party you invite guests with a link or a QR code. They only type their name, with no account and no app, and see only this one playlist. You decide whether they may add, sort and listen in, how many tracks each one brings, and how long the invitation lasts.",
+        "where": "A playlist, Invite guests"
+      },
+      {
+        "title": "Accounts and signing in",
+        "body": "Members get an invitation and an account of their own, with a password or through a sign-in provider such as authentik, Pocket ID or Microsoft Entra ID. A second factor and passkeys come with it. Nobody needs a Plex account but the operator.",
+        "where": "Settings › Sign-in"
+      }
+    ],
+    "smallTitle": "Also",
+    "small": [
+      "Backups of the whole database, by hand or on a schedule, and restoring them in the same place.",
+      "Light and dark, on the phone as on the computer, in German and English. The operator uploads more languages.",
+      "An interface under /api/v1 for devices and programs, with keys that only read."
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+/**
+ * The groups of moods the filter and the mood dialog offer, by the English names Plex gives them (AllMusic's). The
+ * same list as the server's (`backend/app/services/mood_groups.json`), held to it by `catalogSearch.test.ts`.
+ */
+export const MOOD_GROUPS: [string, string[]][] = [
+  ['calm', ['Mellow', 'Calm/Peaceful', 'Relaxed', 'Soothing', 'Gentle', 'Laid-Back/Mellow', 'Reflective', 'Dreamy', 'Ethereal', 'Atmospheric', 'Lazy']],
+  ['feeling', ['Romantic', 'Tender', 'Sentimental', 'Bittersweet', 'Wistful', 'Yearning', 'Melancholy', 'Nostalgic', 'Passionate', 'Sensual', 'Warm']],
+  ['cheerful', ['Cheerful', 'Fun', 'Playful', 'Summery', 'Carefree', 'Sweet', 'Joyous', 'Lively', 'Happy', 'Bright', 'Springlike']],
+  ['party', ['Energetic', 'Party/Celebratory', 'Celebratory', 'Exuberant', 'Boisterous', 'Rousing', 'Anthemic', 'Confident', 'Sexy', 'Triumphant', 'Hedonistic', 'Rollicking']],
+  ['dark', ['Aggressive', 'Angry', 'Brooding', 'Gloomy', 'Intense', 'Rebellious', 'Menacing', 'Gritty', 'Fiery', 'Volatile', 'Ominous']],
+]

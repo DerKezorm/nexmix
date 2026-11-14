@@ -1,0 +1,332 @@
+/**
+ * The own account, everything personal in one place, as cards one below the other: Profile (picture, display name,
+ * name, role), Security (one card: password, second factor, passkeys), the sign-in providers, the signed-in devices
+ * and the notice of a new sign-in, then the mail address with its link, the language, how it looks (light or dark),
+ * and Devices and apps (device tokens, API keys, Web Push on the devices). A part can be named in the address (`?tab=security`): the page
+ * scrolls to it. The settings of the server are the other part of the page, for the operator.
+ */
+import { Camera, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { api, authApi, type Me } from '../api/client'
+import { ApiKeys } from '../components/ApiKeys'
+import { Avatar } from '../components/Avatar'
+import { KeysWait } from '../components/KeysWait'
+import { MyProviders } from '../components/MyProviders'
+import { Devices } from '../components/Devices'
+import { useConfirm } from '../components/useConfirm'
+import { iso } from '../lib/say'
+import { useAuth } from '../state/auth'
+import { LanguageCard, LooksCard } from './settings/PersonalCards'
+import { PushDevicesCard } from './settings/PushCards'
+import { DevicesCard, PasskeysCard, SecondFactorCard } from './settings/SecurityCards'
+import { Part, SettingsFrame } from './settings/SettingsFrame'
+import { Button, Card, Feedback, Input, useAction } from './settings/ui'
+
+export function AccountPage() {
+  const { me } = useAuth()
+  if (!me) return null
+  // Until the second factor is set up, the server answers nothing else: only the security cards are shown.
+  const restricted = Boolean(me.second_factor_setup_required)
+  return (
+    <SettingsFrame part="account">
+      {/* As the design: Profile, Security, the sign-in providers; then the mail address, the language and the look,
+          and the devices and apps. */}
+      {!restricted && (
+        <Part name="profile">
+          <Profile me={me} />
+        </Part>
+      )}
+      <Part name="security">
+        <Security me={me} />
+      </Part>
+      {!restricted && (
+        <Part name="personal">
+          <MailAddress me={me} />
+          <LanguageCard />
+          <LooksCard />
+        </Part>
+      )}
+      {!restricted && (
+        <Part name="devices">
+          <KeysWait />
+          <Devices />
+          <ApiKeys />
+          <PushDevicesCard me={me} />
+        </Part>
+      )}
+    </SettingsFrame>
+  )
+}
+
+/**
+ * The own mail address, for "Forgot your password?" and the notices. A new one counts only after the link mailed to it
+ * is opened; until then the old one stays. Changing it asks for the password once more, because the address is the way
+ * back into the account.
+ */
+function MailAddress({ me }: { me: Me }) {
+  const { t } = useTranslation()
+  const { setMe } = useAuth()
+  const [next, setNext] = useState('')
+  const [password, setPassword] = useState('')
+  const action = useAction()
+  const { ask: confirm, dialog } = useConfirm()
+  const withPassword = me.sign_in === 'password'
+  const ask = (email: string, done: string) =>
+    action.run(async () => {
+      setMe(await api<Me>('/api/v1/me/email', { method: 'PUT', body: { email, password } }))
+      setNext('')
+      setPassword('')
+    }, done)
+  return (
+    <Card title={t('mail.title')} text={t('mail.text')}>
+      <p className="ink text-sm">
+        {me.email ? (
+          <>
+            <span className="font-semibold">{me.email}</span>{' '}
+            <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-semibold ${me.email_confirmed ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`} data-testid="mail-state">
+              {me.email_confirmed ? t('mail.confirmed') : t('mail.unconfirmed')}
+            </span>
+          </>
+        ) : (
+          <span className="text-muted">{t('mail.none')}</span>
+        )}
+      </p>
+      {me.email_pending ? (
+        <div className="rounded-xl border border-accent/40 bg-accent-soft/50 px-4 py-3 text-sm" data-testid="mail-pending">
+          {t('mail.pending', { address: me.email_pending })} {me.email ? t('mail.stays', { address: me.email }) : ''}
+          <div className="mt-2 flex gap-2">
+            <Button
+              busy={action.busy}
+              onClick={() =>
+                confirm({
+                  title: t('confirm.mailPending.title'),
+                  text: t('confirm.mailPending.text', { address: iso(me.email_pending) }),
+                  confirm: t('confirm.mailPending.confirm'),
+                  run: async () => {
+                    await api('/api/v1/me/email/pending', { method: 'DELETE' })
+                    setMe(await authApi.me())
+                  },
+                })
+              }
+            >
+              {t('mail.withdraw')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form
+          className="flex flex-wrap items-start gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (next.trim()) void ask(next.trim(), t('mail.sent'))
+          }}
+        >
+          <Input label={t('mail.new')} type="email" value={next} onChange={setNext} placeholder="name@example.com" autoComplete="email" className="min-w-60 flex-1" />
+          {withPassword && <Input label={t('auth.password')} type="password" value={password} onChange={setPassword} autoComplete="current-password" hint={t('mail.passwordHint')} className="min-w-48" />}
+          <Button type="submit" busy={action.busy} disabled={!next.trim() || (withPassword && !password)} className="mt-[26px]">
+            {t('mail.send')}
+          </Button>
+        </form>
+      )}
+      {me.email && !me.email_pending && (
+        <p className="text-xs text-muted">
+          {!me.email_confirmed && (
+            <>
+              <button type="button" className="font-semibold text-accent underline decoration-accent/40 underline-offset-4" disabled={action.busy || (withPassword && !password)} onClick={() => void ask(me.email, t('mail.sent'))}>
+                {t('mail.confirmNow')}
+              </button>{' '}
+              ·{' '}
+            </>
+          )}
+          <button type="button" className="font-semibold text-accent underline decoration-accent/40 underline-offset-4" disabled={action.busy || (withPassword && !password)} onClick={() =>
+              confirm({
+                title: t('confirm.mailAddress.title'),
+                text: t('confirm.mailAddress.text', { address: iso(me.email) }),
+                confirm: t('confirm.mailAddress.confirm'),
+                run: async () => {
+                  await ask('', t('mail.removed'))
+                },
+              })
+            }
+          >
+            {t('mail.remove')}
+          </button>
+          {withPassword && !password ? ` · ${t('mail.passwordFirst')}` : ''}
+        </p>
+      )}
+      {!me.email_pending && !me.email_confirmed && me.mail === false && <p className="text-xs text-muted">{t('mail.off')}</p>}
+      <Feedback problem={action.problem} done={action.done} />
+      {dialog}
+    </Card>
+  )
+}
+
+function Profile({ me }: { me: Me }) {
+  const { t } = useTranslation()
+  const { setMe } = useAuth()
+  const [shownAs, setShownAs] = useState(me.display_name)
+  const picker = useRef<HTMLInputElement>(null)
+  const action = useAction()
+  const { ask, dialog } = useConfirm()
+  return (
+    <Card title={t('me.tabs.profile')} text={t('me.profile.text')}>
+      <div className="flex flex-wrap items-center gap-5">
+        <Avatar person={me} size={72} />
+        <div className="flex flex-wrap gap-2">
+          <Button busy={action.busy} onClick={() => picker.current?.click()}>
+            <Camera size={16} /> {me.avatar ? t('me.profile.change') : t('me.profile.upload')}
+          </Button>
+          {me.avatar && (
+            <Button
+              busy={action.busy}
+              onClick={() =>
+                ask({
+                  title: t('confirm.avatar.title'),
+                  text: t('confirm.avatar.text'),
+                  confirm: t('confirm.avatar.confirm'),
+                  run: async () => {
+                    await action.run(async () => setMe(await api<Me>('/api/v1/auth/avatar', { method: 'DELETE' })), t('me.profile.removed'))
+                  },
+                })
+              }
+            >
+              <Trash2 size={16} /> {t('me.profile.remove')}
+            </Button>
+          )}
+        </div>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/heic,image/heif,image/avif,.heic,.heif"
+          aria-label={t('me.profile.upload')}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void action.run(async () => setMe(await api<Me>('/api/v1/auth/avatar', { method: 'PUT', raw: file })), t('me.profile.saved'))
+          }}
+        />
+      </div>
+      <p className="-mt-1 text-xs text-muted">{t('me.profile.hint')}</p>
+      <form
+        className="flex flex-wrap items-start gap-2 pt-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void action.run(async () => {
+            const saved = await authApi.profile(shownAs.trim())
+            setShownAs(saved.display_name)
+            setMe(saved)
+          }, t('me.profile.displaySaved'))
+        }}
+      >
+        <Input
+          label={t('me.profile.displayName')}
+          value={shownAs}
+          onChange={setShownAs}
+          autoComplete="name"
+          className="min-w-60 flex-1"
+          hint={t(me.sign_in === 'password' ? 'me.profile.displayHintPassword' : 'me.profile.displayHint', { name: me.name })}
+        />
+        <Button type="submit" busy={action.busy} disabled={shownAs.trim() === me.display_name} className="mt-[26px]">
+          {t('common.save')}
+        </Button>
+      </form>
+      <dl className="kv pt-2" data-testid="account-facts">
+        <dt>{t('me.profile.name')}</dt>
+        <dd>{me.name}</dd>
+        <dt>{t('me.profile.role')}</dt>
+        <dd>{t(`me.role.${me.role}`)}</dd>
+        <dt>{t('me.profile.email')}</dt>
+        <dd>{me.email || t('mail.none')}</dd>
+      </dl>
+      <Feedback problem={action.problem} done={action.done} values={action.values} />
+      {dialog}
+    </Card>
+  )
+}
+
+function Security({ me }: { me: Me }) {
+  const { t } = useTranslation()
+  const [pw, setPw] = useState({ current: '', next: '', again: '' })
+  /** The fields of a new password open on "Change", as one line with its button until then. */
+  const [changing, setChanging] = useState(false)
+  const password = useAction()
+  const [unsent, setUnsent] = useState<string | null>(null)
+  // Until the second factor is set up, the server answers nothing else: only its cards are shown.
+  const restricted = Boolean(me.second_factor_setup_required)
+  if (restricted)
+    return (
+      <>
+        <p role="note" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm font-semibold text-warn">
+          {t('me.setupFirst')}
+        </p>
+        <Card id="security-card" title={t('me.tabs.security')}>
+          <SecondFactorCard me={me} />
+          <PasskeysCard me={me} />
+        </Card>
+      </>
+    )
+  // As the design: one card "Security" with the password, the second factor and the passkeys as its parts; the sign-in
+  // providers are a card of their own after it.
+  return (
+    <>
+      <Card id="security-card" title={t('me.tabs.security')}>
+        {me.sign_in === 'password' && (
+          <Card title={t('me.password.title')} text={t('me.password.text')}>
+            {!changing && (
+              <div>
+                <Button onClick={() => setChanging(true)}>{t('me.password.change')}</Button>
+                <Feedback problem={null} done={password.done} />
+              </div>
+            )}
+            {changing && (
+            <form
+              className="grid gap-3 sm:grid-cols-3"
+              onSubmit={(event) => {
+                event.preventDefault()
+                // Said here, before anything goes to the server.
+                const missing = !pw.current ? 'current_password_missing' : !pw.next ? 'password_missing' : pw.next !== pw.again ? 'password_mismatch' : null
+                setUnsent(missing)
+                if (missing) return
+                void password.run(async () => {
+                  await authApi.password(pw.current, pw.next)
+                  setPw({ ...pw, current: '', next: '', again: '' })
+                  setChanging(false)
+                }, t('me.password.done'))
+              }}
+            >
+              <Input label={t('me.password.current')} type="password" value={pw.current} onChange={(current) => setPw({ ...pw, current })} autoComplete="current-password" />
+              <Input label={t('me.password.new')} type="password" value={pw.next} onChange={(next) => setPw({ ...pw, next })} autoComplete="new-password" />
+              <Input label={t('me.password.again')} type="password" value={pw.again} onChange={(again) => setPw({ ...pw, again })} autoComplete="new-password" />
+              <div className="flex flex-wrap gap-2 sm:col-span-3">
+                <Button type="submit" busy={password.busy}>
+                  {t('me.password.submit')}
+                </Button>
+                <Button
+                  ghost
+                  onClick={() => {
+                    setChanging(false)
+                    setUnsent(null)
+                    setPw({ ...pw, current: '', next: '', again: '' })
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+              </div>
+            </form>
+            )}
+            {changing && <Feedback problem={unsent ?? password.problem} />}
+          </Card>
+        )}
+        <SecondFactorCard me={me} />
+        <PasskeysCard me={me} />
+      </Card>
+
+      <MyProviders me={me} />
+
+      <DevicesCard me={me} />
+    </>
+  )
+}
