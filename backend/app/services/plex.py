@@ -323,12 +323,13 @@ class PlexServer:
                 found.append((str(entry["key"]), str(entry["title"]).strip()[:200]))
         return found
 
-    def bulk(self, keys: Iterable[int]) -> list[dict[str, Any]]:
-        """Many entries at once, with their tags."""
+    def bulk(self, keys: Iterable[int], *, guids: bool = False) -> list[dict[str, Any]]:
+        """Many entries at once, with their tags (``guids``: and the ids of the agents, MusicBrainz among them)."""
         chosen = [str(int(key)) for key in keys]
         if not chosen:
             return []
-        container = self.get(f"/library/metadata/{','.join(chosen)}", timeout=60.0)
+        container = self.get(f"/library/metadata/{','.join(chosen)}", {"includeGuids": "1"} if guids else None,
+                             timeout=60.0)
         return [entry for entry in container.get("Metadata") or [] if isinstance(entry, dict)]
 
     def nearest(self, key: int, limit: int, max_distance: float) -> list[tuple[int, float]]:

@@ -3,6 +3,7 @@
  * browsers get carry the new version and the whole order (`Change`), so a page applies either the same way.
  */
 import { api } from './client'
+import type { Mirror } from './mirrors'
 
 export type Person = { id: number | null; name: string; display_name: string; avatar: string | null }
 export type Access = 'owner' | 'operator' | 'edit' | 'read'
@@ -50,6 +51,8 @@ export type Card = Summary & {
   hidden?: boolean
   /** The media server the playlist takes its tracks from (its catalogue is searched); null: none connected yet. */
   server?: number | null
+  /** Its mirrors on other servers, kept in step both ways. */
+  mirrors?: Mirror[]
 }
 
 export type Entry = {
@@ -71,6 +74,8 @@ export type Entry = {
   added_by: Person | null
   added_by_name: string
   added_at: string
+  /** The servers of the playlist's mirrors that have no track for this entry. */
+  absent?: number[]
 }
 
 export type Playlist = Card & { moods: string[]; items: Entry[] }

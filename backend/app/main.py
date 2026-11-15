@@ -51,6 +51,7 @@ from .routers import jellyfin as jellyfin_router
 from .routers import join as join_router
 from .routers import locales as locales_router
 from .routers import logs as logs_router
+from .routers import mirrors as mirrors_router
 from .routers import playlists as playlists_router
 from .routers import plex as plex_router
 from .routers import preview as preview_router
@@ -89,7 +90,8 @@ logger = logging.getLogger("nexmix")
 ROUTERS = [
     health, about, docs, locales_router, logs_router, auth, totp_router, oidc, invites, settings_router,
     backups_router, avatars_router, emails, apikeys, devices, v1_router, push, passkeys, resets, storage_router,
-    plex_router, jellyfin_router, servers_router, catalog_router, playlists_router, preview_router, suggestions_router,
+    plex_router, jellyfin_router, servers_router, catalog_router, playlists_router, mirrors_router, preview_router,
+    suggestions_router,
     guest_invites_router, join_router, guest_router,
 ]
 

@@ -831,6 +831,83 @@ class ServerPlaylist(Base):
     #: The entries are to be found on this server first (the playlist came here from another server): ``all`` every
     #: entry, ``since`` the ones put in before the server was connected; empty: nothing to do.
     settle: Mapped[str] = mapped_column(String(8), default="", server_default="")
+    #: A mirror: a copy on a server that is not the playlist's source, kept in step with it both ways
+    #: (``services/mirrors.py``). Its entries are the source's, each found on this server (``MirrorItem``). A copy on
+    #: another server that is no mirror rests until the playlist comes back to that server.
+    mirror: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("0"))
+
+
+class MirrorItem(Base):
+    """An entry of a playlist as a mirror holds it: the track of the mirror's server that stands for it (None: none
+    there), how it was found (``services/match.py``: ``mbid``, ``album`` ..., ``hand`` chosen by a person, ``none``
+    nothing found, ``skip`` left out on purpose), and what the mirror's server says of it (``refused``, ``missing``;
+    empty: nothing). A track of the mirror stands for one entry at most."""
+
+    __tablename__ = "mirror_items"
+    __table_args__ = (
+        UniqueConstraint("copy_id", "item_id", name="uq_mirror_items_item"),
+        Index("uq_mirror_items_track", "copy_id", "track_id", unique=True, sqlite_where=text("track_id IS NOT NULL")),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    copy_id: Mapped[int] = mapped_column(ForeignKey("server_playlists.id", ondelete="CASCADE"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("playlist_items.id", ondelete="CASCADE"), index=True)
+    track_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    how: Mapped[str] = mapped_column(String(8), default="")
+    hint: Mapped[str] = mapped_column(String(16), default="", server_default="")
+
+
+class MirrorExtra(Base):
+    """A track put into a mirror on its server that the source's library has no sure match for: shown at the
+    playlist ("only in <server>") until somebody takes it over as a track of the source or drops it (``discard``: it is
+    taken out of the mirror at its next sync). Kept out of the mirror's sync meanwhile: neither taken over nor taken
+    out."""
+
+    __tablename__ = "mirror_extras"
+    __table_args__ = (UniqueConstraint("copy_id", "track_id", name="uq_mirror_extras_track"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    copy_id: Mapped[int] = mapped_column(ForeignKey("server_playlists.id", ondelete="CASCADE"), index=True)
+    #: The track of the mirror's server.
+    track_id: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(500), default="")
+    artist: Mapped[str] = mapped_column(String(500), default="")
+    album: Mapped[str] = mapped_column(String(500), default="")
+    #: Milliseconds.
+    duration: Mapped[int] = mapped_column(Integer, default=0)
+    found_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    discard: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Transfer(Base):
+    """"Take all over": every playlist of the other servers mirrored on a server, or moved there (``mode``), one after
+    another in the background (``services/mirrors.py``). ``todo`` holds the playlists still to do, in order; a restart
+    goes on where it was, a stop ends it cleanly with what was done. ``choices`` are the person's decisions of the
+    preview (a track of a source: the track of the target, or none)."""
+
+    __tablename__ = "transfers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    server_id: Mapped[int] = mapped_column(ForeignKey("media_servers.id", ondelete="CASCADE"), index=True)
+    #: ``mirror`` or ``move``.
+    mode: Mapped[str] = mapped_column(String(8))
+    #: ``running``, ``done``, ``stopped``, ``failed``.
+    state: Mapped[str] = mapped_column(String(8), default="running")
+    #: Move: the copy on the server before stays a mirror (``keep``) or goes (``delete``).
+    old: Mapped[str] = mapped_column(String(8), default="keep")
+    #: The server to let go of once every playlist has moved (None: none).
+    then_disconnect: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    todo: Mapped[Any] = mapped_column(JSON, nullable=True)
+    choices: Mapped[Any] = mapped_column(JSON, nullable=True)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    #: Somebody asked it to stop: it ends after the playlist under way.
+    stopping: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str] = mapped_column(String(40), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
 __all__ = [
@@ -864,6 +941,8 @@ __all__ = [
     "Invite",
     "Job",
     "MediaServer",
+    "MirrorExtra",
+    "MirrorItem",
     "OidcLink",
     "OidcProvider",
     "Passkey",
@@ -877,6 +956,7 @@ __all__ = [
     "Setting",
     "SyncRun",
     "TrackTag",
+    "Transfer",
     "UtcDateTime",
     "utcnow",
 ]

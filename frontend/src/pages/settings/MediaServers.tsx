@@ -1,7 +1,8 @@
 /**
  * Settings, Server: the media servers. The Plex card as it always was (the first Plex server); a card for each Plex
  * server connected beside it and for each Jellyfin server; and "Add a server" with the choice of Plex or Jellyfin.
- * Disconnecting asks first and says what goes. With nothing connected yet, the Plex card stands first as before.
+ * Disconnecting asks first and says what goes. With nothing connected yet, the Plex card stands first as before. With
+ * more than one server, each ready one has "take all playlists over" (``TransferCard``).
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +14,7 @@ import { useCatalogStatus } from '../../lib/catalogStatus'
 import { iso } from '../../lib/say'
 import { JellyfinCard, JellyfinConnect, ServerCatalog } from './JellyfinCard'
 import { PlexCard } from './PlexCard'
+import { TransferCard } from './TransferCard'
 import { Button, Card, Feedback, useAction } from './ui'
 
 /** A Plex server connected beside the first one: its catalogue, sync now, disconnect. */
@@ -100,6 +102,8 @@ export function MediaServers() {
   // The Plex card stands for the first Plex server; with nothing connected at all it is the way in, as before.
   const plexCard = plexes.length > 0 || active.length === 0
   const others = plexes.slice(1)
+  // "Take all over" where a playlist could come from another server.
+  const targets = active.length > 1 ? active.filter((one) => one.ready && one.capabilities.playlists) : []
 
   return (
     <>
@@ -109,6 +113,9 @@ export function MediaServers() {
       ))}
       {jellyfins.map((server) => (
         <JellyfinCard key={server.id} server={server} onChanged={changed} />
+      ))}
+      {targets.map((server) => (
+        <TransferCard key={`transfer-${server.id}`} target={server} others={active.filter((one) => one.id !== server.id)} />
       ))}
       {adding === 'plex' && (
         <PlexCard

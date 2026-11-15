@@ -38,7 +38,7 @@ _settings.data_dir.mkdir(parents=True, exist_ok=True)
 BUSY_SECONDS = 15
 
 #: The version of the schema the models describe.
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 #: The same, as it was when the module was loaded: only a database brought to it is compared with the models (the
 #: tests of the schema bring records to older versions).
 _MODELS_VERSION = SCHEMA_VERSION
@@ -302,10 +302,48 @@ def _to_10(connection: Connection) -> None:
         connection.exec_driver_sql(statement)
 
 
+#: Version 11: mirrors. A copy of a playlist on a server that is not its source, kept in step both ways; each entry's
+#: track there; the tracks put into a mirror that the source has no match for; "take all over" in the background.
+_SCHEMA_11 = (
+    "ALTER TABLE server_playlists ADD COLUMN mirror BOOLEAN DEFAULT 0 NOT NULL",
+    (
+        "CREATE TABLE mirror_items ( id INTEGER NOT NULL, copy_id INTEGER NOT NULL, item_id INTEGER NOT NULL, "
+        "track_id INTEGER, how VARCHAR(8) NOT NULL, hint VARCHAR(16) DEFAULT '' NOT NULL, PRIMARY KEY (id), "
+        "CONSTRAINT uq_mirror_items_item UNIQUE (copy_id, item_id), FOREIGN KEY(copy_id) REFERENCES "
+        "server_playlists (id) ON DELETE CASCADE, FOREIGN KEY(item_id) REFERENCES playlist_items (id) ON DELETE "
+        "CASCADE )"
+    ),
+    "CREATE UNIQUE INDEX uq_mirror_items_track ON mirror_items (copy_id, track_id) WHERE track_id IS NOT NULL",
+    "CREATE INDEX ix_mirror_items_item_id ON mirror_items (item_id)",
+    (
+        "CREATE TABLE mirror_extras ( id INTEGER NOT NULL, copy_id INTEGER NOT NULL, track_id INTEGER NOT NULL, "
+        "title VARCHAR(500) NOT NULL, artist VARCHAR(500) NOT NULL, album VARCHAR(500) NOT NULL, duration INTEGER "
+        "NOT NULL, found_at DATETIME NOT NULL, discard BOOLEAN NOT NULL, PRIMARY KEY (id), CONSTRAINT "
+        "uq_mirror_extras_track UNIQUE (copy_id, track_id), FOREIGN KEY(copy_id) REFERENCES server_playlists (id) "
+        "ON DELETE CASCADE )"
+    ),
+    "CREATE INDEX ix_mirror_extras_copy_id ON mirror_extras (copy_id)",
+    (
+        "CREATE TABLE transfers ( id INTEGER NOT NULL, server_id INTEGER NOT NULL, mode VARCHAR(8) NOT NULL, state "
+        "VARCHAR(8) NOT NULL, old VARCHAR(8) NOT NULL, then_disconnect INTEGER, todo JSON, choices JSON, total "
+        "INTEGER NOT NULL, done INTEGER NOT NULL, skipped INTEGER NOT NULL, stopping BOOLEAN NOT NULL, error "
+        "VARCHAR(40) NOT NULL, created_by INTEGER, started_at DATETIME NOT NULL, finished_at DATETIME, PRIMARY KEY "
+        "(id), FOREIGN KEY(server_id) REFERENCES media_servers (id) ON DELETE CASCADE, FOREIGN KEY(created_by) "
+        "REFERENCES users (id) ON DELETE SET NULL )"
+    ),
+    "CREATE INDEX ix_transfers_server_id ON transfers (server_id)",
+)
+
+
+def _to_11(connection: Connection) -> None:
+    for statement in _SCHEMA_11:
+        connection.exec_driver_sql(statement)
+
+
 #: ``MIGRATIONS[n]`` brings a database from version ``n - 1`` to ``n``. Version 1 is the first schema; it has no step.
 #: Later steps are written out as the tables stood then, not taken from the models, which move on.
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {2: _to_2, 3: _to_3, 4: _to_4, 5: _to_5, 6: _to_6, 7: _to_7,
-                                                       8: _to_8, 9: _to_9, 10: _to_10}
+                                                       8: _to_8, 9: _to_9, 10: _to_10, 11: _to_11}
 
 
 # No pool with an upper bound: with the default pool the sixteenth concurrent request would block the event

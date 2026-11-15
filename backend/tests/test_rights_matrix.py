@@ -72,9 +72,15 @@ BODIES: dict[tuple[str, str], Any] = {
     ("POST", "/api/v1/playlists/{playlist_id}/items/move"): {"entry": "{entry}", "after": None},
     ("PUT", "/api/v1/playlists/{playlist_id}/shares/{account_id}"): {"access": "read"},
     ("PUT", "/api/v1/playlists/{playlist_id}/invite"): {"start": True},
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/preview"): {"server": 2},
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors"): {"server": 2},
+    ("POST", "/api/v1/playlists/{playlist_id}/move"): {"server": 2},
+    ("PUT", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}"): {"track": None},
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take"): {"track": 301},
 }
 #: What one who may only see a playlist reaches of it.
 VIEW = {("GET", "/api/v1/playlists/{playlist_id}"), ("GET", "/api/v1/playlists/{playlist_id}/events"),
+        ("GET", "/api/v1/playlists/{playlist_id}/mirrors"),
         # Hiding it from the own view, and showing it again: the account's own business, nothing changes for others.
         ("PUT", "/api/v1/playlists/{playlist_id}/hidden"), ("DELETE", "/api/v1/playlists/{playlist_id}/hidden")}
 #: What only the owner and the operator do: delete, bring back, share.
@@ -84,6 +90,12 @@ MANAGE = {
     ("GET", "/api/v1/playlists/{playlist_id}/shares"),
     ("PUT", "/api/v1/playlists/{playlist_id}/shares/{account_id}"),
     ("DELETE", "/api/v1/playlists/{playlist_id}/shares/{account_id}"),
+    # Copying and moving to another server, and the mirrors themselves.
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/preview"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors"),
+    ("POST", "/api/v1/playlists/{playlist_id}/move"),
+    ("DELETE", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake"),
 }
 
 
@@ -106,7 +118,9 @@ def _ask(browser: TestClient, method: str, path: str, playlist: dict[str, Any], 
     if body is None and method in ("POST", "PUT", "PATCH"):
         body = {}
     url = (path.replace("{playlist_id}", str(playlist["id"]))
-           .replace("{account_id}", str(people.stranger_row.id)).replace("{guest_id}", "1"))
+           .replace("{account_id}", str(people.stranger_row.id)).replace("{guest_id}", "1")
+           .replace("{server_id}", "2").replace("{entry_id}", str(playlist["items"][0]["id"]))
+           .replace("{extra_id}", "1"))
     if path.endswith("/events"):
         url += "?probe=1"
     return browser.request(method, url, json=_fill(body, playlist["items"][0]["id"])).status_code
@@ -138,7 +152,8 @@ def test_every_route_of_a_playlist_with_a_body_is_named_here() -> None:
                 ("POST", "/api/v1/playlists/{playlist_id}/invite"),
                 ("POST", "/api/v1/playlists/{playlist_id}/plex-order"),
                 ("POST", "/api/v1/playlists/{playlist_id}/missing/remove"),
-                ("PUT", "/api/v1/playlists/{playlist_id}/hidden")}
+                ("PUT", "/api/v1/playlists/{playlist_id}/hidden"),
+                ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake")}
     assert changing - bodiless == set(BODIES)
     assert VIEW | MANAGE <= set(playlist_routes())
     assert len(playlist_routes()) >= 20

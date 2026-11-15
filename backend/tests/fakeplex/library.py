@@ -32,6 +32,8 @@ class Item:
     analysed: bool = False
     #: Plex's guid; empty: one of its agents, made from the key (``plex://track/..``).
     guid: str = ""
+    #: The MusicBrainz id of the track among the agents' ids (``mbid://``, only with ``includeGuids``); empty: none.
+    mbid: str = ""
 
 
 def made_up_library() -> dict[int, Item]:

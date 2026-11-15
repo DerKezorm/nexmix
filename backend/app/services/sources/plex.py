@@ -68,6 +68,9 @@ MACHINE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\Z")
 LIBRARY = "com.plexapp.plugins.library"
 #: Tracks per request when asking whether they are still in the library: small, the answer carries every tag.
 EXISTING_PART = 50
+#: Tracks per request when their MusicBrainz ids are asked for, and what such an id looks like.
+MBID_PART = 100
+MBID = re.compile(r"\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 #: The entries of a smart playlist nexmix shows at most.
 SMART_LIMIT = 5000
 #: How far back a partial run looks beyond where the last run began.
@@ -332,6 +335,29 @@ class PlexSource:
                 return False
             raise
         return True
+
+    def mbids(self, tracks: Iterable[str]) -> dict[str, str]:
+        """The MusicBrainz ids (of the track: Plex's ``mbid://``) of some tracks, asked ``MBID_PART`` at a time with
+        the agents' ids (``includeGuids``, only reading). The catalogue leaves them out: with them a full run takes
+        about half as long again (measured on 52,600 tracks), so they are asked for only where a track is to be found on
+        another server and its name did not find it. A part Plex does not know (404) has none."""
+        found: dict[str, str] = {}
+        chosen = sorted({_key(track) for track in tracks})
+        for start in range(0, len(chosen), MBID_PART):
+            try:
+                entries = self.server.bulk(chosen[start:start + MBID_PART], guids=True)
+            except PlexError as exc:
+                if exc.code != "plex_not_found":
+                    raise
+                entries = []
+            for entry in entries:
+                key = _int(entry.get("ratingKey"))
+                for guid in entry.get("Guid") or []:
+                    value = str(guid.get("id") or "") if isinstance(guid, dict) else ""
+                    if key is not None and value.startswith("mbid://") and MBID.fullmatch(value[7:]):
+                        found[str(key)] = value[7:]
+                        break
+        return found
 
     def existing(self, tracks: Iterable[str]) -> set[str]:
         """Which of the tracks the library of Plex still has, asked ``EXISTING_PART`` at a time

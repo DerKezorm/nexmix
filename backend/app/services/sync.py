@@ -90,7 +90,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import OPERATOR, Account, Job, MediaServer, Playlist, PlaylistItem, ServerPlaylist
-from . import jobs, match, media, merge, plex_link, sources
+from . import jobs, match, media, merge, mirrors, plex_link, sources
 from .events import hub, playlist_topic
 from .jellyfin import AWAY as JELLYFIN_AWAY
 from .plex import PlexError
@@ -102,7 +102,7 @@ logger = logging.getLogger("nexmix.sync")
 LANE = "playlists"
 ROUND = "server_round"
 POLL = "server_poll"
-KINDS = (ROUND, POLL)
+KINDS = (ROUND, POLL, mirrors.TRANSFER)
 #: A change in nexmix waits this long for more before it goes to the server.
 GATHER = timedelta(seconds=2)
 POLL_EVERY = timedelta(seconds=15)
@@ -235,12 +235,24 @@ def mirror_of(db: Session, playlist_id: int) -> ServerPlaylist | None:
     return copy_of(db, playlist_id, media.source_of(db, playlist_id))
 
 
-def mark(db: Session, playlist_id: int, *, at_once: bool = False) -> None:
+def _due(row: ServerPlaylist, now: datetime, moment: datetime, at_once: bool) -> None:
+    if row.state == WAITING and not at_once and row.due_at is not None and row.due_at > now:
+        return
+    row.state = PENDING
+    if row.due_at is None or row.due_at > moment:
+        row.due_at = moment
+
+
+def mark(db: Session, playlist_id: int, *, at_once: bool = False, but: int | None = None) -> None:
     """The playlist changed in nexmix: due in two seconds (``at_once``: now), unless it is due sooner already, or it
-    waits for its server (the changes gather until the next try). In the caller's transaction. A playlist without a
-    source server waits for one (``moved``)."""
+    waits for its server (the changes gather until the next try); its mirrors too. In the caller's transaction. A
+    playlist without a source server waits for one (``moved``). ``but``: the copy that brought the change (it has
+    it)."""
     now = clock.now()
     moment = now if at_once else now + GATHER
+    for row in mirrors.mirror_rows(db, playlist_id):
+        if row.id != but and not row.gone_there:
+            _due(row, now, moment, at_once)
     source = media.source_of(db, playlist_id)
     if source is None or not keeps_playlists(media.get(db, source)):
         return
@@ -248,13 +260,9 @@ def mark(db: Session, playlist_id: int, *, at_once: bool = False) -> None:
     if row is None:
         db.add(ServerPlaylist(playlist_id=playlist_id, server_id=source, state=PENDING, due_at=moment))
         return
-    if row.smart:
+    if row.smart or row.id == but:
         return
-    if row.state == WAITING and not at_once and row.due_at is not None and row.due_at > now:
-        return
-    row.state = PENDING
-    if row.due_at is None or row.due_at > moment:
-        row.due_at = moment
+    _due(row, now, moment, at_once)
 
 
 def restored(db: Session, playlist_id: int) -> None:
@@ -353,8 +361,13 @@ def view(db: Session, playlist_id: int, row: ServerPlaylist | None = None) -> di
 
 
 def _publish(db: Session, playlist_id: int | None, row: ServerPlaylist | None = None) -> None:
-    if playlist_id is not None:
-        hub.publish(playlist_topic(playlist_id), "plex", view(db, playlist_id, row))
+    if playlist_id is None:
+        return
+    if row is not None and row.mirror:
+        # A mirror tells of all the playlist's mirrors; the source's state stays as it is.
+        hub.publish(playlist_topic(playlist_id), "mirrors", {"mirrors": mirrors.view(db, playlist_id)})
+        return
+    hub.publish(playlist_topic(playlist_id), "plex", view(db, playlist_id, row))
 
 
 # --- What the interface asks for --------------------------------------------------------------------------------------
@@ -370,6 +383,12 @@ def request(db: Session, playlist_id: int) -> dict[str, Any]:
         if row.state in (ERROR, WAITING):
             row.state, row.tries = PENDING, 0
         _offer_now(row)
+    for copy in mirrors.mirror_rows(db, playlist_id):
+        if not copy.gone_there:
+            copy.due_at = clock.now()
+            if copy.state in (ERROR, WAITING):
+                copy.state, copy.tries = PENDING, 0
+            _offer_now(copy)
     db.commit()
     _publish(db, playlist_id)
     return view(db, playlist_id)
@@ -430,6 +449,7 @@ def missing_tracks(db: Session, playlist_id: int) -> list[int]:
 def after_catalogue(db: Session, server_id: int) -> int:
     """After a run of the catalogue of ``server_id``: the entries the server lost (``HINT_MISSING``) whose track the
     catalogue has (again, or under its new number since ``relink``) go back to the server. Returns how many."""
+    mirrors.after_catalogue(db, server_id)
     generation = media.generation_of(db, server_id)
     owned = list(db.scalars(select(Playlist.id).where(
         Playlist.source_server_id == server_id, Playlist.deleted_at.is_(None),
@@ -544,11 +564,11 @@ def _note_missing(server_id: int, count: int) -> None:
 
 
 def _missing_from(db: Session, server_id: int, there: set[str]) -> set[str]:
-    """The keys of nexmix's copies on the server (of playlists it is the source of, not in the trash) that its list
-    ``there`` lacks."""
+    """The keys of nexmix's copies on the server (of playlists it is the source of, and mirrors, not in the trash)
+    that its list ``there`` lacks."""
     keys = db.scalars(select(ServerPlaylist.ext_key).join(Playlist, Playlist.id == ServerPlaylist.playlist_id).where(
         ServerPlaylist.server_id == server_id, ServerPlaylist.ext_key.is_not(None), ServerPlaylist.resume.is_(False),
-        Playlist.source_server_id == server_id, Playlist.deleted_at.is_(None)))
+        (Playlist.source_server_id == server_id) | ServerPlaylist.mirror.is_(True), Playlist.deleted_at.is_(None)))
     return {key for key in keys if key is not None and key not in there}
 
 
@@ -701,6 +721,9 @@ class Plan:
     #: others at once), and how many were lost at once when that was the reason (0: it was not).
     missing: set[int] = field(default_factory=set)
     loss: int = 0
+    #: A mirror: what its merge brings back to the entries (``mirrors.Back``), and the server's entries it merged.
+    back: mirrors.Back | None = None
+    remote: list[Item] = field(default_factory=list)
 
 
 @dataclass
@@ -800,6 +823,15 @@ class Round:
         self.seen_after: Listed | None = None
         #: What the server said of tracks this sync asked about: still in its library or not (``_alive``).
         self.asked: dict[int, bool] = {}
+        #: This copy is a mirror (``mirrors.py``): its entries are the source's, each by the track of this server that
+        #: stands for it (``side``); tracks put in here that the source has no match for are held out (``held_out``).
+        self.mirror = False
+        self.side: mirrors.Side | None = None
+        self.held_out: set[int] = set()
+        #: Every track the last read of the server's entries held, the held-out ones too.
+        self.raw_tracks: set[int] = set()
+        #: The playlist changed role while this sync ran (moved to another server): it starts again.
+        self.role_changed = False
 
     @property
     def via(self) -> str:
@@ -819,7 +851,12 @@ class Round:
         return row
 
     def _items(self, key: str) -> list[Item]:
-        return _numbered(self.server_id, self.source.items(key), by_track=self.by_track)
+        found = _numbered(self.server_id, self.source.items(key), by_track=self.by_track)
+        self.raw_tracks = {item.track for item in found}
+        if self.held_out:
+            # Tracks put into the mirror that the source has no match for: neither taken over nor taken out.
+            found = [item for item in found if item.track not in self.held_out]
+        return found
 
     def run(self) -> None:
         db = self.db
@@ -841,8 +878,16 @@ class Round:
             db.commit()
             return
         if playlist.source_server_id != self.server_id:
-            # A copy on a server that is not the playlist's source: kept as it is until the playlist comes back here.
-            row.due_at, row.state = None, SYNCED
+            if row.mirror and not row.gone_there and not row.smart and playlist.deleted_at is None:
+                # A mirror: kept in step with the playlist both ways.
+                self.mirror = True
+                self._sync(playlist.id)
+                return
+            # A copy on a server that is not the playlist's source: kept as it is until the playlist comes back here
+            # (a mirror of a playlist in the trash: until it is brought back; one deleted on its server says so).
+            if not (row.mirror and row.gone_there):
+                row.state = SYNCED
+            row.due_at = None
             db.commit()
             return
         if row.settle:
@@ -1059,6 +1104,16 @@ class Round:
         the trash it is taken up again when the server has it after all, else made anew."""
         db = self.db
         db.rollback()
+        if self.mirror:
+            # A mirror deleted on its server: only there. The playlist stays, the mirror says so.
+            row = self.fresh_row()
+            self._forget_copy(row)
+            row.gone_there, row.resume, row.state, row.error, row.due_at = True, False, ERROR, mirrors.MIRROR_GONE, None
+            db.commit()
+            logger.info("Mirror deleted on its server playlist=%s server=%s", playlist_id, self.server_id)
+            _publish(db, playlist_id, row)
+            mirrors._tell(db, playlist_id, "mirror_gone")
+            return
         now = clock.now()
         taken = db.execute(update(Playlist).where(Playlist.id == playlist_id, Playlist.deleted_at.is_(None))
                            .values(version=Playlist.version + 1, deleted_at=now, updated_at=now)).rowcount
@@ -1175,7 +1230,19 @@ class Round:
         playlist = self.db.get(Playlist, playlist_id, populate_existing=True)
         if playlist is None or playlist.deleted_at is not None:
             return None
+        if (playlist.source_server_id == self.server_id) == self.mirror:
+            # The playlist moved to another server while this sync ran: the copy plays another part now.
+            self.role_changed = True
+            return None
         items = playlists.live_items(self.db, playlist_id)
+        if self.mirror:
+            assert playlist.source_server_id is not None
+            side = self.side = mirrors.side(self.db, self.ident, items, int(playlist.source_server_id))
+            mapped = [(side.track_of[item.id], item.id) for item in items if side.track_of.get(item.id) is not None]
+            return Snapshot(version=playlist.version, name=playlist.name,
+                            entries=[(int(track), ident) for track, ident in mapped if track is not None],
+                            hints={int(side.track_of[item.id] or 0): side.hint_of[item.id] for item in items
+                                   if item.id in side.hint_of and side.track_of.get(item.id) is not None})
         return Snapshot(version=playlist.version, name=playlist.name,
                         entries=[(item.track_id, item.id) for item in items],
                         hints={item.track_id: item.plex_hint for item in items if item.plex_hint})
@@ -1184,10 +1251,15 @@ class Round:
         db = self.db
         if self.row.ext_key is None:
             self._make(playlist_id)
+        if self.mirror:
+            mirrors.prepare(self, playlist_id)
         found = self._read(playlist_id)
         if found is None:
             return
         info, remote = found
+        if info.smart and self.mirror:
+            # Made a smart playlist on the mirror's server meanwhile: no mirror can be kept there.
+            raise PlexError("mirror_smart")
         if info.smart:
             # Made a smart playlist on the server meanwhile: read only from now on.
             self.row.smart = True
@@ -1199,12 +1271,18 @@ class Round:
             db.rollback()
             snapshot = self._snapshot(playlist_id)
             if snapshot is None:
-                # Deleted meanwhile: the next sync takes it off the server.
+                # Deleted meanwhile (the next sync takes it off the server), or moved to another server meanwhile (the
+                # next sync takes it in its new part).
                 db.rollback()
                 mark(db, playlist_id, at_once=True)
+                if self.role_changed:
+                    self.row.due_at, self.row.state = clock.now(), PENDING
                 db.commit()
                 return
             plan = self._plan(snapshot, info, remote)
+            if self.held_out:
+                # Tracks only in the mirror: out of everything this sync writes.
+                remote = [entry for entry in remote if entry.track not in self.held_out]
             # The reading ends before the writing begins.
             db.rollback()
             if self._apply(playlist_id, snapshot, info, remote, plan):
@@ -1281,12 +1359,26 @@ class Round:
                 missing |= set(lost)
                 loss = len(lost)
         held = (unknown - set(lost)) | held_back | missing
+        local_entries = [entry for entry in snapshot.entries if entry[0] not in held]
         merged = merge.merge(
-            [kept for kept in base if kept.track not in held],
-            [entry for entry in snapshot.entries if entry[0] not in held],
+            [kept for kept in base if kept.track not in held], local_entries,
             [(entry.track, entry.item) for entry in remote],
             remote_order_counts=writing is None, remote_unwritten=unwritten,
         )
+        back: mirrors.Back | None = None
+        if self.mirror:
+            # Tracks put into the mirror: entries where the source has them (by a sure step), else only there.
+            back = mirrors.back(self, int(row.playlist_id or 0), remote, merged.local_adds)
+            if back.extras or back.links:
+                extra = {entry.track for entry in back.extras}
+                self.held_out |= extra
+                remote = [entry for entry in remote if entry.track not in extra]
+                local_entries = [*local_entries, *((track, entry) for entry, (track, _how) in back.links.items())]
+                merged = merge.merge(
+                    [kept for kept in base if kept.track not in held and kept.track not in extra], local_entries,
+                    [(entry.track, entry.item) for entry in remote],
+                    remote_order_counts=writing is None, remote_unwritten=unwritten,
+                )
         stored = writing if writing is not None else (row.base if isinstance(row.base, dict) else {})
         base_title = stored.get("title") if isinstance(stored.get("title"), str) else None
         remote_title = info.title
@@ -1298,7 +1390,8 @@ class Round:
         return Plan(merged=merged, title=title, local_order=local_order, held=held,
                     base_local={kept.track: kept.local for kept in base},
                     unhint={track for track in snapshot.hints if track in remote_tracks},
-                    missing={track for track in missing if snapshot.hints.get(track) != HINT_MISSING}, loss=loss)
+                    missing={track for track in missing if snapshot.hints.get(track) != HINT_MISSING}, loss=loss,
+                    back=back, remote=list(remote))
 
     def _new_items(self, playlist_id: int, by_track: dict[int, Item], tracks: Sequence[int]) -> list[PlaylistItem]:
         """Entries for tracks that came through the server: what the catalogue says of them, else what the server
@@ -1335,10 +1428,14 @@ class Round:
         being read as changes made on the server."""
         from . import playlists
 
+        if self.mirror:
+            return self._apply_mirror(playlist_id, snapshot, info, remote, plan)
         db = self.db
         merged = plan.merged
         changes = bool(merged.local_adds or merged.local_removes or plan.local_order != snapshot.tracks
                        or plan.title != snapshot.name or plan.unhint or plan.missing)
+        entries_change = bool(merged.local_adds or merged.local_removes or plan.local_order != snapshot.tracks
+                              or plan.title != snapshot.name)
         needs_write = merged.order != [entry.track for entry in remote] or plan.title != info.title
         now = clock.now()
         new: list[PlaylistItem] = []
@@ -1391,6 +1488,10 @@ class Round:
         db.commit()
         if changes:
             publish_items(db, playlist_id, new, removed=[item.id for item in going], changed=changed)
+            if entries_change:
+                # The mirrors get the change.
+                mark(db, playlist_id, but=self.ident)
+                db.commit()
             if self.unknown:
                 from . import catalog
 
@@ -1400,6 +1501,30 @@ class Round:
         if plan.missing:
             logger.info("Entries the server lost kept in nexmix playlist=%s count=%s at_once=%s", playlist_id,
                         len(plan.missing), plan.loss)
+        return True
+
+    def _apply_mirror(self, playlist_id: int, snapshot: Snapshot, info: Listed, remote: list[Item],
+                      plan: Plan) -> bool:
+        """A mirror's side of the merge (``mirrors.apply``), and the write to come, kept as for the source."""
+        db = self.db
+        held, ids = mirrors.apply(self, playlist_id, snapshot, plan)
+        if not held:
+            return False
+        merged = plan.merged
+        needs_write = merged.order != [entry.track for entry in remote] or plan.title != info.title
+        db.rollback()
+        row = self.fresh_row()
+        if plan.loss:
+            row.note = {**(row.note if isinstance(row.note, dict) else {}),
+                        "loss": {"count": plan.loss, "at": clock.now().isoformat()}}
+        row.writing = self._open(plan, ids, remote, info.title) if needs_write else None
+        remote_tracks = {entry.track for entry in remote}
+        keep = set(merged.order) - remote_tracks
+        records = row.refused if isinstance(row.refused, dict) else {}
+        if any(_maybe(key) not in keep for key in records):
+            row.refused = {key: value for key, value in records.items() if _maybe(key) in keep} or None
+        self.entry_ids = ids
+        db.commit()
         return True
 
     def _open(self, plan: Plan, ids: dict[int, int], read: list[Item], from_title: str, *,
@@ -1559,7 +1684,10 @@ class Round:
             self._done(info, recent=self._recent(info))
         _remember_title(self.server_id, key, plan.title)
         if given_up and row.playlist_id is not None:
-            self._hint(row.playlist_id, given_up)
+            if self.mirror:
+                mirrors.refused(self.db, self.ident, given_up)
+            else:
+                self._hint(row.playlist_id, given_up)
 
     def _refused(self, row: ServerPlaylist, tracks: list[int]) -> list[int]:
         """Counts the tries of the tracks the server refused just now and says when to offer each again; returns the
@@ -1704,14 +1832,16 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
     album_of: dict[int, int] = {}
     for row in db.execute(select(CatalogTrack.id, CatalogTrack.title, CatalogTrack.album_id, CatalogTrack.artist,
                                  CatalogTrack.artist_id, CatalogTrack.duration, CatalogTrack.song_key,
-                                 CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track).where(
+                                 CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track, CatalogTrack.number,
+                                 CatalogTrack.disc).where(
             CatalogTrack.server_id == server_id, CatalogTrack.generation == generation)):
         album_title, album_artist = albums.get(row.album_id, ("", row.artist_id))
         candidates.append(match.Candidate(
             id=int(row.id), title=str(row.title or ""), album=str(album_title or ""),
             album_artist=str(artists.get(album_artist) or artists.get(row.artist_id) or ""),
             artist=str(row.artist or ""), duration=int(row.duration or 0), song_key=str(row.song_key or ""),
-            shown=bool(row.shown), guid=str(row.guid or ""), mbid=str(row.mbid_track or "")))
+            shown=bool(row.shown), guid=str(row.guid or ""), mbid=str(row.mbid_track or ""),
+            number=int(row.number) if row.number else None, disc=int(row.disc) if row.disc else None))
         album_of[int(row.id)] = int(row.album_id or 0)
     found = _Catalogue(candidates, album_of)
     _whole[server_id] = (generation, found)
@@ -1870,8 +2000,8 @@ def take_in(db: Session, server: MediaServer, listed: list[Listed], now_server: 
             row.due_at = now
 
     def here(row: ServerPlaylist) -> bool:
-        """The copy of a playlist whose source this server is."""
-        return row.playlist_id is not None and sources_of.get(row.playlist_id) == server.id
+        """The copy of a playlist whose source this server is, or a mirror."""
+        return row.playlist_id is not None and (sources_of.get(row.playlist_id) == server.id or bool(row.mirror))
 
     for one in listed:
         seen_keys.add(one.key)

@@ -8,12 +8,14 @@
  * "sync now"; a note says when it was sorted in Plex and here at the same time, with the undo that takes Plex's order.
  * A smart playlist of Plex is only shown.
  */
-import { Share2, Trash2, Users } from 'lucide-react'
+import { ArrowRightLeft, Copy, Share2, Trash2, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError } from '../api/client'
+import type { Mirror } from '../api/mirrors'
+import type { MediaServer } from '../api/servers'
 import { applyChange, playlistsApi, type Change, type Entry, type Playlist, type PlexSync } from '../api/playlists'
 import { Mosaic } from '../components/Mosaic'
 import { People } from '../components/People'
@@ -31,6 +33,8 @@ import { newest } from '../lib/newest'
 import { iso } from '../lib/say'
 import { useAuth } from '../state/auth'
 import { check as checkPreview, onProblem, stop as stopPreview } from '../lib/preview'
+import { CopyDialog, type CopyMode } from './editor/CopyDialog'
+import { MirrorChips, MirrorDialog, MirrorNotes, SourceChip } from './editor/MirrorStrip'
 import { MoodDialog } from './editor/MoodDialog'
 import { SearchColumn, type InList } from './editor/SearchColumn'
 import { InviteDialog } from './editor/InviteDialog'
@@ -40,6 +44,16 @@ import { TrackList } from './editor/TrackList'
 
 
 type Toast = { text: string; undo?: () => Promise<void> }
+
+/** Where a playlist is and where it could go: its mirrors, the servers it could move to (ready, keeping playlists, not
+ * its source), the ones it could be copied to (not mirrored there already), and the name of its source. */
+function placesOf(playlist: Playlist | null, servers: MediaServer[] | null, source: MediaServer | null) {
+  const mirrors = playlist?.mirrors ?? []
+  const elsewhere = (servers ?? []).filter((one) => one.active && one.ready && one.capabilities.playlists && one.id !== playlist?.server)
+  const copyTargets = elsewhere.filter((one) => !mirrors.some((mirror) => mirror.server === one.id && mirror.state !== 'gone'))
+  const sourceName = source ? source.name || kindName(source.kind) : serverName(playlist?.plex?.kind)
+  return { mirrors, elsewhere, copyTargets, sourceName }
+}
 
 const codeOf = (error: unknown) => (error instanceof ApiError ? error.code : 'internal_error')
 
@@ -58,6 +72,7 @@ export function PlaylistEditor() {
   const servers = useServers()
   const source = servers?.find((one) => one.id === playlist?.server) ?? null
   const noMoods = source && !source.capabilities.moods ? t('editor.noMoods', { kind: kindName(source.kind) }) : null
+  const { mirrors, elsewhere, copyTargets, sourceName } = placesOf(playlist, servers, source)
   const [missing, setMissing] = useState<string | null>(null)
   const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<Toast | null>(null)
@@ -78,6 +93,8 @@ export function PlaylistEditor() {
   const { ask, dialog } = useConfirm()
   const [seed, setSeed] = useState<Seed | null>(null)
   const [filling, setFilling] = useState(false)
+  const [copying, setCopying] = useState<CopyMode | null>(null)
+  const [mirrorOpen, setMirrorOpen] = useState<number | null>(null)
 
   // Listening in: whether it is on, a word when a preview could not play, and silence when the page goes.
   useEffect(() => {
@@ -197,6 +214,11 @@ export function PlaylistEditor() {
         const data = parse(event) as { guests?: number | null }
         if (guestOrder.take(guestOrder.ticket()) && current.current) show({ ...current.current, guests: data.guests ?? null })
         setGuestsSeen((value) => value + 1)
+      })
+      source.addEventListener('mirrors', (event) => {
+        const now = current.current
+        const data = parse(event) as { mirrors?: Mirror[] }
+        if (now && Array.isArray(data.mirrors)) show({ ...now, mirrors: data.mirrors })
       })
       source.addEventListener('plex', (event) => {
         const now = current.current
@@ -463,6 +485,12 @@ export function PlaylistEditor() {
               )}
               {playlist.plex && <SyncLine plex={playlist.plex} onNow={() => void syncNow()} onRetry={() => void syncNow()} working={syncing} canSync={access === 'owner' || access === 'operator' || access === 'edit'} />}
             </div>
+            {mirrors.length > 0 && source && (
+              <div className="moodbar" data-testid="server-badges">
+                <SourceChip name={source.name} kind={source.kind} />
+                <MirrorChips mirrors={mirrors} onOpen={setMirrorOpen} />
+              </div>
+            )}
             {playlist.moods.length > 0 && (
               <div className="moodbar">
                 {playlist.moods.map((mood) => (
@@ -491,6 +519,18 @@ export function PlaylistEditor() {
                     )}
                   </button>
                 )}
+                {canManage && !smart && copyTargets.length > 0 && (
+                  <button type="button" className="btn" onClick={() => setCopying('copy')} data-testid="copy-open">
+                    <Copy aria-hidden />
+                    {t('mirror.copyOpen')}
+                  </button>
+                )}
+                {canManage && !smart && elsewhere.length > 0 && (
+                  <button type="button" className="btn" onClick={() => setCopying('move')} data-testid="move-open">
+                    <ArrowRightLeft aria-hidden />
+                    {t('mirror.moveOpen')}
+                  </button>
+                )}
                 {canManage && <span className="grow" aria-hidden />}
                 {canManage && (
                   <button type="button" className="round" title={t('editor.share')} aria-label={t('editor.share')} onClick={() => setSharing(true)}>
@@ -511,7 +551,9 @@ export function PlaylistEditor() {
                     onClick={() =>
                       ask({
                         title: t('editor.deleteTitle'),
-                        text: playlist.plex && playlist.plex.state !== 'off' ? t('sync.deleteText', { name: iso(playlist.name), days: 30, server: serverName(playlist.plex.kind) }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 }),
+                        text:
+                          (playlist.plex && playlist.plex.state !== 'off' ? t('sync.deleteText', { name: iso(playlist.name), days: 30, server: serverName(playlist.plex.kind) }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 })) +
+                          (mirrors.length ? ' ' + t('mirror.deleteMirrors', { servers: mirrors.map((one) => one.name || kindName(one.kind)).join(', ') }) : ''),
                         confirm: t('editor.deleteConfirm'),
                         danger: false,
                         run: async () => {
@@ -578,9 +620,13 @@ export function PlaylistEditor() {
           </div>
         </div>
         <div className="col-body soft-scroll" ref={list}>
+          <div className="mirrornotes">
+            <MirrorNotes playlistId={playlistId} name={playlist.name} mirrors={mirrors} source={playlist.server ?? null} canEdit={canEdit} canManage={canManage} onChanged={() => void reload()} onToast={(text) => setToast({ text })} />
+          </div>
           <TrackList
             items={playlist.items}
             server={serverName(playlist.plex?.kind)}
+            mirrorNames={Object.fromEntries(mirrors.map((one) => [one.server, one.name || kindName(one.kind)]))}
             canEdit={canEdit}
             fresh={fresh}
             focusEntry={focusEntry}
@@ -629,6 +675,33 @@ export function PlaylistEditor() {
           onClose={() => setInviting(false)}
           onChanged={(guests) => current.current && show({ ...current.current, guests })}
           onToast={(text) => setToast({ text })}
+        />
+      )}
+      {copying && (
+        <CopyDialog
+          playlistId={playlistId}
+          name={playlist.name}
+          mode={copying}
+          targets={copying === 'copy' ? copyTargets : elsewhere}
+          sourceName={sourceName}
+          onClose={() => setCopying(null)}
+          onDone={(text, copy) => {
+            setCopying(null)
+            setToast({ text })
+            if (copy) navigate(`/playlists/${copy}`)
+            else void reload()
+          }}
+        />
+      )}
+      {mirrorOpen !== null && mirrors.find((one) => one.server === mirrorOpen) && (
+        <MirrorDialog
+          playlistId={playlistId}
+          mirror={mirrors.find((one) => one.server === mirrorOpen) as Mirror}
+          items={playlist.items}
+          canEdit={canEdit}
+          canManage={canManage}
+          onClose={() => setMirrorOpen(null)}
+          onChanged={() => void reload()}
         />
       )}
       {sharing && <ShareDialog playlistId={playlistId} name={playlist.name} onClose={() => setSharing(false)} onChanged={(count) => current.current && show({ ...current.current, shares: count })} />}

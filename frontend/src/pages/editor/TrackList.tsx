@@ -44,10 +44,13 @@ export function TrackList({
   onSimilar,
   empty,
   server = 'Plex',
+  mirrorNames = {},
 }: {
   items: Entry[]
   /** The name of the playlist's server, for the hints of entries it lost or refused. */
   server?: string
+  /** The names of the servers of the playlist's mirrors: an entry without a track on one says so. */
+  mirrorNames?: Record<number, string>
   canEdit: boolean
   fresh: Set<number>
   focusEntry: number | null
@@ -221,6 +224,11 @@ export function TrackList({
                     ? t('editor.missing')
                     : trackLine(entry.artist, entry.album, entry.year)}
               </div>
+              {(entry.absent ?? []).length > 0 && (
+                <div className="s absent" data-testid="entry-absent">
+                  {t('mirror.notOn', { server: (entry.absent ?? []).map((one) => mirrorNames[one] ?? '').filter(Boolean).join(', ') })}
+                </div>
+              )}
             </div>
             <div className="acts">
               {name && (

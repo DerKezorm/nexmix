@@ -787,6 +787,73 @@
     border-width: 2px;
     vertical-align: -1px;
   }
+  /* Mirrors: the badges of a playlist's servers, the count and the rows of a preview, the search for a track. */
+  .chip.source {
+    background: var(--accent-soft);
+    color: var(--accent-2);
+  }
+  button.chip.mirror {
+    cursor: pointer;
+  }
+  .chip.mirror svg {
+    width: 13px;
+    height: 13px;
+  }
+  .chip.mirror.error,
+  .chip.mirror.gone {
+    color: var(--bad);
+  }
+  .chip.mirror.waiting,
+  .chip.mirror.off {
+    color: var(--warn);
+  }
+  .trow .s.absent {
+    color: var(--warn);
+  }
+  .previewcount {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: baseline;
+    margin: 0 0 8px;
+  }
+  .previewcount span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .previewrows {
+    max-height: min(46vh, 420px);
+    overflow-y: auto;
+  }
+  .prow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .prow:last-child {
+    border-bottom: 0;
+  }
+  .prow small {
+    display: block;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .prow .chip {
+    margin-top: 4px;
+  }
+  .picker {
+    flex-basis: 100%;
+    padding: 8px 0 2px;
+  }
+  .mirrornotes {
+    padding: 0 14px;
+  }
+  .mirrornotes:empty {
+    display: none;
+  }
   /* A choice in a card (a server, a library): a row with its name, a line below and its button. */
   .pick {
     display: flex;

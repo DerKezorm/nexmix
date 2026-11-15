@@ -240,7 +240,9 @@ class FakePlex:
             keys = path[len("/library/metadata/"):].split(",")
             if not all(key.isdigit() for key in keys):
                 return httpx.Response(400, text="bad")
-            found = [self.entry(self.items[int(key)], full=True) for key in keys if int(key) in self.items]
+            # The agents' ids only when asked (a test that puts its own ``entry`` in place knows nothing of them).
+            extra = {"guids": True} if params.get("includeGuids") == "1" else {}
+            found = [self.entry(self.items[int(key)], full=True, **extra) for key in keys if int(key) in self.items]
             if not found:
                 return httpx.Response(404, text="<html>404</html>", headers={"content-type": "text/html"})
             return _json({"MediaContainer": {"size": len(found), "Metadata": found}})
@@ -295,8 +297,9 @@ class FakePlex:
                        for index, name in enumerate(values) if name in used]
         return _json({"MediaContainer": {"size": len(directories), "Directory": directories}})
 
-    def entry(self, item: Item, *, full: bool = False, light: bool = False) -> dict[str, Any]:
-        """An entry as Plex writes it: a list leaves moods and styles out, the many-at-once answer has them."""
+    def entry(self, item: Item, *, full: bool = False, light: bool = False, guids: bool = False) -> dict[str, Any]:
+        """An entry as Plex writes it: a list leaves moods and styles out, the many-at-once answer has them, and the
+        agents' ids when asked (``guids``)."""
         out: dict[str, Any] = {"ratingKey": str(item.key), "key": f"/library/metadata/{item.key}/children",
                                "type": {ARTIST: "artist", ALBUM: "album", TRACK: "track"}[item.kind],
                                "title": item.title, "addedAt": item.added}
@@ -329,6 +332,9 @@ class FakePlex:
                 out["originalTitle"] = item.original
             if full and item.analysed:
                 out["musicAnalysisVersion"] = "1"
+            if guids:
+                out["Guid"] = [{"id": f"plex://track/{item.key:024x}"}, *([{"id": f"mbid://{item.mbid}"}]
+                                                                           if item.mbid else [])]
         if light:
             for name in ("thumb", "parentThumb", "key", "Media"):
                 out.pop(name, None)

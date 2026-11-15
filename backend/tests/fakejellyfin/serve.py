@@ -6,6 +6,8 @@ nexmix is pointed at it by its address (``http://127.0.0.1:<port>``), as an oper
 /fake/confirm`` confirms the newest Quick Connect code as the made-up administrator, as the operator would in
 Jellyfin's profile; ``GET /fake/sound`` says which previews began; ``POST /fake/list-add`` ``{"playlist", "track"}`` adds
 a track to a playlist (by their names) as a Jellyfin app would, ``GET /fake/list?name=`` lists a playlist's tracks.
+``POST /fake/twin`` puts the made-up music of the stand-in Plex in here too (but one track), ``POST /fake/untwin`` takes
+it out again with every playlist.
 Everything else goes to ``FakeJellyfin.handle``.
 """
 
@@ -17,10 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
+from ..fakeplex.library import made_up_library
 from . import FakeJellyfin
+from .twins import LEFT_OUT, twin, untwin
 
 
 def make_handler(fake: FakeJellyfin) -> type[BaseHTTPRequestHandler]:
+    #: The twins of the stand-in Plex's tracks, while they are here (``/fake/twin``).
+    twins: dict[int, str] = {}
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
             return
@@ -34,6 +41,19 @@ def make_handler(fake: FakeJellyfin) -> type[BaseHTTPRequestHandler]:
                     code = fake.latest_code()
                     done = bool(code) and fake.confirm(code or "")
                 return self._send(200 if done else 404, json.dumps({"confirmed": done}).encode(), "application/json")
+            if path == "/fake/twin":
+                # The made-up music of the stand-in Plex in here too, but a few tracks (``twins.py``).
+                with fake.lock:
+                    if not twins:
+                        twins.update(twin(fake, made_up_library(), LEFT_OUT))
+                return self._send(200, json.dumps({"tracks": len(twins)}).encode(), "application/json")
+            if path == "/fake/untwin":
+                with fake.lock:
+                    untwin(fake, twins)
+                    twins.clear()
+                    for ident in [one.id for one in fake.lists.values()]:
+                        fake.list_delete(ident)
+                return self._send(200, b"{}", "application/json")
             if path == "/fake/sound":
                 return self._send(200, json.dumps({"starts": fake.starts}).encode(), "application/json")
             length = int(self.headers.get("content-length") or 0)

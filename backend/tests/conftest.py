@@ -50,6 +50,7 @@ from app.services import (  # noqa: E402
     jellyfin,
     jellyfin_link,
     jobs,
+    mirrors,
     notices,
     oidc_store,
     passkeys,
@@ -107,6 +108,7 @@ def clean_db(schema: None) -> Iterator[None]:
     plex_link.forget()
     jellyfin_link.forget()
     server_sync.forget()
+    mirrors.forget_asked()
     catalog.forget()
     covers.forget_all()
     catalog_view.forget()

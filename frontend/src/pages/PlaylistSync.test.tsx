@@ -307,7 +307,7 @@ describe('entries only in nexmix', () => {
     await open()
     const rows = [...document.querySelectorAll('[data-testid="track-row"] .s')].map((one) => plain(one.textContent))
     expect(rows[1]).toBe('Plex nimmt diesen Titel nicht an')
-    expect(rows[2]).toBe('Auf diesem Plex-Server nicht gefunden')
+    expect(rows[2]).toBe('Auf Plex nicht vorhanden')
     expect(rows[0]).not.toContain('Plex')
   })
 })

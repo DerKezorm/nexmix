@@ -104,7 +104,9 @@ unless another is named) and `capabilities` (`moods`, `sound`, `smart_playlists`
 token or an id of the server.
 
 `DELETE /api/v1/servers/{id}` (the operator, in a browser) lets go of a server: its token and its catalogue go, the
-server itself stays as it is, and the playlists that take their tracks from it wait for it in nexmix.
+server itself stays as it is, and its mirrors are forgotten (the playlists there stay as they are, nexmix no longer
+keeps them in step). While a playlist (not in the trash) takes its tracks from it the answer is `409
+server_is_source` with `count`: move them first, for instance with "take all over" and `disconnect` (below).
 
 Every media server has a catalogue of its own. The routes of the catalogue take `server` (an `id` of the list) and
 answer for that one; without it, for the first one connected. Track, album and artist ids are nexmix's own numbers,
@@ -230,6 +232,58 @@ everything else needs a session or a device token. A playlist the account may no
   a difference. Cards and the playlist carry `hidden`; the list carries `show_smart_playlists`, the account's choice
   (`PUT /api/v1/me/preferences`, off from the start) whether its overview shows the smart playlists of Plex. The list
   itself always has every playlist the account sees.
+
+### Mirrors, copying and moving: `/api/v1/playlists/{id}/mirrors`, `/api/v1/playlists/{id}/move`
+
+A playlist takes its tracks from one server (its source, `server`) and may be **mirrored** on others: a playlist
+there with the tracks of that server that stand for its entries, kept in step both ways like the source, each server
+with its own common state (no change goes back and forth). Entries belong to the source; on every mirror each entry
+has the track that stands for it there, found by `match` (`how`: `mbid`, `album`, `length`, `renamed`, all sure;
+`song` and `title` are only offered in a preview), chosen by hand (`hand`), left out on purpose (`skip`) or not found
+(`none`). An entry without a track there is not in the mirror and never counts as taken out there; its `absent` lists
+the servers of such mirrors. A track put into a mirror on its server is looked for in the source's library: found by
+a sure step it becomes an entry (`added_by_name` the server's kind), else it is listed at the mirror as `extras`
+("only in <server>"), neither taken over nor taken out until somebody decides. A mirror deleted on its server says
+`state` `gone`; the playlist stays. A mirror of a playlist in the trash rests until it is brought back; deleted for
+good, the playlist takes its mirrors from their servers too. Cards and the playlist carry `mirrors`.
+
+- `GET /{id}/mirrors` (whoever sees the playlist): `{"mirrors": [{"server", "kind", "name", "state" (`synced`,
+  `pending`, `waiting`, `error`, `gone`, `off`), "error", "synced_at", "absent" (entries without a track there),
+  "extras": [{"id", "title", "artist", "album", "duration"}]}]}`.
+- `POST /{id}/mirrors/preview` `{"server", "choices"}` (the owner and the operator): what copying or moving to the
+  server would find, nothing written: `entries`, `found`, `unsure`, `missing`, and `rows` for every entry not found or
+  found by an unsure step (by its `track`, the same track of several entries once, with `count`): `title`, `artist`,
+  `album`, `duration`, `how`, `found` (the track of the target, `{"track", "title", "artist", "album", "duration"}`,
+  or null), at most 2,000 (`more` says how many beyond). `choices` maps an entry's track to a track of the target
+  (`hand`) or null (`skip`); a track of another server is not taken. Search the target's catalogue for a choice with
+  `GET /api/v1/catalog/search?server=`.
+- `POST /{id}/mirrors` `{"server", "choices", "once"}` (the owner and the operator, `201`): a mirror on the server,
+  synced at once (`409 already_mirrored`, `same_server`, `smart_stays`: a smart playlist stays on its own server,
+  `in_trash`, `server_not_ready`). With `"once": true` instead a new playlist with the server as its source and the
+  entries found there, in order, each still saying who put it in, no tie to this one; `playlist` names it.
+- `POST /{id}/move` `{"server", "choices", "old"}` (the owner and the operator): the server becomes the source. Its
+  entries take the server's tracks; an entry without one keeps its own and says `plex_hint` `elsewhere` (it stays on
+  the server before). The copy on the server before stays a mirror (`old` `keep`, the default) or is deleted there
+  (`delete`). A mirror already there becomes the source with its state and its choices. Guests, shares, the trash and
+  the suggestions follow the new source. The answer has `found` of `entries`.
+- `DELETE /{id}/mirrors/{server}` (the owner and the operator): lets go of a mirror; the playlist there stays as it
+  is. `POST /{id}/mirrors/{server}/remake`: a mirror deleted on its server is made there anew.
+- `PUT /{id}/mirrors/{server}/entries/{entry}` `{"track"}` (whoever may change the playlist): the track of the
+  mirror's server that stands for the entry (`409 track_taken` when another entry has it there), null to leave the
+  entry out of that mirror.
+- `POST /{id}/mirrors/{server}/extras/{extra}/take` `{"track"}`: a track only in the mirror taken over as a track of
+  the source, a new entry at the end standing for the mirror's track (the answer is the change, as for `items`).
+  `DELETE /{id}/mirrors/{server}/extras/{extra}`: dropped; it is taken out of the mirror at its next sync.
+
+**Take all over** (the operator, in a browser): `POST /api/v1/servers/{id}/transfer/preview` `{"mode", "source",
+"choices"}` is the same preview over every playlist of the other servers (`source`: of that one) not in the trash,
+with `playlists` (how many) and `smart` (smart playlists stay where they are); `mode` `mirror` leaves out the ones
+mirrored there already. `POST /api/v1/servers/{id}/transfer` `{"mode", "old", "choices", "source", "disconnect"}`
+(`202`) starts it in the background, one playlist after another between the syncs; `disconnect` (with `mode` `move`)
+lets go of that server once none of its playlists is left on it. `GET /api/v1/servers/{id}/transfer` says how it
+stands (`state` `running`, `done`, `stopped`, `failed`; `total`, `done`, `skipped`; `error` `still_source` when the
+server could not be let go of), `DELETE` stops it after the playlist under way. One runs at a time (`409
+transfer_running`); after a restart it goes on where it was.
 
 ### Guests: `/api/v1/playlists/{id}/invite`, `/api/v1/join/{code}`, `/api/v1/guest`
 

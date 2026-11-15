@@ -44,11 +44,11 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: 'list',
-  // Every test in Chromium; the playlists, the suggestions, the guests and Jellyfin also in Firefox and WebKit.
+  // Every test in Chromium; the playlists, the suggestions, the guests, Jellyfin and the mirrors also in Firefox and WebKit.
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
-    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests|jellyfin).spec.ts/ },
-    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests|jellyfin).spec.ts/ },
+    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors).spec.ts/ },
+    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors).spec.ts/ },
   ],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

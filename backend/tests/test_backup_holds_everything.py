@@ -31,13 +31,13 @@ from .test_guests_and_plex import invite, phone
 KEPT_TABLES = {
     "settings", "users", "oidc_providers", "oidc_links", "passkeys", "invites", "api_keys", "devices", "push_devices",
     "media_servers", "server_items", "playlists", "playlist_items", "playlist_shares", "hidden_suggestions",
-    "guest_invites", "guests", "guest_entries", "server_playlists", "hidden_playlists",
+    "guest_invites", "guests", "guest_entries", "server_playlists", "hidden_playlists", "mirror_items", "mirror_extras",
 }
 #: Tables a backup may carry but need not: made again (the catalogue), or worth nothing after a restore (sign-ins,
 #: one-time links, the queue of work).
 FETCHED_OR_PASSING = {
     "artists", "albums", "tracks", "tags", "track_tags", "album_tags", "artist_tags", "sync_runs", "auth_sessions",
-    "password_resets", "email_confirmations", "jobs",
+    "password_resets", "email_confirmations", "jobs", "transfers",
 }
 
 

@@ -229,6 +229,16 @@ TOKEN_ROUTES = {
     # Hiding a playlist from the own overview, and showing it again.
     ("PUT", "/api/v1/playlists/{playlist_id}/hidden"),
     ("DELETE", "/api/v1/playlists/{playlist_id}/hidden"),
+    # Mirrors on other servers: reading them, the preview, copying and moving, choices by hand, tracks only there.
+    ("GET", "/api/v1/playlists/{playlist_id}/mirrors"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/preview"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors"),
+    ("POST", "/api/v1/playlists/{playlist_id}/move"),
+    ("DELETE", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake"),
+    ("PUT", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}"),
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take"),
+    ("DELETE", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}"),
 }
 
 #: The routes that only read and that a program with an API key reaches too (as the browser and a device do). A route
@@ -249,6 +259,8 @@ READ_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/v1/playlists"),
     ("GET", "/api/v1/playlists/{playlist_id}"),
     ("GET", "/api/v1/playlists/{playlist_id}/events"),
+    # A playlist's mirrors on other servers.
+    ("GET", "/api/v1/playlists/{playlist_id}/mirrors"),
     # Suggestions, filling by mood, the two voices, and what the account asked not to see again.
     ("GET", "/api/v1/suggestions"),
     ("GET", "/api/v1/suggestions/mood"),

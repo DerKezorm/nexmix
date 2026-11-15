@@ -43,7 +43,7 @@ from ..models import (
     PlaylistItem,
     PlaylistShare,
 )
-from . import media, merge, sync
+from . import media, merge, mirrors, sync
 from .events import hub, playlist_topic
 
 logger = logging.getLogger("nexmix.playlists")
@@ -376,6 +376,8 @@ def card(db: Session, playlist: Playlist, level: str) -> dict[str, Any]:
         "plex": plex,
         # The server the playlist takes its tracks from (None: none connected yet).
         "server": playlist.source_server_id,
+        # Its mirrors on other servers (``services/mirrors.py``).
+        "mirrors": mirrors.view(db, playlist.id),
     }
 
 
@@ -387,7 +389,9 @@ def detail(db: Session, playlist: Playlist, level: str) -> dict[str, Any]:
     count = view["count"]
     view.update(summary(db, items, known, people, moods=True, server_id=playlist.source_server_id))
     view["count"] = count
-    view["items"] = [item_view(item, known.get(item.track_id), people) for item in items]
+    absent = mirrors.absent_by_entry(db, playlist.id)
+    view["items"] = [{**item_view(item, known.get(item.track_id), people), "absent": absent.get(item.id, [])}
+                     for item in items]
     return view
 
 
@@ -551,8 +555,11 @@ def purge_one(db: Session, account: Account, playlist_id: int) -> None:
 def purge(db: Session, now: datetime | None = None) -> int:
     """What lay in the trash longer than ``TRASH_DAYS`` goes for good; entries taken out longer than a day ago too."""
     moment = now or clock.now()
-    gone = db.execute(delete(Playlist).where(Playlist.deleted_at.is_not(None),
-                                             Playlist.deleted_at <= moment - timedelta(days=TRASH_DAYS))).rowcount
+    old = Playlist.deleted_at.is_not(None) & (Playlist.deleted_at <= moment - timedelta(days=TRASH_DAYS))
+    # Their copies left on servers (the mirrors rest while a playlist is in the trash) go from there too.
+    for playlist_id in list(db.scalars(select(Playlist.id).where(old))):
+        sync.dropping(db, playlist_id)
+    gone = db.execute(delete(Playlist).where(old)).rowcount
     db.execute(delete(PlaylistItem).where(PlaylistItem.removed_at.is_not(None),
                                           PlaylistItem.removed_at <= moment - REMOVED_KEEP))
     db.commit()

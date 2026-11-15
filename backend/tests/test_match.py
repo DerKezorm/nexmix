@@ -24,26 +24,35 @@ WANTED = Wanted(title="Rafters", artist="Lumen Crane", album="Attic Tapes", dura
 
 def test_each_step_in_its_order() -> None:
     # Every step has a candidate of its own; taking away the winner, the next step decides.
+    shape = ((1, 1, 200_000), (1, 2, 180_000), (1, 3, 240_000), (1, 4, 150_000))
+    wanted = Wanted(title="Rafters", artist="Lumen Crane", album="Attic Tapes", duration=200_000,
+                    guid="plex://track/abc", mbid="mb-1", album_artist="Lumen Crane", number=1, disc=1, shape=shape)
     every = [
         candidate(1, guid="plex://track/abc", title="Something Else", album="Other", artist="Nobody"),
         candidate(2, mbid="mb-1", title="Something Else", album="Other", artist="Nobody"),
         candidate(3),
         candidate(4, album="Live at the Barn", duration=201_000),
-        candidate(5, album="Live at the Barn", artist="Lumen Crane", duration=260_000,
+        # The album under another name: its places hold tracks of the same lengths.
+        candidate(5, title="Rafters (Barn Mix)", album="Barn Sessions", number=1, disc=1, duration=201_000),
+        candidate(6, title="Second", album="Barn Sessions", number=2, disc=1, duration=181_000),
+        candidate(7, title="Third", album="Barn Sessions", number=3, disc=1, duration=239_000),
+        candidate(8, album="Live at the Barn", artist="Lumen Crane", duration=260_000,
                   song_key=songs.song_key(0, "Rafters", "Lumen Crane")),
-        candidate(6, album="Elsewhere", artist="A Choir", duration=201_500),
+        candidate(9, album="Elsewhere", artist="A Choir", duration=201_500),
     ]
     order = []
-    used: set[int] = set()
+    used: set[int] = {6, 7}
     finder = match.Finder(every)
     for _turn in range(len(every) + 1):
-        found = finder.find(WANTED, used)
+        found = finder.find(wanted, used)
         if found is None:
             break
         order.append((found.track.id, found.how))
         used.add(found.track.id)
-    assert order == [(1, "guid"), (2, "mbid"), (3, "album"), (4, "length"), (5, "song"), (6, "title")]
-    assert [match.Found(every[0], how).sure for how in match.STEPS] == [True, True, True, True, False, False]
+    assert order == [(1, "guid"), (2, "mbid"), (3, "album"), (4, "length"), (5, "renamed"), (8, "song"),
+                     (9, "title")]
+    assert [match.Found(every[0], how).sure for how in match.STEPS] == [True, True, True, True, True, True, False,
+                                                                        False]
 
 
 def test_a_guid_only_its_own_server_knows_is_no_proof() -> None:
@@ -122,8 +131,8 @@ def test_never_one_track_for_two_entries_in_random_catalogues(seed: int) -> None
             assert hit.track.guid == want.guid and match.lasting(want.guid)
         elif hit.how == "mbid":
             assert hit.track.mbid == want.mbid
-        elif hit.how in ("album", "length", "title"):
-            assert songs.norm(hit.track.title) == songs.norm(want.title)
+        elif hit.how in ("album", "edition", "length", "title"):
+            assert match.title_key(hit.track.title) == match.title_key(want.title)
             limit = match.TITLE_TOLERANCE if hit.how == "title" else match.TOLERANCE
             if hit.how != "album":
                 assert abs(hit.track.duration - want.duration) <= limit

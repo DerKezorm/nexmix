@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from ..deps import DbSession, OperatorAccount, session_of
 from ..errors import error
 from ..models import SERVER_JELLYFIN, MediaServer
-from ..services import catalog, jellyfin_link, media, sync
+from ..services import catalog, jellyfin_link, media, mirrors, sync
 from ..services.jellyfin import JellyfinError, Library, User
 
 logger = logging.getLogger("nexmix.jellyfin")
@@ -218,8 +218,12 @@ def sync_playlists(server_id: ServerId, _operator: OperatorAccount, db: DbSessio
 
 
 @router.delete("/{server_id}", status_code=204,
-               summary="Disconnect a Jellyfin server: its token and its catalogue go; Jellyfin itself stays as it is")
+               summary="Disconnect a Jellyfin server: its token and its catalogue go, its mirrors are forgotten; "
+                       "Jellyfin itself stays as it is. Refused (409 server_is_source) while a playlist takes its "
+                       "tracks from it")
 def disconnect(server_id: ServerId, _operator: OperatorAccount, db: DbSession) -> Response:
-    jellyfin_link.rest(db, _row(db, server_id))
+    row = _row(db, server_id)
+    mirrors.may_let_go(db, row)
+    mirrors.disconnect(db, row)
     db.commit()
     return Response(status_code=204)

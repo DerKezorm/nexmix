@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from ..deps import DbSession, OperatorAccount, session_of
 from ..errors import error
 from ..models import SERVER_PLEX, MediaServer
-from ..services import catalog, media, plex_link, sync
+from ..services import catalog, media, mirrors, plex_link, sync
 from ..services.plex import PlexError, Section
 
 logger = logging.getLogger("nexmix.plex")
@@ -179,8 +179,13 @@ def choose_library(body: LibraryChoice, _operator: OperatorAccount, db: DbSessio
 
 
 @router.delete("", status_code=204,
-               summary="Disconnect Plex: the token and the catalogue go; Plex itself stays as it is")
+               summary="Disconnect Plex: the token and the catalogue go, its mirrors are forgotten; Plex itself "
+                       "stays as it is. Refused (409 server_is_source) while a playlist takes its tracks from it")
 def disconnect(_operator: OperatorAccount, db: DbSession) -> Response:
+    row = plex_link.current(db)
+    if row is not None:
+        mirrors.may_let_go(db, row)
+        mirrors.forget_server(db, row.id)
     plex_link.disconnect(db)
     db.commit()
     return Response(status_code=204)

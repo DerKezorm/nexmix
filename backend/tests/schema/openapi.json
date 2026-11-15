@@ -202,6 +202,57 @@
         "title": "Choice",
         "type": "object"
       },
+      "ChoiceIn": {
+        "properties": {
+          "track": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track"
+          }
+        },
+        "title": "ChoiceIn",
+        "type": "object"
+      },
+      "ChoicesIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "server": {
+            "maximum": 1000000000.0,
+            "minimum": 1.0,
+            "title": "Server",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "ChoicesIn",
+        "type": "object"
+      },
       "CodeIn": {
         "properties": {
           "code": {
@@ -225,6 +276,43 @@
           "code"
         ],
         "title": "CodeIn",
+        "type": "object"
+      },
+      "CopyIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "once": {
+            "default": false,
+            "title": "Once",
+            "type": "boolean"
+          },
+          "server": {
+            "maximum": 1000000000.0,
+            "minimum": 1.0,
+            "title": "Server",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "CopyIn",
         "type": "object"
       },
       "DeviceOut": {
@@ -681,34 +769,6 @@
           "endpoint"
         ],
         "title": "LookupIn",
-        "type": "object"
-      },
-      "MoveIn": {
-        "properties": {
-          "after": {
-            "anyOf": [
-              {
-                "maximum": 4.611686018427388e+18,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "After"
-          },
-          "entry": {
-            "maximum": 4.611686018427388e+18,
-            "minimum": 1.0,
-            "title": "Entry",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "entry"
-        ],
-        "title": "MoveIn",
         "type": "object"
       },
       "NewPasswordIn": {
@@ -1274,6 +1334,21 @@
         "title": "TakeAddressIn",
         "type": "object"
       },
+      "TakeIn": {
+        "properties": {
+          "track": {
+            "maximum": 1000000000000.0,
+            "minimum": 1.0,
+            "title": "Track",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "title": "TakeIn",
+        "type": "object"
+      },
       "TestMailIn": {
         "properties": {
           "to": {
@@ -1286,6 +1361,113 @@
           "to"
         ],
         "title": "TestMailIn",
+        "type": "object"
+      },
+      "TransferIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "disconnect": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disconnect"
+          },
+          "mode": {
+            "pattern": "^(mirror|move)$",
+            "title": "Mode",
+            "type": "string"
+          },
+          "old": {
+            "default": "keep",
+            "pattern": "^(keep|delete)$",
+            "title": "Old",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "TransferIn",
+        "type": "object"
+      },
+      "TransferPreviewIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "mode": {
+            "pattern": "^(mirror|move)$",
+            "title": "Mode",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "TransferPreviewIn",
         "type": "object"
       },
       "UpdateSwitchIn": {
@@ -1523,6 +1705,34 @@
         "title": "EntriesIn",
         "type": "object"
       },
+      "app__routers__guest__MoveIn": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "maximum": 4.611686018427388e+18,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "entry": {
+            "maximum": 4.611686018427388e+18,
+            "minimum": 1.0,
+            "title": "Entry",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry"
+        ],
+        "title": "MoveIn",
+        "type": "object"
+      },
       "app__routers__guest__RestoreIn": {
         "properties": {
           "after": {
@@ -1710,6 +1920,44 @@
         "title": "Connect",
         "type": "object"
       },
+      "app__routers__mirrors__MoveIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "old": {
+            "default": "keep",
+            "pattern": "^(keep|delete)$",
+            "title": "Old",
+            "type": "string"
+          },
+          "server": {
+            "maximum": 1000000000.0,
+            "minimum": 1.0,
+            "title": "Server",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "MoveIn",
+        "type": "object"
+      },
       "app__routers__oidc__PasswordIn": {
         "properties": {
           "password": {
@@ -1815,6 +2063,34 @@
           "entries"
         ],
         "title": "EntriesIn",
+        "type": "object"
+      },
+      "app__routers__playlists__MoveIn": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "maximum": 4.611686018427388e+18,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "entry": {
+            "maximum": 4.611686018427388e+18,
+            "minimum": 1.0,
+            "title": "Entry",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry"
+        ],
+        "title": "MoveIn",
         "type": "object"
       },
       "app__routers__playlists__NameIn": {
@@ -5002,7 +5278,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MoveIn"
+                "$ref": "#/components/schemas/app__routers__guest__MoveIn"
               }
             }
           },
@@ -5653,7 +5929,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Disconnect a Jellyfin server: its token and its catalogue go; Jellyfin itself stays as it is",
+        "summary": "Disconnect a Jellyfin server: its token and its catalogue go, its mirrors are forgotten; Jellyfin itself stays as it is. Refused (409 server_is_source) while a playlist takes its tracks from it",
         "tags": [
           "jellyfin"
         ]
@@ -8407,7 +8683,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MoveIn"
+                "$ref": "#/components/schemas/app__routers__playlists__MoveIn"
               }
             }
           },
@@ -8570,6 +8846,522 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/mirrors": {
+      "get": {
+        "operationId": "read_mirrors_api_v1_playlists__playlist_id__mirrors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Mirrors Api V1 Playlists  Playlist Id  Mirrors Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The playlist's mirrors: on which server, how the sync stands there, the entries not there, and the tracks only there",
+        "tags": [
+          "mirrors"
+        ]
+      },
+      "post": {
+        "operationId": "copy_api_v1_playlists__playlist_id__mirrors_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Copy Api V1 Playlists  Playlist Id  Mirrors Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Copy the playlist to a server: a mirror kept in step both ways, or (once) a new playlist there",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/preview": {
+      "post": {
+        "operationId": "preview_api_v1_playlists__playlist_id__mirrors_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChoicesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Api V1 Playlists  Playlist Id  Mirrors Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "What copying or moving the playlist to a server would find: the counts, and every entry not found or found by an unsure step. Nothing is written",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}": {
+      "delete": {
+        "operationId": "forget_mirror_api_v1_playlists__playlist_id__mirrors__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Let go of a mirror: the playlist on that server stays as it is, nexmix no longer keeps it in step",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}": {
+      "put": {
+        "operationId": "choose_api_v1_playlists__playlist_id__mirrors__server_id__entries__entry_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChoiceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choose Api V1 Playlists  Playlist Id  Mirrors  Server Id  Entries  Entry Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Choose the track of the mirror's server that stands for an entry (null: leave it out there)",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}": {
+      "delete": {
+        "operationId": "drop_extra_api_v1_playlists__playlist_id__mirrors__server_id__extras__extra_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "extra_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Extra Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Drop a track that is only in a mirror: it is taken out of the mirror there",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take": {
+      "post": {
+        "operationId": "take_extra_api_v1_playlists__playlist_id__mirrors__server_id__extras__extra_id__take_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "extra_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Extra Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Take Extra Api V1 Playlists  Playlist Id  Mirrors  Server Id  Extras  Extra Id  Take Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Take a track that is only in a mirror over as a track of the source: a new entry at the end",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake": {
+      "post": {
+        "operationId": "remake_mirror_api_v1_playlists__playlist_id__mirrors__server_id__remake_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remake Mirror Api V1 Playlists  Playlist Id  Mirrors  Server Id  Remake Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Make a mirror that was deleted on its server there anew",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/missing": {
       "delete": {
         "operationId": "keep_loss_api_v1_playlists__playlist_id__missing_delete",
@@ -8669,6 +9461,67 @@
         "summary": "Take over what the media server lost: the entries kept for it are taken out here too",
         "tags": [
           "playlists"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/move": {
+      "post": {
+        "operationId": "move_api_v1_playlists__playlist_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__routers__mirrors__MoveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Move Api V1 Playlists  Playlist Id  Move Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move the playlist to a server: it becomes the source, the copy before stays a mirror or goes",
+        "tags": [
+          "mirrors"
         ]
       }
     },
@@ -9070,7 +9923,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Disconnect Plex: the token and the catalogue go; Plex itself stays as it is",
+        "summary": "Disconnect Plex: the token and the catalogue go, its mirrors are forgotten; Plex itself stays as it is. Refused (409 server_is_source) while a playlist takes its tracks from it",
         "tags": [
           "plex"
         ]
@@ -9941,7 +10794,227 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Disconnect a media server: its token and its catalogue go; the server itself stays as it is, and the playlists that take their tracks from it wait for it in nexmix",
+        "summary": "Disconnect a media server: its token and its catalogue go, its mirrors are forgotten (the playlists there stay as they are). Refused (409 server_is_source) while a playlist takes its tracks from it: move them first (``POST /{id}/transfer`` with ``disconnect``)",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server_id}/transfer": {
+      "delete": {
+        "operationId": "transfer_stop_api_v1_servers__server_id__transfer_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transfer Stop Api V1 Servers  Server Id  Transfer Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop the running \"take all over\" after the playlist under way",
+        "tags": [
+          "servers"
+        ]
+      },
+      "get": {
+        "operationId": "transfer_state_api_v1_servers__server_id__transfer_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transfer State Api V1 Servers  Server Id  Transfer Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "How the last \"take all over\" to this server stands (null: none yet)",
+        "tags": [
+          "servers"
+        ]
+      },
+      "post": {
+        "operationId": "transfer_api_v1_servers__server_id__transfer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transfer Api V1 Servers  Server Id  Transfer Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Take all over: every playlist of the other servers mirrored or moved here, one after another in the background",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server_id}/transfer/preview": {
+      "post": {
+        "operationId": "transfer_preview_api_v1_servers__server_id__transfer_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transfer Preview Api V1 Servers  Server Id  Transfer Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Take all over: what copying or moving every playlist of the other servers here would find. Nothing is written",
         "tags": [
           "servers"
         ]
