@@ -39,6 +39,9 @@ from ..models import (
 )
 
 TRACK, ALBUM, ARTIST = "track", "album", "artist"
+#: Every number nexmix gives lies below this, and the API takes none above it: a key that is a larger number does not
+#: keep itself as its number (the numbers after it would all lie beyond), it gets the next free one below.
+NUMBER_LIMIT = 10**12
 #: Keys in one ``IN (...)``: well below SQLite's limit of bound values.
 _CHUNK = 500
 
@@ -172,16 +175,38 @@ def numbers(db: Session, server_id: int, kind: str, keys: Iterable[str]) -> dict
     found = known_numbers(db, server_id, kind, wanted)
     missing = [key for key in wanted if key not in found]
     if missing:
-        # A key that is a number keeps it as its number while no other thing has it (Plex's ``ratingKey``s stay what
-        # they were); any other gets the next free one.
-        plain = [key for key in missing if key.isdigit() and 0 < int(key) < 2**53]
+        # A key that is a number below the limit keeps it as its number while no other thing has it (Plex's
+        # ``ratingKey``s stay what they were); any other gets the next free one.
+        plain = [key for key in missing if key.isdigit() and 0 < int(key) < NUMBER_LIMIT]
         if plain:
             db.execute(text("INSERT OR IGNORE INTO server_items (id, server_id, kind, ext_key) "
                             "VALUES (:id, :s, :k, :key)"),
                        [{"id": int(key), "s": server_id, "k": kind, "key": key} for key in plain])
         db.execute(text("INSERT OR IGNORE INTO server_items (server_id, kind, ext_key) VALUES (:s, :k, :key)"),
                    [{"s": server_id, "k": kind, "key": key} for key in missing])
-        found.update(known_numbers(db, server_id, kind, missing))
+        made = known_numbers(db, server_id, kind, missing)
+        beyond = sorted(key for key, ident in made.items() if ident >= NUMBER_LIMIT)
+        if beyond:
+            made.update(_below_limit(db, server_id, kind, beyond))
+        found.update(made)
+    return found
+
+
+def _below_limit(db: Session, server_id: int, kind: str, beyond: list[str]) -> dict[str, int]:
+    """Keys that got a number at or above the limit (the one before kept a number just below it): each gets the
+    largest free number below it instead. Numbers are never taken back, so a free one was never given."""
+    db.execute(text("DELETE FROM server_items WHERE server_id = :s AND kind = :k AND ext_key IN :keys")
+               .bindparams(bindparam("keys", expanding=True)), {"s": server_id, "k": kind, "keys": beyond})
+    found: dict[str, int] = {}
+    for key in beyond:
+        free = db.execute(text(
+            "SELECT id - 1 FROM server_items WHERE id > 1 AND id <= :limit AND id - 1 NOT IN (SELECT id FROM "
+            "server_items) ORDER BY id DESC LIMIT 1"), {"limit": NUMBER_LIMIT}).scalar()
+        if free is None:
+            raise RuntimeError("No number left below the limit.")
+        db.execute(text("INSERT INTO server_items (id, server_id, kind, ext_key) VALUES (:id, :s, :k, :key)"),
+                   {"id": int(free), "s": server_id, "k": kind, "key": key})
+        found[key] = int(free)
     return found
 
 

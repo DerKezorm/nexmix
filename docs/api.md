@@ -177,7 +177,8 @@ everything else needs a session or a device token. A playlist the account may no
   track Plex refused again at once); it needs the right to change the playlist (`403` `read_only` otherwise).
   `POST /{id}/plex-order` takes the order Plex had when both sides sorted at the same time (the note's undo),
   `DELETE /{id}/plex-order` keeps this one. A smart playlist of Plex is only read: changing it answers `409`
-  `smart_playlist`, and it takes no guests. Entries added by guests go to Plex like all others (their names stay in
+  `smart_playlist`, and it takes no guests. On another Plex server than its own it is never made as an ordinary
+  playlist: its sync stands at `error` `smart_not_here` until it is back on its own server. Entries added by guests go to Plex like all others (their names stay in
   nexmix); a playlist deleted in Plex goes to the trash, and its invitation for guests ends.
 - `GET /{id}/events`: Server-Sent Events (`hello` with the version, `items` (also with `op` `sync` for what came from
   Plex), `playlist` for a rename or the trash, `plex` when its sync with Plex changes state, `access` when the shares

@@ -22,6 +22,7 @@ from ..deps import DbSession
 from ..errors import error
 from ..services import guests, search, suggestions
 from ..services.events import hub, playlist_topic
+from ..services.media import NUMBER_LIMIT
 from . import catalog as catalog_routes
 from .join import give_cookie
 
@@ -42,7 +43,7 @@ GuestCaller = Annotated[guests.Caller, Depends(guest_caller)]
 
 
 class TracksIn(BaseModel):
-    tracks: list[Annotated[int, Field(ge=1, le=10**12)]] = Field(min_length=1, max_length=guests.MAX_ADD)
+    tracks: list[Annotated[int, Field(ge=1, le=NUMBER_LIMIT)]] = Field(min_length=1, max_length=guests.MAX_ADD)
 
 
 class EntriesIn(BaseModel):
@@ -144,7 +145,7 @@ def suggest_songs(who: GuestCaller, db: DbSession) -> dict[str, Any]:
             response_model=None)
 async def cover(
     request: Request,
-    album_id: Annotated[int, Path(ge=1, le=10**12)],
+    album_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)],
     who: GuestCaller,
     db: DbSession,
     s: Annotated[int, Query(description="80, 200 or 400")] = 200,

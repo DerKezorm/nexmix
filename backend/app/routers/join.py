@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import clock
 from ..deps import DbSession
 from ..services import guests
+from ..services.media import NUMBER_LIMIT
 from . import catalog as catalog_routes
 from .auth import secure_cookie
 
@@ -54,7 +55,7 @@ def join(code: Code, payload: JoinIn, request: Request, response: Response, db: 
             response_model=None)
 async def join_cover(
     code: Code,
-    album_id: Annotated[int, Path(ge=1, le=10**12)],
+    album_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)],
     request: Request,
     db: DbSession,
     s: Annotated[int, Query(description="80, 200 or 400")] = 200,

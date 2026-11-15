@@ -15,6 +15,7 @@ from starlette.responses import Response
 
 from ..deps import bearer_scheme
 from ..services import preview
+from ..services.media import NUMBER_LIMIT
 
 router = APIRouter(prefix="/api/v1/preview", tags=["preview"])
 
@@ -34,7 +35,7 @@ async def preview_status(request: Request, _scheme: Scheme = None) -> dict[str, 
                206: {"content": {"audio/mpeg": {}}, "description": "The part a Range header asks for, with its length"},
                416: {"description": "The part lies beyond the end of the preview"}},
 )
-async def preview_track(track_id: Annotated[int, Path(ge=1, le=10**12)], request: Request,
+async def preview_track(track_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)], request: Request,
                         _scheme: Scheme = None) -> Response:
     plan = await asyncio.to_thread(preview.prepare, request, track_id)
     return await preview.start(plan, request.headers.get("range"), request.is_disconnected)

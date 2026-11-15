@@ -451,12 +451,33 @@ def _take_step(schema: Engine, target: int, step: Callable[[Connection], None]) 
                 # that is not idempotent (an added column, moved rows) must never run twice.
                 if schema_version(connection) >= target:
                     return False
+                known = _broken_keys(connection) if rebuilds else set()
                 step(connection)
+                if rebuilds:
+                    # With the foreign keys off nothing stopped the step from leaving a row whose parent is gone: one
+                    # it left breaks the step off whole (the database stays as it was). What was broken before stays.
+                    broken = _broken_keys(connection) - known
+                    if broken:
+                        tables = sorted({table for table, _row, _parent, _key in broken})
+                        logger.error("Database migration broke off: rows without their parent schema=%s count=%s "
+                                     "tables=%s", target, len(broken), ",".join(tables))
+                        raise MigrationBroken(f"The step to schema {target} left {len(broken)} rows without their "
+                                              f"parent in {', '.join(tables)}; the database is unchanged.")
                 _set_version(connection, target)
         finally:
             if rebuilds:
                 raw.execute("PRAGMA foreign_keys=ON")
     return True
+
+
+def _broken_keys(connection: Connection) -> set[tuple[str, int, str, int]]:
+    """The rows whose parent is gone (``PRAGMA foreign_key_check``): table, row, parent table, which key."""
+    return {(str(table), int(row or 0), str(parent), int(key or 0))
+            for table, row, parent, key in connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()}
+
+
+class MigrationBroken(RuntimeError):
+    """A step of the schema left rows whose parent is gone: it was rolled back."""
 
 
 class NotOurs(RuntimeError):

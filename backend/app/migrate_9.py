@@ -19,8 +19,8 @@ What it becomes:
   still finds it). A row synced with another server (it was about to move) leaves that copy on its server, to be taken
   up again there, and the playlist starts on server 1 as the step to another server always did: its entries are found
   there first, and the copy server 1 holds from before is taken up when Plex still lists it. Each copy of ``elsewhere``
-  becomes a row on its server, taken up the same way. Nothing is written to Plex by the step itself; the sync after it
-  finds both sides equal and writes nothing.
+  becomes a row on its server, taken up the same way, and smart when the playlist is. Nothing is written to Plex by
+  the step itself; the sync after it finds both sides equal and writes nothing.
 * ``playlists.source_server_id``: server 1 for every playlist (none without a server).
 
 The step runs in one transaction with the foreign keys off (``rebuilds_tables``): it breaks off whole or not at all.
@@ -34,6 +34,8 @@ from datetime import UTC
 from typing import Any
 
 from sqlalchemy import Connection
+
+from .services.media import NUMBER_LIMIT
 
 #: The tables of schema 9 that are new.
 NEW_TABLES = (
@@ -149,7 +151,7 @@ def _number(value: Any) -> int | None:
         number = int(value)
     except (TypeError, ValueError):
         return None
-    return number if 0 < number < 10**12 else None
+    return number if 0 < number < NUMBER_LIMIT else None
 
 
 def _tracks_of_state(row: dict[str, Any]) -> set[int]:
@@ -279,6 +281,9 @@ def _first_numbers(connection: Connection, numbers: _Numbers, server: int, own_r
     for kind, table in (("artist", "artists"), ("album", "albums"), ("track", "tracks")):
         found = {int(row[0]) for row in connection.exec_driver_sql(f"SELECT DISTINCT id FROM {table}")}  # noqa: S608
         numbers.keep(server, kind, {number for number in found if _number(number) is not None})
+    # Every entry, also one with the hint ``elsewhere`` (its track was on a server connected before): 0.1.0 read its
+    # number as a ``ratingKey`` of the connected server too. The hint holds it back (it is never sent), and the entry
+    # means what it meant; finding it on that server again is the sync's work once the server is back.
     entries = {int(row[0]) for row in connection.exec_driver_sql("SELECT DISTINCT track_id FROM playlist_items")}
     states: set[int] = set()
     for row in own_rows:
@@ -308,6 +313,15 @@ def _plain(**values: Any) -> dict[str, Any]:
     return row
 
 
+def _smartness(row: dict[str, Any]) -> dict[str, Any]:
+    """Whether the playlist of a row is a smart one, for its copies on every server. 0.1.0 kept ``smart`` on the row
+    when the playlist moved on (only its own server ever held it: a smart playlist was never made elsewhere), and its
+    copies in ``elsewhere`` did not say; so each of them is what the row is. A smart copy is taken up again only as a
+    smart one, and never made as an ordinary playlist on another server."""
+    smart = bool(row.get("smart"))
+    return {"smart": 1 if smart else 0, "smart_total": row.get("smart_total") if smart else None}
+
+
 def run(connection: Connection) -> None:
     now = _moment()
     for statement in NEW_TABLES:
@@ -330,7 +344,9 @@ def run(connection: Connection) -> None:
             first_machine = max(machines, key=lambda machine: (machines[machine], machine))
             first = servers.resting(first_machine, ident=1)
 
-    own = [row for row in rows if first is not None and row["machine"] == first_machine and first_machine]
+    # A row belongs to server 1 when it names its machine, as 0.1.0 compared them: with a connection whose machine id is
+    # empty, the rows of that empty id are its own (``mine`` in 0.1.0), never copies of another server.
+    own = [row for row in rows if first is not None and row["machine"] == first_machine]
     # The copies server 1 holds from before, which the playlists take up again there: their states are of server 1 too.
     for row in rows:
         elsewhere = _json(row.get("elsewhere"))
@@ -362,7 +378,7 @@ def run(connection: Connection) -> None:
         if first is None:
             # No server at all (never connected): nothing was made anywhere, there is nothing to keep.
             continue
-        if machine and machine == first_machine:
+        if machine == first_machine:
             values = {name: row[name] for name in SAME}
             values.update(id=row["id"], playlist_id=playlist, server_id=first,
                           ext_key=str(key) if key is not None else None, gone_there=row["gone_in_plex"])
@@ -379,7 +395,7 @@ def run(connection: Connection) -> None:
             back = copies.pop(first_machine, None) if machine else None
             if playlist is not None:
                 values = {"id": row["id"], "playlist_id": playlist, "server_id": first, "state": "pending",
-                          "due_at": now, "settle": "all" if machine else "since"}
+                          "due_at": now, "settle": "all" if machine else "since", **_smartness(row)}
                 back_key = _number(back.get("key")) if isinstance(back, dict) else None
                 if back_key is not None and (first, str(back_key)) not in taken:
                     base = _json(back.get("base"))
@@ -389,7 +405,7 @@ def run(connection: Connection) -> None:
                 _insert_copy(connection, _plain(**values))
                 held.add((playlist, first))
         for name, copy in copies.items():
-            later.append({"playlist": playlist, "machine": name, "copy": copy})
+            later.append({"playlist": playlist, "machine": name, "copy": copy, "smartness": _smartness(row)})
     for one in later:
         copy = one["copy"]
         key = _number(copy.get("key"))
@@ -403,7 +419,8 @@ def run(connection: Connection) -> None:
             held.add((one["playlist"], server))
         _insert_copy(connection, _plain(playlist_id=one["playlist"], server_id=server, ext_key=str(key),
                                         guid=str(copy.get("guid") or "")[:200], resume=1,
-                                        base=_translated(_json(copy.get("base")), numbers, server)))
+                                        base=_translated(_json(copy.get("base")), numbers, server),
+                                        **one["smartness"]))
 
     # Waiting work keeps its place: the catalogue's and the looks' jobs belong to server 1 now.
     if first is not None:
