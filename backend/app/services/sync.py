@@ -21,17 +21,24 @@ from the last look instead of asking for the list again. ``updatedAt`` only says
 says the comparison of the entries with the common state, so nexmix's own writes are never taken for somebody else's.
 Plex's stream of events (``plex_events.py``) makes a look at once when a playlist is made, renamed or deleted there. A
 playlist new on the server comes to nexmix and belongs to the operator; a smart one is only read (its entries as the
-server lists them, the number from ``totalSize``). Deleted on the server, the playlist goes to nexmix's trash. A track
-the server has but the catalogue does not know yet is shown with what the server says of it, and a partial run of the
-catalogue is asked for.
+server lists them, the number from ``totalSize``). Deleted on the server, the playlist goes to nexmix's trash, but only
+when the server's list, read again, lacks it, no other of nexmix's playlists is missing from that list, and the server
+says of the playlist itself that it is gone: a 404 alone (a proxy, a changed base path), a Jellyfin user gone, several
+playlists missing at once never move anything to the trash; the playlist stays, its sync fails with a code and is tried
+again. A track the server has but the catalogue does not know yet is shown with what the server says of it, and a
+partial run of the catalogue is asked for.
 
-**Nothing is lost.** A track the server's library no longer has stays in nexmix (it cannot go there), out of the
-common state, and its entry says it is missing there (``HINT_MISSING``): Jellyfin drops an entry without a word when
-the file of its track is renamed or moved, and that is no entry taken out. After the next run of the catalogue the
-entry finds its track again (``relink.py``) and is written back. When a playlist on the server loses many entries at
-once and some of their tracks left the library with them, or it is suddenly empty (a library made anew empties every
-playlist of Jellyfin), none of it is taken: the entries stay with the same note, the playlist says how many
-(``loss``), and they go back after the next run of the catalogue, unless somebody takes the loss over in nexmix. A
+**Nothing is lost.** Before an entry taken out on the server is taken out in nexmix too, the server is asked whether
+its track is still in its library (``existing``, one question per sync, in parts; never nexmix's catalogue, which may
+be older or newer). A track the server's library no longer has stays in nexmix (it cannot go there), out of the common
+state, and its entry says it is missing there (``HINT_MISSING``): Jellyfin drops an entry without a word when the file
+of its track is renamed or moved, or the library is removed, and that is no entry taken out. After the next run of the
+catalogue the entry finds its track again (``relink.py``) and is written back. When a playlist on the server loses many
+entries at once and some of their tracks left the library with them, none of it is taken: the entries stay with the
+same note, the playlist says how many (``loss``), and they go back after the next run of the catalogue, unless
+somebody takes the loss over in nexmix. A playlist emptied on the server while its tracks are all still there was
+emptied on purpose, and that is taken. When the question fails (the server away, too slow), nothing is taken, and the
+sync is tried again later. A
 track the server did not take when it was added is offered again after a minute, five, fifteen and sixty, never taken
 for one taken out there; after the fifth try it stays in nexmix only, and its entry says so.
 
@@ -87,7 +94,7 @@ from . import jobs, match, media, merge, plex_link, sources
 from .events import hub, playlist_topic
 from .jellyfin import AWAY as JELLYFIN_AWAY
 from .plex import PlexError
-from .sources.base import Entry, Listed
+from .sources.base import PLAYLISTS_NOT_FOUND, Entry, Listed
 from .sources.plex import CHUNK
 
 logger = logging.getLogger("nexmix.sync")
@@ -113,8 +120,15 @@ CHECK_PER_LOOK = 10
 BACKOFF = (5, 10, 30, 60, 120, 300, 600)
 #: Codes that mean the server was not reached: the playlist waits for it.
 AWAY = frozenset({"plex_unreachable", "plex_timeout", "plex_busy", *JELLYFIN_AWAY})
-#: Codes that mean the server has the playlist (or the entry) no longer.
+#: Codes with which the server says it does not know the playlist (or the entry). A sign only: whether the playlist
+#: is gone there says ``Round._vanished``.
 GONE = frozenset({"plex_not_found", "jellyfin_not_found"})
+#: The server lists the playlist but will not give its entries, or says it still has it: the sync fails with this code,
+#: the playlist stays where it is.
+UNREADABLE = "playlist_unreadable"
+#: So many playlists of a server missing from its list at once are no deletion: nothing goes to the trash, the server
+#: says how many it lacks (``overview``), and the list is looked at again and again.
+MASS_GONE = 2
 #: How often the clock of the sync looks for due playlists.
 TICK_SECONDS = 1.0
 #: How many times one sync merges again when somebody changed the playlist in nexmix while it merged.
@@ -134,8 +148,7 @@ HINT_REFUSED, HINT_ELSEWHERE = "refused", "elsewhere"
 #: The server's playlist lost the entry while its track left the library (a file renamed), or with many others at
 #: once: kept in nexmix, written back after the next run of the catalogue.
 HINT_MISSING = "missing"
-#: Many entries lost at once: at least this many, while some of their tracks left the library too or the playlist is
-#: empty now.
+#: Many entries lost at once: at least this many, while some of their tracks left the library too.
 MASS_LOSS = 5
 #: Who added an entry that came through the server, by its kind.
 PLEX_NAME = "Plex"
@@ -261,7 +274,8 @@ def dropping(db: Session, playlist_id: int) -> None:
     server is back and still lists it (``Round.run``)."""
     for row in db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)
                           .execution_options(populate_existing=True)).all():
-        if row.ext_key is None:
+        if row.ext_key is None or (row.gone_there and row.resume):
+            # Never made there, or deleted there already (a playlist made there since under the same key is not ours).
             db.delete(row)
             continue
         row.due_at = clock.now()
@@ -481,6 +495,7 @@ def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
         smart += 1 if smart_one else 0
     result = _poll_result.get(ident, {})
     at = result.get("at")
+    missing = _missing_note.get(ident)
     # A server whose list carries a mark of every change (Jellyfin's ``Etag``) shows an order changed there at the next
     # look; Plex's only when the playlist is read again.
     marked = server is not None and sources.capabilities(server.kind).entries == "track"
@@ -493,6 +508,8 @@ def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
         "order_minutes": 1 if marked else math.ceil(order_seconds(len(rows) - smart) / 60),
         "polled_at": at.isoformat() if isinstance(at, datetime) else None,
         "poll_error": result.get("error"),
+        # Several playlists missing from the server's list at once: none went to the trash, the list is looked at on.
+        "missing": int(missing.get("count") or 0) if missing else 0,
     }
 
 
@@ -510,6 +527,29 @@ def forget() -> None:
     _listing.clear()
     _whole.clear()
     _not_ours.clear()
+    _missing_note.clear()
+
+
+#: Servers that lack several of nexmix's playlists in their list at once (``MASS_GONE``): how many, since when.
+_missing_note: dict[int, dict[str, Any]] = {}
+
+
+def _note_missing(server_id: int, count: int) -> None:
+    before = _missing_note.get(server_id)
+    if before is None or before.get("count") != count:
+        # Once per change, not at every look.
+        logger.warning("Playlists missing from the server's list, none moved to the trash server=%s count=%s",
+                       server_id, count)
+        _missing_note[server_id] = {"count": count, "at": clock.now()}
+
+
+def _missing_from(db: Session, server_id: int, there: set[str]) -> set[str]:
+    """The keys of nexmix's copies on the server (of playlists it is the source of, not in the trash) that its list
+    ``there`` lacks."""
+    keys = db.scalars(select(ServerPlaylist.ext_key).join(Playlist, Playlist.id == ServerPlaylist.playlist_id).where(
+        ServerPlaylist.server_id == server_id, ServerPlaylist.ext_key.is_not(None), ServerPlaylist.resume.is_(False),
+        Playlist.source_server_id == server_id, Playlist.deleted_at.is_(None)))
+    return {key for key in keys if key is not None and key not in there}
 
 
 def _ready(db: Session, server_id: int | None) -> MediaServer | None:
@@ -758,6 +798,8 @@ class Round:
         #: The playlist as the list gave it right after this sync wrote, before the entries were read a last time
         #: (Jellyfin's ``Etag`` changes at once): taken as seen, so the next look does not read it again for nothing.
         self.seen_after: Listed | None = None
+        #: What the server said of tracks this sync asked about: still in its library or not (``_alive``).
+        self.asked: dict[int, bool] = {}
 
     @property
     def via(self) -> str:
@@ -782,10 +824,15 @@ class Round:
     def run(self) -> None:
         db = self.db
         row = self.fresh_row()
+        playlist = db.get(Playlist, row.playlist_id, populate_existing=True) if row.playlist_id is not None else None
+        if row.resume and row.gone_there and playlist is not None and playlist.deleted_at is not None:
+            # Deleted on the server and in the trash here: nothing to do until it is brought back.
+            row.due_at, row.state = None, SYNCED
+            db.commit()
+            return
         if row.resume:
             self._resume(row)
             db.commit()
-        playlist = db.get(Playlist, row.playlist_id, populate_existing=True) if row.playlist_id is not None else None
         if playlist is None:
             if row.ext_key is not None:
                 self.source.delete(row.ext_key)
@@ -982,14 +1029,43 @@ class Round:
 
     # --- Deleted on the server
 
+    def _vanished(self, playlist_id: int) -> None:
+        """The server answered 404 for the playlist or its entries: deleted there? Only when its list, read again now
+        (200), lacks it, no other playlist of this server is missing from that list (``MASS_GONE``: a server that lost
+        its playlists, a user gone, a library made anew is no deletion), and the server says of the playlist itself
+        that it is gone (``gone``). Else the sync fails with a code and the playlist stays as it is: in nexmix, with
+        its invitations, its copy on the server known by its key (never taken in again as a new one)."""
+        key = self.row.ext_key
+        assert key is not None
+        self.db.rollback()
+        # A 404 to the list itself, or a user gone, fails here with its own code.
+        listed = self.source.listing()
+        _remember(self.server_id, listed)
+        there = {one.key for one in listed}
+        if key in there:
+            raise PlexError(UNREADABLE)
+        missing = _missing_from(self.db, self.server_id, there)
+        self.db.rollback()
+        if len(missing) >= MASS_GONE:
+            _note_missing(self.server_id, len(missing))
+            raise PlexError(PLAYLISTS_NOT_FOUND, 404)
+        if not self.source.gone(key):
+            raise PlexError(UNREADABLE)
+        self._gone(playlist_id)
+
     def _gone(self, playlist_id: int) -> None:
+        """Deleted on the server (``_vanished`` made sure): to the trash. The copy keeps the key it had there as one
+        left behind (``resume``): the server's list never brings it in again as a new playlist, and brought back from
+        the trash it is taken up again when the server has it after all, else made anew."""
         db = self.db
         db.rollback()
         now = clock.now()
         taken = db.execute(update(Playlist).where(Playlist.id == playlist_id, Playlist.deleted_at.is_(None))
                            .values(version=Playlist.version + 1, deleted_at=now, updated_at=now)).rowcount
         row = self.fresh_row()
+        key, guid = row.ext_key, row.guid
         self._forget_copy(row)
+        row.ext_key, row.guid, row.resume = key, guid, key is not None
         # A smart one keeps the entries nexmix has of it: those come back if it is brought back.
         row.gone_there, row.smart_total = True, None
         self._done(None)
@@ -1016,7 +1092,7 @@ class Round:
             found, total = self.source.smart_items(key)
         except PlexError as exc:
             if exc.code in GONE:
-                self._gone(playlist_id)
+                self._vanished(playlist_id)
                 return
             raise
         entries = _numbered(self.server_id, found, by_track=self.by_track)
@@ -1042,20 +1118,28 @@ class Round:
     def _make(self, playlist_id: int) -> None:
         """Made on the server, empty; or, when the answer of an earlier try was lost (a fault or a stop between the
         server making it and nexmix keeping its key), the one made then: empty, not smart, of the name it was made
-        with, and of a key and ``guid`` no copy on this server has."""
+        with, of a key and ``guid`` no copy on this server has, the connected user's own (Jellyfin lists other users'
+        public playlists too: ``owned``), and made since that try (``_made_then``). Never anybody else's."""
         db = self.db
         row = self.fresh_row()
         name = db.scalar(select(Playlist.name).where(Playlist.id == playlist_id)) or self.via
         adopted: Listed | None = None
         if row.creating_at is not None:
             asked = (row.creating_title or name)[:200]
+            waited = (clock.now() - row.creating_at).total_seconds()
             known = db.execute(select(ServerPlaylist.ext_key, ServerPlaylist.guid).where(
                 ServerPlaylist.server_id == self.server_id, ServerPlaylist.ext_key.is_not(None))).all()
             keys = {key for key, _guid in known}
             guids = {guid for _key, guid in known if guid}
-            adopted = next((one for one in self.source.listing()
-                            if not one.smart and one.title == asked and one.leaf_count == 0
-                            and one.key not in keys and one.guid not in guids), None)
+            db.rollback()
+            listed = self.source.listing()
+            server_now = self.source.clock
+            chosen = [one for one in listed
+                      if not one.smart and one.title == asked and one.leaf_count == 0
+                      and one.key not in keys and one.guid not in guids and _made_then(one, server_now, waited)]
+            ours = set(self.source.owned([one.key for one in chosen])) if chosen else set()
+            adopted = next((one for one in chosen if one.key in ours), None)
+            row = self.fresh_row()
         if adopted is None:
             row.creating_at = clock.now()
             row.creating_title = name[:200]
@@ -1080,7 +1164,7 @@ class Round:
             entries = self._items(key)
         except PlexError as exc:
             if exc.code in GONE:
-                self._gone(playlist_id)
+                self._vanished(playlist_id)
                 return None
             raise
         return info, entries
@@ -1153,10 +1237,16 @@ class Round:
         return held
 
     def _alive(self, tracks: Sequence[int]) -> set[int]:
-        """Which of the tracks the server's library still has."""
-        keys = _keyed(self.server_id, tracks)
-        there = self.source.existing(keys.values()) if keys else set()
-        return {track for track, key in keys.items() if key in there}
+        """Which of the tracks the server's library still has, asked of the server itself (one question per sync for
+        each track, in parts: ``existing``), never taken from nexmix's catalogue, which may be older or newer. A fault
+        of the question is raised: then nothing is taken, and the sync is tried again later."""
+        asking = [track for track in dict.fromkeys(tracks) if track not in self.asked]
+        if asking:
+            keys = _keyed(self.server_id, asking)
+            there = self.source.existing(keys.values()) if keys else set()
+            for track in asking:
+                self.asked[track] = track in keys and keys[track] in there
+        return {track for track in tracks if self.asked.get(track)}
 
     def _plan(self, snapshot: Snapshot, info: Listed, remote: list[Item]) -> Plan:
         from . import playlists
@@ -1171,25 +1261,26 @@ class Round:
         unwritten = _unwritten(writing) - sent
         known = playlists.catalogue_of(self.db, local_tracks, server_id=self.server_id)
         # Tracks nexmix holds that the server cannot: unknown to its catalogue and not in its playlist, and the ones
-        # held back (refused by it, not on this server).
-        held = {track for track in local_tracks if track not in known and track not in remote_tracks}
-        held |= self._held_back(snapshot, remote_tracks)
+        # held back (refused by it, not on this server, missing there already).
+        unknown = {track for track in local_tracks if track not in known and track not in remote_tracks}
+        held_back = self._held_back(snapshot, remote_tracks)
         base_ids = {kept.track for kept in base}
-        # Taken out on the server, or gone from its library? What is gone there stays in nexmix. (A track an open
-        # write had still to add is neither: the server never had it.)
-        lost = [track for track in local_tracks
-                if track in base_ids and track not in remote_tracks and track not in held and track not in unwritten]
+        # Taken out on the server, or gone from its library? The server is asked, whatever nexmix's catalogue says of
+        # the track: what is gone there stays in nexmix. (A track an open write had still to add is neither: the
+        # server never had it.)
+        lost = [track for track in local_tracks if track in base_ids and track not in remote_tracks
+                and track not in held_back and track not in unwritten]
         missing: set[int] = set()
         loss = 0
         if lost:
             alive = self._alive(lost)
             gone = {track for track in lost if track not in alive}
             missing |= gone
-            if len(lost) - len(gone) and _mass(len(lost), len(gone), len(remote_tracks)):
-                # Many at once while the library lost tracks too, or the playlist is empty now: nothing of it is taken.
+            if len(lost) - len(gone) and _mass(len(lost), len(gone)):
+                # Many at once while the library lost tracks too: nothing of it is taken.
                 missing |= set(lost)
                 loss = len(lost)
-            held |= missing
+        held = (unknown - set(lost)) | held_back | missing
         merged = merge.merge(
             [kept for kept in base if kept.track not in held],
             [entry for entry in snapshot.entries if entry[0] not in held],
@@ -1511,10 +1602,24 @@ class Round:
         publish_items(db, playlist_id, [], changed=changed)
 
 
-def _mass(lost: int, gone: int, left: int) -> bool:
+def _mass(lost: int, gone: int) -> bool:
     """Whether ``lost`` entries lost at once on the server are a loss nexmix does not take: many, while ``gone`` of
-    their tracks left the library too or the playlist holds nothing (``left``) any more."""
-    return lost >= MASS_LOSS and (gone > 0 or left == 0)
+    their tracks left the library too. A playlist emptied on the server while its tracks are all still there was
+    emptied on purpose, and that is taken."""
+    return lost >= MASS_LOSS and gone > 0
+
+
+#: How far the server's clock and nexmix's may lie apart when a playlist made after a lost answer is looked for.
+ADOPT_SLACK = 120
+
+
+def _made_then(one: Listed, server_now: int | None, waited: float) -> bool:
+    """Whether the server made ``one`` within the time since nexmix asked it to make a playlist (``waited`` seconds
+    ago), on the server's own clock and with ``ADOPT_SLACK`` either way. A server that does not say when it made it:
+    not taken."""
+    if not one.created or server_now is None:
+        return False
+    return -ADOPT_SLACK <= server_now - one.created <= waited + ADOPT_SLACK
 
 
 def _maybe(value: Any) -> int | None:
@@ -1599,23 +1704,24 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
     album_of: dict[int, int] = {}
     for row in db.execute(select(CatalogTrack.id, CatalogTrack.title, CatalogTrack.album_id, CatalogTrack.artist,
                                  CatalogTrack.artist_id, CatalogTrack.duration, CatalogTrack.song_key,
-                                 CatalogTrack.shown, CatalogTrack.guid).where(
+                                 CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track).where(
             CatalogTrack.server_id == server_id, CatalogTrack.generation == generation)):
         album_title, album_artist = albums.get(row.album_id, ("", row.artist_id))
         candidates.append(match.Candidate(
             id=int(row.id), title=str(row.title or ""), album=str(album_title or ""),
             album_artist=str(artists.get(album_artist) or artists.get(row.artist_id) or ""),
             artist=str(row.artist or ""), duration=int(row.duration or 0), song_key=str(row.song_key or ""),
-            shown=bool(row.shown), guid=str(row.guid or "")))
+            shown=bool(row.shown), guid=str(row.guid or ""), mbid=str(row.mbid_track or "")))
         album_of[int(row.id)] = int(row.album_id or 0)
     found = _Catalogue(candidates, album_of)
     _whole[server_id] = (generation, found)
     return found
 
 
-def _wanted(item: PlaylistItem) -> match.Wanted:
+def _wanted(item: PlaylistItem, mbid: str = "") -> match.Wanted:
+    """What an entry knows of its track; ``mbid``: the MusicBrainz id of its track, where the catalogue has it."""
     return match.Wanted(title=str(item.title or ""), artist=str(item.artist or ""), album=str(item.album or ""),
-                        duration=int(item.duration or 0), guid=str(item.guid or ""))
+                        duration=int(item.duration or 0), guid=str(item.guid or ""), mbid=mbid)
 
 
 def _same_track(item: PlaylistItem, here: match.Candidate) -> bool:
@@ -1702,23 +1808,32 @@ def run_poll(db: Session, job: Job) -> None:
     db.commit()
 
 
-#: Playlists of a server's list that are not its chosen user's own (Jellyfin lists other users' public ones too):
-#: never asked about again while nexmix runs. ``{server: {key}}``.
-_not_ours: dict[int, set[str]] = {}
+#: Playlists of a server's list that are not its chosen user's own (Jellyfin lists other users' public ones too), or
+#: whose owner could not be told: not asked about again for ``NOT_OURS_FOR``, nor until the server is connected anew.
+#: ``{server: ((epoch of the server, when it was connected), {key: when it was asked})}``.
+_not_ours: dict[int, tuple[tuple[int, Any], dict[str, datetime]]] = {}
+NOT_OURS_FOR = timedelta(hours=1)
 
 
 def _owned(db: Session, server: MediaServer, source: Any, listed: list[Listed]) -> set[str]:
     """The keys of the list nexmix may take in as new playlists: of the ones it has no row for, those the server
-    says are its user's own. Asked once per playlist."""
+    says are its user's own. Asked once per playlist and hour."""
     known = set(db.scalars(select(ServerPlaylist.ext_key).where(ServerPlaylist.server_id == server.id,
                                                                 ServerPlaylist.ext_key.is_not(None))))
     db.rollback()
-    skipped = _not_ours.setdefault(server.id, set())
+    now = clock.now()
+    epoch = (media.epoch(server.id), server.connected_at)
+    kept = _not_ours.get(server.id)
+    skipped: dict[str, datetime] = {}
+    if kept is not None and kept[0] == epoch:
+        skipped = {key: at for key, at in kept[1].items() if timedelta(0) <= now - at < NOT_OURS_FOR}
+    _not_ours[server.id] = (epoch, skipped)
     fresh = [one.key for one in listed if one.key not in known and one.key not in skipped]
     if not fresh:
         return set()
     found = set(source.owned(fresh))
-    skipped |= set(fresh) - found
+    for key in set(fresh) - found:
+        skipped[key] = now
     return found
 
 
@@ -1731,9 +1846,11 @@ def take_in(db: Session, server: MediaServer, listed: list[Listed], now_server: 
     rows = list(db.scalars(select(ServerPlaylist).where(ServerPlaylist.server_id == server.id)
                            .execution_options(populate_existing=True)))
     sources_of = dict(db.execute(select(Playlist.id, Playlist.source_server_id)).all())
+    trashed = set(db.scalars(select(Playlist.id).where(Playlist.deleted_at.is_not(None))))
     mine = [row for row in rows if row.ext_key is not None and not row.resume]
     by_key = {row.ext_key: row for row in mine}
-    # The copies playlists left on this server before: never taken for new ones; their sync takes them up again.
+    # The copies playlists left on this server before, and the ones deleted there whose playlist is in nexmix's trash:
+    # never taken for new ones; their sync takes them up again (brought back from the trash).
     foreign = {row.ext_key for row in rows if row.ext_key is not None and row.resume}
     # Playlists nexmix asked the server to make whose answer it has not got: the one the server made is theirs (it is
     # empty and has the name it was made with), never a new one of the server.
@@ -1767,6 +1884,9 @@ def take_in(db: Session, server: MediaServer, listed: list[Listed], now_server: 
             continue
         if not here(row):
             continue
+        if row.state == ERROR and row.error in (PLAYLISTS_NOT_FOUND, UNREADABLE):
+            # Missing from the list before, there again now: at once.
+            due(row)
         last = row.seen if isinstance(row.seen, dict) else None
         if row.smart:
             if (last is None or last.get("updated_at") != one.updated_at or last.get("title") != one.title
@@ -1785,9 +1905,17 @@ def take_in(db: Session, server: MediaServer, listed: list[Listed], now_server: 
     stale.sort(key=lambda row: row.synced_at or datetime.min.replace(tzinfo=now.tzinfo))
     for row in stale[:CHECK_PER_LOOK]:
         due(row)
-    for key, row in by_key.items():
-        if key not in seen_keys and here(row):
-            due(row)
+    # Missing from the list: its sync finds out whether it is deleted there (``Round._vanished``). Several of nexmix's
+    # at once are no deletion: none is asked about, the server says how many it lacks.
+    absent = [row for key, row in by_key.items() if key not in seen_keys and here(row)]
+    lacking = [row for row in absent if row.playlist_id not in trashed]
+    if len(lacking) >= MASS_GONE:
+        _note_missing(server.id, len(lacking))
+        absent = [row for row in absent if row.playlist_id in trashed]
+    else:
+        _missing_note.pop(server.id, None)
+    for row in absent:
+        due(row)
     for row in rows:
         if row.state == WAITING or (here(row) and _offer_again(row, now)):
             due(row)

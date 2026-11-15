@@ -8,8 +8,10 @@ look, never taken from the message. Every ready Jellyfin server has its own thre
 for a ``KeepAlive`` at least every 30 seconds (``ForceKeepAlive``, with its time out in seconds); one silent for longer
 than ``SILENCE`` counts as dead. It is opened again after it ends or fails, waiting a little longer each time up to a
 minute (Jellyfin restarting closes it and answers 503 for a while), and anew when the server is let go of or connected
-again. The token goes in the ``Authorization`` header, as with every request to Jellyfin; the connection is made to the
-checked address and follows no redirect.
+again. Whatever goes wrong in the thread (the database, a message nobody expected) ends only that try: it is opened
+again after the same growing waits, never left closed until nexmix restarts. The token goes in the ``Authorization``
+header, as with every request to Jellyfin, and never reaches the log (``logs.SILENT_LOGGERS``); the connection is made
+to the checked address and follows no redirect.
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ import logging
 import socket
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -111,20 +114,21 @@ def socket_address(url: str) -> tuple[str, str, int, bool]:
     return f"{'wss' if secure else 'ws'}://{parts.netloc}{PATH}", host, port, secure
 
 
-def open_socket(url: str, token: str, device: str) -> ClientConnection:
-    """The websocket of the server at ``url`` (a checked address), signed in by the header. The connection is made
-    here, so a redirect is never followed (websockets follows none with a socket given); no proxy from the
-    environment."""
+@contextmanager
+def open_socket(url: str, token: str, device: str) -> Iterator[ClientConnection]:
+    """The websocket of the server at ``url`` (a checked address), signed in by the header, open while the ``with``
+    lasts. The connection is made here, so a redirect is never followed (websockets follows none with a socket given);
+    no proxy from the environment."""
     address, host, port, secure = socket_address(url)
     raw = socket.create_connection((host, port), timeout=10.0)
     try:
-        return connect(address, sock=raw, ssl=outbound.tls() if secure else None,
-                       server_hostname=host if secure else None, proxy=None, open_timeout=10.0,
-                       additional_headers={"Authorization": authorization(device, token)}, compression=None,
-                       ping_interval=None, max_size=2**22, user_agent_header="nexmix")
-    except BaseException:
+        with connect(address, sock=raw, ssl=outbound.tls() if secure else None,
+                     server_hostname=host if secure else None, proxy=None, open_timeout=10.0,
+                     additional_headers={"Authorization": authorization(device, token)}, compression=None,
+                     ping_interval=None, max_size=2**22, user_agent_header="nexmix", legacy=False) as opened:
+            yield opened
+    finally:
         raw.close()
-        raise
 
 
 class Listener:
@@ -152,44 +156,56 @@ class Listener:
             except Exception:  # noqa: BLE001 - it is going anyway
                 logger.debug("Jellyfin websocket closed while in use")
 
-    def _open(self) -> ClientConnection | None:
+    def _where(self) -> tuple[str, str, str] | None:
+        """The server's address, token and device id; None while there is no ready Jellyfin to listen to."""
         with SessionLocal() as db:
             row = sync._ready(db, self.server_id)
             if row is None or row.kind != SERVER_JELLYFIN:
                 return None
-            url, token, device = row.url, jellyfin_link.token_of(row), jellyfin_link.device_id(db, row.machine_id)
-        return open_socket(url, token, device)
+            return row.url, jellyfin_link.token_of(row), jellyfin_link.device_id(db, row.machine_id)
+
+    def _session(self) -> bool | None:
+        """One time open, read until it ends. None: nothing to listen to; True: a good one (it brought changes, or
+        lasted ``STEADY``); False: it ended at once."""
+        started = media.epoch(self.server_id)
+        found = self._where()
+        if found is None:
+            return None
+        since = time.monotonic()
+        got = 0
+        with open_socket(*found) as opened:
+            with self._lock:
+                self._socket = opened
+            try:
+                got = read(opened, lambda: sync.look_now(self.server_id),
+                           lambda: self._stop.is_set() or media.epoch(self.server_id) != started)
+            except (OSError, WebSocketException):
+                # Closed by Jellyfin (a restart) or the network: how long it lasted says whether it was a good one.
+                logger.debug("Jellyfin websocket ended server=%s", self.server_id)
+            finally:
+                with self._lock:
+                    self._socket = None
+                # Whatever happened while it was closed: the next look finds it.
+                sync.look_now(self.server_id)
+        return bool(got) or time.monotonic() - since >= STEADY
 
     def _loop(self) -> None:
         tries = 0
         while not self._stop.is_set():
-            started = media.epoch(self.server_id)
             try:
-                opened = self._open()
-            except (plex_link.Unreadable, OSError, WebSocketException):
-                opened = None
-                tries += 1
-            if opened is None:
-                self._stop.wait(WAITS[min(tries, len(WAITS) - 1)] if tries else IDLE)
-                continue
-            with self._lock:
-                self._socket = opened
-            since = time.monotonic()
-            got = 0
-            try:
-                got = read(opened, lambda: sync.look_now(self.server_id),
-                           lambda since=started: self._stop.is_set() or media.epoch(self.server_id) != since)
-            except (OSError, WebSocketException):
+                good = self._session()
+            except (plex_link.Unreadable, OSError, WebSocketException, TimeoutError):
                 logger.debug("Jellyfin websocket ended server=%s", self.server_id)
-            except Exception:  # noqa: BLE001 - the websocket is a help, never a reason to stop
-                logger.debug("Jellyfin websocket failed server=%s", self.server_id)
-            finally:
-                with self._lock:
-                    self._socket = None
-                opened.close()
-            tries = 0 if got or time.monotonic() - since >= STEADY else tries + 1
-            # Whatever happened while it was closed: the next look finds it.
-            sync.look_now(self.server_id)
+                good = False
+            except Exception as exc:  # noqa: BLE001 - the websocket is a help, never a reason to stop
+                # The kind of fault only: its text may hold the address.
+                logger.warning("Jellyfin websocket failed server=%s error=%s", self.server_id, type(exc).__name__)
+                good = False
+            if good is None:
+                tries = 0
+                self._stop.wait(IDLE)
+                continue
+            tries = 0 if good else tries + 1
             self._stop.wait(WAITS[min(tries, len(WAITS) - 1)])
 
 

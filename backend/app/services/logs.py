@@ -51,8 +51,9 @@ NOISY_LOGGERS = ("httpx", "httpcore", "watchfiles", "multipart", "uvicorn.access
 #: Never finer than WARNING, at any level: SQLAlchemy writes every statement with its values from INFO on (titles,
 #: password and key hashes, sealed seeds), httpx the addresses it calls, uvicorn's access lines the paths with
 #: invitation tokens (which our own request line masks), Pillow every Exif value of a photo from DEBUG on (a
-#: description, a place, a device).
-SILENT_LOGGERS = ("sqlalchemy.engine", "sqlalchemy.pool", "httpx", "httpcore", "uvicorn.access", "PIL")
+#: description, a place, a device), websockets every header of a handshake from DEBUG on (Jellyfin's token among
+#: them; its loggers ``websockets.client`` and the rest follow ``websockets``).
+SILENT_LOGGERS = ("sqlalchemy.engine", "sqlalchemy.pool", "httpx", "httpcore", "uvicorn.access", "PIL", "websockets")
 
 MODES: dict[str, dict[str, int]] = {
     "quiet": {"app": logging.WARNING, "root": logging.WARNING, "libs": logging.WARNING},

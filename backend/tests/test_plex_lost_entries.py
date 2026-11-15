@@ -1,6 +1,7 @@
 """Entries a Plex playlist loses while their tracks leave the library behave as with Jellyfin: no entry taken out,
 the entry stays with the note "missing there", and goes back once the catalogue has the track again; many lost at once
-while tracks left the library, or an empty playlist all of a sudden, are not taken."""
+while tracks left the library are not taken. A playlist emptied in Plex while its tracks are all still there was
+emptied on purpose: taken, as in 0.1.0, and nothing more is written to Plex."""
 
 from __future__ import annotations
 
@@ -75,17 +76,20 @@ def test_many_lost_at_once_while_tracks_left_the_library_are_not_taken(client: T
     assert sorted(world.lists.tracks(key)) == sorted(tracks[:5])
 
 
-def test_a_plex_playlist_emptied_at_once_is_not_taken(client: TestClient, world: FakePlex) -> None:
+def test_a_plex_playlist_emptied_on_purpose_is_taken(client: TestClient, world: FakePlex) -> None:
     tracks = [3001, 3003, 3013, 3020, 3026]
     playlist_id, key = synced(client, world, "Leer", tracks)
     for track in tracks:
         world.lists.remove_track(key, track)
     world.tick()
     sync(world, look_at_plex=True)
-    assert local_tracks(playlist_id) == tracks
+    assert local_tracks(playlist_id) == []
+    assert client.get(f"/api/v1/playlists/{playlist_id}").json()["plex"]["loss"] is None
+    writes = [call for call in world.library_calls() if call[0] != "GET"]
     partial()
-    sync(world)
-    assert both_equal(world, playlist_id) == tracks
+    sync(world, look_at_plex=True)
+    assert world.lists.tracks(key) == []
+    assert [call for call in world.library_calls() if call[0] != "GET"] == writes
 
 
 def test_a_few_taken_out_in_plex_are_taken_out(client: TestClient, world: FakePlex) -> None:

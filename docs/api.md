@@ -189,6 +189,15 @@ everything else needs a session or a device token. A playlist the account may no
   `smart_playlist`, and it takes no guests. On another Plex server than its own it is never made as an ordinary
   playlist: its sync stands at `error` `smart_not_here` until it is back on its own server. Entries added by guests go to Plex like all others (their names stay in
   nexmix); a playlist deleted in Plex goes to the trash, and its invitation for guests ends.
+- Deleted on the server: a playlist goes to the trash only when the server's list, read again, lacks it, no other of
+  nexmix's playlists is missing from that list at once, and the server says of the playlist itself that it is gone
+  (Plex: its entries answer `404`; Jellyfin: its entries asked without a user answer `404`). A `404` to everything
+  (a proxy, a changed base path) is `error` `playlists_not_found`; several playlists missing at once too, and
+  `missing` of `GET /api/v1/plex/playlists` or `GET /api/v1/jellyfin/{id}/playlists` says how many (nothing goes to
+  the trash, the list is looked at on); a playlist the list lacks but the server still has is `error`
+  `playlist_unreadable`; the Jellyfin user of the playlists gone is `error` `jellyfin_user_gone` (connect again). None
+  of these ends an invitation. A copy deleted on the server keeps its key: the server's list never brings it in as a
+  new playlist, and `restore` takes it up again where the server has it after all, else makes it anew.
 - Jellyfin: a playlist whose source is a Jellyfin server is a playlist there, of the Jellyfin user chosen when
   connecting and public, kept both ways like one of Plex (changes there arrive within 15 seconds, moves too: Jellyfin's
   list carries a mark of every change; made, renamed or deleted there also through Jellyfin's websocket). Playlists of
@@ -198,12 +207,15 @@ everything else needs a session or a device token. A playlist the account may no
   starts or cannot be reached it is `waiting` (`jellyfin_starting`, `jellyfin_unreachable`, `jellyfin_timeout`), a
   token Jellyfin no longer takes is `error` `jellyfin_refused` (connect again), a change this user may not make there
   `error` `jellyfin_forbidden`.
-- Entries the server lost: when the server's playlist loses an entry while its track left the library (Jellyfin drops
-  an entry without a word when the file is renamed or moved), the entry stays here with `plex_hint` `missing`, and goes
-  back to the server after the next run of the catalogue (under the track's new id where the file was renamed). When
-  the server's playlist loses many entries at once (five or more) while some of their tracks left the library, or it is
-  empty all of a sudden (a library made anew in Jellyfin empties every playlist), nothing of it is taken: the entries
-  stay with the same hint and `plex.loss` says `{"at", "count"}`. `POST /{id}/missing/remove` takes them out here too
+- Entries the server lost: before an entry taken out on the server is taken out here, the server is asked whether its
+  track is still in its library (one question per sync, Jellyfin 200 tracks, Plex 50 to a request; when the question
+  fails nothing is taken, and the sync is tried again). When its track left the library (Jellyfin drops an entry
+  without a word when the file is renamed or moved, or the library is removed), the entry stays here with `plex_hint`
+  `missing`, whatever the size of the playlist, and goes back to the server after the next run of the catalogue (under
+  the track's new id where the file was renamed). When the server's playlist loses many entries at once (five or more)
+  while some of their tracks left the library, nothing of it is taken: the entries stay with the same hint and
+  `plex.loss` says `{"at", "count"}`. A playlist emptied on the server while all its tracks are still there was emptied
+  on purpose and is taken. `POST /{id}/missing/remove` takes them out here too
   (needs the right to change the playlist; the answer is the change, as for `items/remove`, and the entries can be
   brought back with `items/restore`), `DELETE /{id}/missing` keeps them (the note goes; they go back to the server
   after the next run of the catalogue). The same holds for Plex.

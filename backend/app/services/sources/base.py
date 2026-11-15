@@ -51,6 +51,8 @@ class Listed:
     updated_at: int
     #: A mark that changes with every change of the playlist, its entries' order too (Jellyfin's ``Etag``; "": none).
     etag: str = ""
+    #: When it was made, whole seconds on the server's clock (0: the server does not say).
+    created: int = 0
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,11 @@ class Entry:
     duration: int
     guid: str = ""
     ref: str = ""
+
+
+#: The server's list of playlists answered 404 (a proxy in front of it, a changed base path): nothing there counts as
+#: deleted. Also the code of a playlist sync while several playlists are missing from the list at once.
+PLAYLISTS_NOT_FOUND = "playlists_not_found"
 
 
 class NotSupported(Exception):

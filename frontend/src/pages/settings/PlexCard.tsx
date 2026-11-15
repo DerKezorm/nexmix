@@ -476,6 +476,7 @@ export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load:
   if (found.waiting) parts.push(t('sync.plex.waiting', { count: found.waiting, server }))
   if (found.error) parts.push(t('sync.plex.error', { count: found.error }))
   if (found.smart) parts.push(t('sync.plex.smart', { count: found.smart }))
+  if (found.missing) parts.push(t('sync.plex.missing', { count: found.missing, server }))
   const at = found.polled_at ? when(found.polled_at, i18n.language) : ''
   return (
     <>

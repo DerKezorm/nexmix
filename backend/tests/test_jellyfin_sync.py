@@ -352,21 +352,39 @@ def test_a_renamed_file_is_no_entry_taken_out_and_goes_back_after_the_catalogue(
     assert all(not item.plex_hint for item in local_items(playlist_id))
 
 
-def test_a_library_made_anew_empties_nothing_in_nexmix(client: TestClient, jelly: tuple[FakeJellyfin, int]) -> None:
+def test_a_library_removed_and_added_again_empties_nothing_in_nexmix(client: TestClient,
+                                                                    jelly: tuple[FakeJellyfin, int]) -> None:
     fake, server = jelly
     tracks = ids(fake, "Glasfluss", "Möwenruf", "Ampelglühen", "Teerseile", "Gleis Neun", "Abfahrt")
     playlist_id = synced(client, fake, server, "Neu angelegt", *tracks)
     key = list_key(playlist_id)
-    fake.library_made_anew()
+    fake.library_removed()
     sync(look=True)
+    # Jellyfin says the tracks are gone: every entry stays, each says it is missing there.
     assert keys(server, local_tracks(playlist_id)) == tracks
-    view = client.get(f"/api/v1/playlists/{playlist_id}").json()
-    assert view["plex"]["loss"]["count"] == 6
+    assert [item.plex_hint for item in local_items(playlist_id)] == ["missing"] * 6
     assert fake.tracks_of(key) == []
+    fake.library_back()
     partial(server)
     sync()
     assert both_equal(fake, server, playlist_id) == tracks
-    assert client.get(f"/api/v1/playlists/{playlist_id}").json()["plex"]["loss"] is None
+    assert all(not item.plex_hint for item in local_items(playlist_id))
+
+
+def test_a_playlist_emptied_in_jellyfin_on_purpose_is_taken(client: TestClient,
+                                                            jelly: tuple[FakeJellyfin, int]) -> None:
+    """Every track still in the library: emptied there on purpose, whatever its size, and nothing goes back."""
+    fake, server = jelly
+    tracks = ids(fake, "Glasfluss", "Möwenruf", "Ampelglühen", "Teerseile", "Gleis Neun", "Abfahrt")
+    playlist_id = synced(client, fake, server, "Geleert", *tracks)
+    key = list_key(playlist_id)
+    fake.list_remove(key, tracks)
+    sync(look=True)
+    assert local_tracks(playlist_id) == []
+    writes = len(fake.list_writes)
+    partial(server)
+    sync(look=True)
+    assert fake.tracks_of(key) == [] and len(fake.list_writes) == writes
 
 
 def test_many_lost_while_tracks_left_the_library_are_kept(client: TestClient,

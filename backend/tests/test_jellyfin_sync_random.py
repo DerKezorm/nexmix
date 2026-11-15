@@ -77,6 +77,8 @@ def test_random_changes_on_both_sides_with_faults(client: TestClient, jelly: tup
     sync()
     key = list_key(playlist_id)
     touched: dict[str, str] = {}
+    #: Copies of a track made in Jellyfin on purpose: how many.
+    copied: dict[str, int] = {}
     log: list[str] = []
     for _step in range(rng.randint(6, 18)):
         roll = rng.random()
@@ -120,12 +122,12 @@ def test_random_changes_on_both_sides_with_faults(client: TestClient, jelly: tup
             # A copy of a track already there: it counts as the one.
             t = rng.choice(there)
             fake.list_add(key, [t])
+            copied[t] = copied.get(t, 0) + 1
             log.append(f"jf copy {t}")
         elif roll < 0.64:
             old = [t for t in there if touched.get(t, "remove") == "remove"]
-            # Jellyfin never empties it here: an empty playlist after many losses is kept on purpose (see the test of
-            # a library made anew).
-            if old and key in fake.lists and len(there) > 1:
+            # Emptied here too: every track is still in the library, so that is taken as done on purpose.
+            if old and key in fake.lists:
                 t = rng.choice(old)
                 touched[t] = "remove"
                 fake.list_remove(key, [t])
@@ -161,3 +163,7 @@ def test_random_changes_on_both_sides_with_faults(client: TestClient, jelly: tup
         else:
             assert t not in here, ("came back (taken out)", t, info)
     assert mirror(playlist_id).writing is None
+    # nexmix never makes a copy in Jellyfin: a track stands there more than once only by the copies made there.
+    raw = fake.tracks_of(key)
+    for t in set(raw):
+        assert raw.count(t) <= 1 + copied.get(t, 0), ("copy in Jellyfin made by nexmix", t, info)

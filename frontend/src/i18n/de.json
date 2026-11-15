@@ -106,6 +106,8 @@
       "error_other": "{{count}} mit Fehler",
       "smart_one": "{{count}} Smart-Playlist (nur lesen)",
       "smart_other": "{{count}} Smart-Playlisten (nur lesen)",
+      "missing_one": "{{count}} Playlist auf {{server}} nicht gefunden. nexmix legt nichts in den Papierkorb und sieht weiter nach.",
+      "missing_other": "{{count}} Playlisten auf {{server}} nicht gefunden. nexmix legt nichts in den Papierkorb und sieht weiter nach.",
       "none": "Noch keine. Playlisten aus {{server}} erscheinen hier von selbst.",
       "looked": "Zuletzt nachgesehen",
       "lookedValue": "{{when}} · danach alle 15 Sekunden, in {{server}} Umsortiertes spätestens nach {{minutes}} Minuten",
@@ -912,7 +914,10 @@
     "not_jellyfin": "Unter dieser Adresse antwortet kein Jellyfin.",
     "invalid_server": "Diesen Medienserver gibt es hier nicht.",
     "jellyfin_forbidden": "Jellyfin erlaubt das diesem Benutzer nicht.",
-    "jellyfin_no_user": "Wähl zuerst den Jellyfin-Benutzer, dem die Playlisten gehören."
+    "jellyfin_no_user": "Wähl zuerst den Jellyfin-Benutzer, dem die Playlisten gehören.",
+    "jellyfin_user_gone": "Den Jellyfin-Benutzer der Playlisten gibt es nicht mehr. Verbinde Jellyfin neu und wähl einen Benutzer.",
+    "playlists_not_found": "Playlisten auf dem Server nicht gefunden. nexmix legt nichts in den Papierkorb und sieht weiter nach.",
+    "playlist_unreadable": "Der Server gibt diese Playlist gerade nicht heraus. Sie bleibt hier, nexmix versucht es weiter."
   },
   "ready": {
     "title": "Bereit fürs Internet?",

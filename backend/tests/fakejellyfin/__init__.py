@@ -14,6 +14,8 @@ What it does as Jellyfin does:
 * ``MinDateLastSaved`` filters what was saved since; ``MinDateCreated`` is ignored. ``Limit=0`` gives the total.
 * Sound (``/Audio/<id>/stream.mp3``) and pictures (``/Items/<album>/Images/Primary``) answer **without** a token.
 * While it starts (``starting``: so many requests) everything answers 503.
+* A ``userId`` it does not know (the user deleted): ``/Items`` answers 404, a playlist's entries 500 (measured).
+* Behind a proxy whose base path changed (``moved_away``) everything answers 404.
 * Playlists as ``playlists.py`` says.
 """
 
@@ -184,6 +186,8 @@ class FakeJellyfin(Playlists):
     down: set[str] = field(default_factory=set)
     #: Quick Connect switched off in the server's settings.
     quick_enabled: bool = True
+    #: Everything answers 404, as behind a proxy whose base path changed.
+    moved_away: bool = False
     #: Every request seen: ``(method, path, params)``; the sound and picture requests are in there too.
     calls: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
     #: The previews that began: their parameters.
@@ -202,6 +206,8 @@ class FakeJellyfin(Playlists):
         self.tokens[self.api_key] = (None, "")
         #: Quick Connect under way, by secret.
         self.quick: dict[str, dict[str, Any]] = {}
+        #: The tracks of a library removed for a while (``library_removed``).
+        self.away_tracks: dict[str, Track] = {}
         self._init_playlists()
 
     # --- Changing things, as somebody would in Jellyfin or on the disk -----------------------------------------
@@ -249,6 +255,30 @@ class FakeJellyfin(Playlists):
                       seconds, owner.year, list(owner.genres), number=number, created=self.now, saved=self.now)
         self.tracks[track.id] = track
         return track.id
+
+    def remove_user(self, name: str) -> None:
+        """The user deleted in Jellyfin: his tokens go with him; his playlists stay (an administrator still sees
+        them)."""
+        gone = next(one.id for one in self.users if one.name == name)
+        self.users = [one for one in self.users if one.id != gone]
+        self.tokens = {token: owner for token, owner in self.tokens.items() if owner[0] != gone}
+
+    def library_removed(self) -> None:
+        """The music library removed from Jellyfin: its tracks gone, every playlist empty (``library_back``)."""
+        self.away_tracks = dict(self.tracks)
+        self.tracks = {}
+        for one in self.lists.values():
+            if one.entries:
+                one.entries = []
+                one.changed()
+
+    def library_back(self) -> None:
+        """The library added again with the same folder: the same ids (they hang on the paths), playlists stay
+        empty."""
+        self.tracks.update(self.away_tracks)
+        self.away_tracks = {}
+        for one in self.tracks.values():
+            one.saved = self.now
 
     def sign_in(self, user: str = "Erika", device: str = "elsewhere") -> str:
         """A token of a user, made as Jellyfin's own web client would."""
@@ -323,6 +353,8 @@ class FakeJellyfin(Playlists):
         if self.starting > 0:
             self.starting -= 1
             return self._answer(503, text="Jellyfin server is loading. Please try again shortly.")
+        if self.moved_away:
+            return self._answer(404, text="Not found")
         method = request.method
         if method == "GET" and path == "/System/Info/Public":
             return self._answer(200, {"LocalAddress": "http://127.0.0.1:8096", "ServerName": self.name,
@@ -338,6 +370,13 @@ class FakeJellyfin(Playlists):
         if not valid:
             return self._answer(401, text=ERROR)
         admin = user is None or any(one.id == user and one.admin for one in self.users)
+        asked_for = params.get("userId") or params.get("UserId")
+        if asked_for and not any(one.id == asked_for for one in self.users):
+            # Measured on 12.4: a list as an unknown user is 404, a playlist's entries as one 500.
+            if path == "/Items":
+                return self._answer(404, text=ERROR)
+            if method == "GET" and path.startswith("/Playlists/") and path.endswith("/Items"):
+                return self._answer(500, text=ERROR)
         if method == "GET" and path == "/Users/Me":
             if user is None:
                 return self._answer(400, text=ERROR)

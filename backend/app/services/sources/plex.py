@@ -55,7 +55,7 @@ from ..plex import (
     sound_params,
     tags_of,
 )
-from .base import Capabilities, Entry, Listed
+from .base import PLAYLISTS_NOT_FOUND, Capabilities, Entry, Listed
 
 if TYPE_CHECKING:
     from ..catalog import Writer
@@ -66,6 +66,8 @@ CAPABILITIES = Capabilities(moods=True, sound=True, smart_playlists=True, duplic
 CHUNK = 300
 MACHINE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\Z")
 LIBRARY = "com.plexapp.plugins.library"
+#: Tracks per request when asking whether they are still in the library: small, the answer carries every tag.
+EXISTING_PART = 50
 #: The entries of a smart playlist nexmix shows at most.
 SMART_LIMIT = 5000
 #: How far back a partial run looks beyond where the last run began.
@@ -127,6 +129,7 @@ def _listed(entry: dict[str, Any]) -> Listed | None:
         key=str(key), guid=str(entry.get("guid") or "")[:200], title=str(entry.get("title") or "").strip()[:200],
         smart=bool(entry.get("smart")) and str(entry.get("smart")).lower() not in ("0", "false"),
         leaf_count=_int(entry.get("leafCount")) or 0, updated_at=_int(entry.get("updatedAt")) or 0,
+        created=_int(entry.get("addedAt")) or 0,
     )
 
 
@@ -179,7 +182,14 @@ class PlexSource:
     # --- Playlists ---------------------------------------------------------------------------------------------
 
     def listing(self) -> list[Listed]:
-        container = self.server.get("/playlists", {"playlistType": "audio"}, timeout=30.0)
+        """The playlists of the account. A 404 to the list itself (a proxy, a changed base path) is
+        ``PLAYLISTS_NOT_FOUND``: never a sign that any of them was deleted."""
+        try:
+            container = self.server.get("/playlists", {"playlistType": "audio"}, timeout=30.0)
+        except PlexError as exc:
+            if exc.code == "plex_not_found":
+                raise PlexError(PLAYLISTS_NOT_FOUND, 404) from exc
+            raise
         found = []
         for entry in container.get("Metadata") or []:
             if isinstance(entry, dict) and str(entry.get("type") or "playlist") == "playlist":
@@ -202,6 +212,17 @@ class PlexSource:
         return Listed(key=str(number), guid="", title=str(container.get("title") or "").strip()[:200],
                       smart=bool(container.get("smart")) and str(container.get("smart")).lower() not in ("0", "false"),
                       leaf_count=_int(container.get("leafCount")) or 0, updated_at=0)
+
+    def gone(self, key: str) -> bool:
+        """Whether Plex has the playlist no longer, asked of its entries (404), never of the playlist itself (``meta``).
+        False when it answers; any other fault is raised."""
+        try:
+            self.server.get(f"/playlists/{_key(key)}/items", start=0, size=0, timeout=30.0)
+        except PlexError as exc:
+            if exc.code == "plex_not_found":
+                return True
+            raise
+        return False
 
     def items(self, key: str) -> list[Entry]:
         """Every entry in order, in one answer (pages could each see another state of a list being changed)."""
@@ -313,12 +334,14 @@ class PlexSource:
         return True
 
     def existing(self, tracks: Iterable[str]) -> set[str]:
-        """Which of the tracks the library of Plex still has (asked a hundred at a time)."""
+        """Which of the tracks the library of Plex still has, asked ``EXISTING_PART`` at a time
+        (``/library/metadata/<k1,k2,..>``, only reading, no other parameter). Plex answers 404 when none of a part is
+        there. Any other fault is raised: what was not asked is not known."""
         found: set[str] = set()
         chosen = sorted({_key(track) for track in tracks})
-        for start in range(0, len(chosen), 100):
+        for start in range(0, len(chosen), EXISTING_PART):
             try:
-                entries = self.server.bulk(chosen[start:start + 100])
+                entries = self.server.bulk(chosen[start:start + EXISTING_PART])
             except PlexError as exc:
                 if exc.code != "plex_not_found":
                     raise

@@ -106,6 +106,8 @@
       "error_other": "{{count}} failed",
       "smart_one": "{{count}} smart playlist (read only)",
       "smart_other": "{{count}} smart playlists (read only)",
+      "missing_one": "{{count}} playlist not found on {{server}}. nexmix moves nothing to the trash and keeps looking.",
+      "missing_other": "{{count}} playlists not found on {{server}}. nexmix moves nothing to the trash and keeps looking.",
       "none": "None yet. Playlists from {{server}} appear here by themselves.",
       "looked": "Last looked",
       "lookedValue": "{{when}} · then every 15 seconds, reordering in {{server}} within {{minutes}} minutes",
@@ -912,7 +914,10 @@
     "not_jellyfin": "No Jellyfin answers at this address.",
     "invalid_server": "There is no such media server here.",
     "jellyfin_forbidden": "Jellyfin does not let this user do that.",
-    "jellyfin_no_user": "First choose the Jellyfin user the playlists belong to."
+    "jellyfin_no_user": "First choose the Jellyfin user the playlists belong to.",
+    "jellyfin_user_gone": "The Jellyfin user of the playlists no longer exists. Connect Jellyfin again and choose a user.",
+    "playlists_not_found": "Playlists not found on the server. nexmix moves nothing to the trash and keeps looking.",
+    "playlist_unreadable": "The server does not hand out this playlist right now. It stays here, and nexmix keeps trying."
   },
   "ready": {
     "title": "Ready for the internet?",

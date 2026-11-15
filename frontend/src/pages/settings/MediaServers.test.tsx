@@ -197,6 +197,17 @@ describe('the Jellyfin card', () => {
     await until(() => server.called('POST', '/api/v1/jellyfin/2/playlists/sync'), 'synced the playlists')
   })
 
+  it('says when several playlists are missing on the server and why one could not be looked at', async () => {
+    server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 1, pending: 0, waiting: 0, error: 2, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: 'jellyfin_user_gone', missing: 2 }
+    await page.show(<MediaServers />)
+    const box = card('jellyfin-2')
+    await until(() => box.querySelector('[data-testid="jellyfin-playlists"]'), 'the playlists of Jellyfin')
+    const text = plain(box.querySelector('[data-testid="jellyfin-playlists"]')!.textContent)
+    expect(text).toContain('2 Playlisten auf Jellyfin nicht gefunden. nexmix legt nichts in den Papierkorb und sieht weiter nach.')
+    expect(plain(box.querySelector('[data-testid="jellyfin-playlists-looked"]')!.textContent)).toContain('Den Jellyfin-Benutzer der Playlisten gibt es nicht mehr. Verbinde Jellyfin neu')
+    expect(plain(box.textContent)).not.toMatch(/[–—]/)
+  })
+
   it('asks before disconnecting, says what goes, and sends nothing without the yes', async () => {
     await page.show(<MediaServers />)
     await page.click(page.button('Jellyfin trennen', card('jellyfin-2')))

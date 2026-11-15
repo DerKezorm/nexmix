@@ -4,7 +4,9 @@ Jellyfin's id of a track hangs on the path of its file: renamed or moved, the fi
 Jellyfin drops it from its own playlists without a word. nexmix keeps every entry with what it knew of its track (title,
 artist, album, length), so after each run of the catalogue of a Jellyfin server the entries of the playlists that take
 their tracks from it and whose track is no longer in the catalogue are looked for (``match.py``, only what says the
-same file: the same id of the recording, or the same title on the same album by the same artist, ``SAME``). Found,
+same file: the same id of the recording, the same MusicBrainz id of the track, or the same title on the same album by
+the same artist, ``SAME``). The MusicBrainz id of the track gone is the one the catalogue had for it: a full run keeps
+the generation before until the next one begins, so it is still there. Found,
 the entry takes the new track and keeps its place, its time and who put it in. Not found, it stays as it is: the
 interface marks it as missing from the library, as for Plex.
 """
@@ -66,6 +68,17 @@ def after_run(db: Session, server_id: int) -> int:
     return found_in_all
 
 
+def _mbids(db: Session, server_id: int, tracks: list[int]) -> dict[int, str]:
+    """The MusicBrainz ids of the tracks as any generation of the server's catalogue still has them."""
+    found: dict[int, str] = {}
+    for start in range(0, len(tracks), 500):
+        for ident, mbid in db.execute(select(CatalogTrack.id, CatalogTrack.mbid_track).where(
+                CatalogTrack.server_id == server_id, CatalogTrack.id.in_(tracks[start:start + 500]),
+                CatalogTrack.mbid_track != "").order_by(CatalogTrack.generation.desc())):
+            found.setdefault(int(ident), str(mbid))
+    return found
+
+
 def _relink(db: Session, playlist_id: int, server_id: int, catalogue: _Catalogue) -> int:
     from . import playlists, sync
 
@@ -81,9 +94,10 @@ def _relink(db: Session, playlist_id: int, server_id: int, catalogue: _Catalogue
         db.rollback()
         return 0
     used = {item.track_id for item in items if item.track_id in catalogue.by_id}
+    mbids = _mbids(db, server_id, [item.track_id for item in lost])
     moving: dict[int, match.Candidate] = {}
     for item in lost:
-        hit = catalogue.find(sync._wanted(item), used)
+        hit = catalogue.find(sync._wanted(item, mbids.get(item.track_id, "")), used)
         if hit is not None and hit.how in SAME:
             used.add(hit.track.id)
             moving[item.id] = hit.track

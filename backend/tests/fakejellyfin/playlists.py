@@ -9,7 +9,9 @@
   An address longer than 8 KiB answers 414. Unknown ids are passed over.
 * Taking out and moving an id it does not know: 204, nothing changed. ``Move/<n>`` puts the entry at place ``n`` of the
   list afterwards; ``n`` past the end answers 500.
-* Every change gives the playlist a new ``Etag``.
+* Every change gives the playlist a new ``Etag``; taking out gives it one even when nothing was taken out (measured).
+* Its entries asked without a user answer 200 while it is there, 404 once it is deleted; with an API key and no user
+  400; another user's private playlist 404, whoever asks.
 * A file renamed, moved or deleted drops its track from every playlist without a word; a library made anew empties
   them all and keeps the ids.
 
@@ -43,6 +45,8 @@ class List:
     #: Users it is shared with: ``{user: can_edit}``.
     shares: dict[str, bool] = field(default_factory=dict)
     etag: str = field(default_factory=lambda: secrets.token_hex(16))
+    #: When it was made, as Jellyfin writes it (``DateCreated``).
+    created: str = ""
 
     def changed(self) -> None:
         self.etag = secrets.token_hex(16)
@@ -71,8 +75,11 @@ class Playlists:
                   public: bool = True) -> str:
         owner = next(one.id for one in self.users if one.name == user)
         ident = secrets.token_hex(16)
-        self.lists[ident] = List(ident, name, owner, public, list(tracks or []))
+        self.lists[ident] = List(ident, name, owner, public, list(tracks or []), created=self._made_at())
         return ident
+
+    def _made_at(self: FakeJellyfin) -> str:
+        return self.now.strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
 
     def list_add(self, ident: str, tracks: list[str]) -> None:
         self.lists[ident].entries.extend(tracks)
@@ -127,8 +134,11 @@ class Playlists:
         from . import SERVER_ID
 
         kind = "Audio" if one.entries else "Unknown"
-        return {"Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "Etag": one.etag, "IsFolder": True,
-                "Type": "Playlist", "ChildCount": len(one.entries), "MediaType": kind, "LocationType": "FileSystem"}
+        entry = {"Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "Etag": one.etag, "IsFolder": True,
+                 "Type": "Playlist", "ChildCount": len(one.entries), "MediaType": kind, "LocationType": "FileSystem"}
+        if one.created:
+            entry["DateCreated"] = one.created
+        return entry
 
     def _listing(self, params: dict[str, str], user: str | None) -> list[dict[str, Any]]:
         viewer = params.get("userId") or user
@@ -211,6 +221,13 @@ class Playlists:
                 return self._answer(403, text=ERROR)
             return self._answer(200, [{"UserId": who, "CanEdit": edit} for who, edit in one.shares.items()])
         if rest == ["Items"] and method == "GET":
+            viewer = params.get("userId") or user
+            if viewer is None:
+                # An API key has no user: without one named, 400 (measured).
+                return self._answer(400, text=ERROR)
+            if not self._visible(one, viewer):
+                # Another user's private playlist: 404, as if it were not there (measured, an administrator too).
+                return self._answer(404, text=ERROR)
             entries = [self._track(self.tracks[ident], params) for ident in one.entries if ident in self.tracks]
             for entry in entries:
                 entry["PlaylistItemId"] = entry["Id"]
@@ -236,9 +253,9 @@ class Playlists:
             gone = set(params.get("entryIds", "").split(","))
 
             def remove() -> httpx.Response:
-                if any(entry in gone for entry in one.entries):
-                    one.entries = [entry for entry in one.entries if entry not in gone]
-                    one.changed()
+                one.entries = [entry for entry in one.entries if entry not in gone]
+                # A new Etag even when none of the ids was in it (measured).
+                one.changed()
                 return self._answer(204)
 
             return self._list_write(method, path, params, remove)
@@ -275,7 +292,8 @@ class Playlists:
 
         def make() -> httpx.Response:
             self.lists[ident] = List(ident, str(body.get("Name") or ""), owner, bool(body.get("IsPublic", True)),
-                                     [one for one in body.get("Ids") or [] if one in self.tracks])
+                                     [one for one in body.get("Ids") or [] if one in self.tracks],
+                                     created=self._made_at())
             return self._answer(200, {"Id": ident})
 
         return self._list_write("POST", path, params, make)

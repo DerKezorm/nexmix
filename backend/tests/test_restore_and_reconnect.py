@@ -105,8 +105,12 @@ def test_a_restore_over_a_plex_that_went_on(client: TestClient, world: FakePlex)
     assert both_equal(world, kept) == [3001, 3003, 3013]
     assert later_key in _mirrored(), "the playlist made after the backup is not in nexmix"
     assert local_tracks(_mirrored()[later_key]) == [3020, 3021]
-    # The one deleted in Plex after the backup: in the trash again, with its entries.
-    assert gone_there in _trashed() and local_tracks(gone_there) == [3007]
+    # The one deleted in Plex after the backup and the one deleted here are both missing in Plex after the restore:
+    # several at once are no deletion, so neither goes to the trash on its own. Both keep their entries, and the Plex
+    # card says how many it lacks.
+    assert gone_there in _alive() and local_tracks(gone_there) == [3007]
+    with SessionLocal() as db:
+        assert server_sync.overview(db)["missing"] == 2
     # The one deleted here after the backup (its copy in Plex went with it): back from the backup, in the trash or
     # made again, but once.
     assert gone_here in _trashed() or gone_here in _alive()

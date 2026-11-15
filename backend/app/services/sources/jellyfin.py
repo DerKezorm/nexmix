@@ -54,7 +54,7 @@ from ..jellyfin import (
 from ..plex import ALBUM as ALBUM_TYPE
 from ..plex import ARTIST as ARTIST_TYPE
 from ..plex import TRACK as TRACK_TYPE
-from .base import Capabilities, Entry, Listed, NotSupported
+from .base import PLAYLISTS_NOT_FOUND, Capabilities, Entry, Listed, NotSupported
 
 if TYPE_CHECKING:
     from ..catalog import Writer
@@ -65,6 +65,8 @@ CAPABILITIES = Capabilities(moods=False, sound=False, smart_playlists=False, dup
 #: Ids in one address: about 240 fit (8 KiB), 200 leave room.
 CHUNK = 200
 PLAYLIST = "Playlist"
+#: The user the playlists belong to is gone from Jellyfin (deleted, or made anew with another id): connect again.
+USER_GONE = "jellyfin_user_gone"
 
 #: How far back a partial run looks beyond where the last run began.
 OVERLAP = timedelta(seconds=60)
@@ -173,7 +175,7 @@ def _listed(entry: Any) -> Listed | None:
         return None
     return Listed(key=ident, guid="", title=_text(entry.get("Name"), 200), smart=False,
                   leaf_count=max(0, _plain(entry.get("ChildCount")) or 0), updated_at=0,
-                  etag=_text(entry.get("Etag"), 64))
+                  etag=_text(entry.get("Etag"), 64), created=_seconds(entry.get("DateCreated")))
 
 
 class JellyfinSource:
@@ -217,12 +219,29 @@ class JellyfinSource:
             raise JellyfinError("jellyfin_no_user", 409)
         return user
 
+    def _list_fault(self, exc: JellyfinError) -> JellyfinError:
+        """What a 404 to the list of playlists (or a 500 to a playlist's entries) means: the chosen user is gone from
+        Jellyfin (``USER_GONE``, measured: ``/Items`` answers 404 for an unknown ``userId``, ``/Playlists/<id>/Items``
+        500), or the server's address leads somewhere else (``PLAYLISTS_NOT_FOUND``). Never a playlist deleted."""
+        try:
+            self.server.public_info()
+        except JellyfinError as other:
+            if other.code in ("jellyfin_not_found", "not_jellyfin"):
+                return JellyfinError(PLAYLISTS_NOT_FOUND, 404)
+            return other
+        return JellyfinError(USER_GONE, 409) if exc.code == "jellyfin_not_found" else exc
+
     def listing(self) -> list[Listed]:
-        """The playlists the user sees, with their ``Etag``: music ones, and empty ones (an empty one has no kind
-        yet)."""
-        found = self.server.get("/Items", {"IncludeItemTypes": PLAYLIST, "Recursive": "true",
-                                           "userId": self._playlist_user(), "Fields": "ChildCount,Etag",
-                                           "EnableImages": "false", "EnableUserData": "false"}, timeout=30.0)
+        """The playlists the user sees, with their ``Etag`` and when they were made: music ones, and empty ones (an
+        empty one has no kind yet). A 404 to the list is never read as playlists deleted (``_list_fault``)."""
+        try:
+            found = self.server.get("/Items", {"IncludeItemTypes": PLAYLIST, "Recursive": "true",
+                                               "userId": self._playlist_user(), "Fields": "ChildCount,Etag,DateCreated",
+                                               "EnableImages": "false", "EnableUserData": "false"}, timeout=30.0)
+        except JellyfinError as exc:
+            if exc.code == "jellyfin_not_found":
+                raise self._list_fault(exc) from exc
+            raise
         listed: list[Listed] = []
         for entry in _items_of(found):
             one = _listed(entry)
@@ -243,16 +262,48 @@ class JellyfinSource:
             one = _listed(entry)
             if one is not None and one.key == ident:
                 return one
-        # Not listed: gone, unless its entries still answer (then it is there, of whatever kind).
-        self.server.get(f"/Playlists/{ident}/Items", {"userId": self._playlist_user(), "Limit": 0}, timeout=30.0)
+        # Not listed: gone, unless its entries still answer (then it is there, of whatever kind). Whether it is gone
+        # says only the sync, after it read the whole list again (``sync.Round._vanished``).
+        self._entries(f"/Playlists/{ident}/Items", {"userId": self._playlist_user(), "Limit": 0}, timeout=30.0)
         return Listed(key=ident, guid="", title="", smart=False, leaf_count=0, updated_at=0)
+
+    def _entries(self, path: str, params: dict[str, Any], timeout: float) -> Any:
+        """A playlist's entries as the user sees them; a 500 there is what an unknown user gets (``_list_fault``)."""
+        try:
+            return self.server.get(path, params, timeout=timeout)
+        except JellyfinError as exc:
+            if exc.code != "jellyfin_error":
+                raise
+            self.listing()
+            raise
+
+    def gone(self, key: str) -> bool:
+        """Whether Jellyfin has the playlist no longer, asked of its entries without a user (measured on 12.4: 404
+        once it is deleted, 200 while it is there). An API key has no user of its own and gets 400 so: then asked as
+        the chosen user (404 deleted, 200 there, 500 for a user Jellyfin does not know, which ``_entries`` turns into
+        ``USER_GONE``). False when they answer; any other fault is raised."""
+        ident = checked_id(key)
+        path = f"/Playlists/{ident}/Items"
+        quiet = {"Limit": 0, "EnableImages": "false", "EnableUserData": "false"}
+        try:
+            try:
+                self.server.get(path, quiet, timeout=30.0)
+            except JellyfinError as exc:
+                if exc.code != "jellyfin_bad_request":
+                    raise
+                self._entries(path, {**quiet, "userId": self._playlist_user()}, timeout=30.0)
+        except JellyfinError as exc:
+            if exc.code == "jellyfin_not_found":
+                return True
+            raise
+        return False
 
     def items(self, key: str) -> list[Entry]:
         """Every entry in order, in one answer; a track that stands more than once counts once, at its first place.
         The whole order, copies and all, is kept for the moves that follow (``reorder``)."""
         ident = checked_id(key)
-        found = self.server.get(f"/Playlists/{ident}/Items", {"userId": self._playlist_user(), "EnableImages": "false",
-                                                             "EnableUserData": "false"}, timeout=120.0)
+        found = self._entries(f"/Playlists/{ident}/Items", {"userId": self._playlist_user(), "EnableImages": "false",
+                                                           "EnableUserData": "false"}, timeout=120.0)
         raw: list[str] = []
         entries: list[Entry] = []
         seen: set[str] = set()
@@ -346,11 +397,12 @@ class JellyfinSource:
         return True
 
     def existing(self, tracks: Iterable[str]) -> set[str]:
-        """Which of the tracks the library of Jellyfin still has (asked a hundred at a time)."""
+        """Which of the tracks the library of Jellyfin still has, asked ``CHUNK`` at a time (``/Items?Ids=``, only
+        reading). Any fault is raised: what was not asked is not known."""
         chosen = sorted({checked_id(track) for track in tracks})
         found: set[str] = set()
-        for start in range(0, len(chosen), 100):
-            answer = self.server.get("/Items", {"Ids": ",".join(chosen[start:start + 100]), "EnableImages": "false",
+        for start in range(0, len(chosen), CHUNK):
+            answer = self.server.get("/Items", {"Ids": ",".join(chosen[start:start + CHUNK]), "EnableImages": "false",
                                                 "EnableUserData": "false"}, timeout=60.0)
             for entry in _items_of(answer):
                 ident = _id(entry.get("Id"))
