@@ -43,8 +43,11 @@ export function TrackList({
   onMove,
   onSimilar,
   empty,
+  server = 'Plex',
 }: {
   items: Entry[]
+  /** The name of the playlist's server, for the hints of entries it lost or refused. */
+  server?: string
   canEdit: boolean
   fresh: Set<number>
   focusEntry: number | null
@@ -213,7 +216,7 @@ export function TrackList({
               </div>
               <div className="s" dir="auto">
                 {entry.plex_hint
-                  ? t(entry.plex_hint === 'refused' ? 'editor.plexRefused' : 'editor.plexElsewhere')
+                  ? t(entry.plex_hint === 'refused' ? 'editor.plexRefused' : entry.plex_hint === 'missing' ? 'editor.plexMissing' : 'editor.plexElsewhere', { server })
                   : entry.missing && !entry.from_plex
                     ? t('editor.missing')
                     : trackLine(entry.artist, entry.album, entry.year)}

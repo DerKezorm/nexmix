@@ -277,10 +277,11 @@ describe('the editor', () => {
 })
 
 describe('a playlist on a server without moods (Jellyfin)', () => {
-  const caps = { moods: false, sound: false, smart_playlists: false, duplicates: true, changes: 'poll', playlists: false }
+  const caps = { moods: false, sound: false, smart_playlists: false, duplicates: true, changes: 'both', playlists: true }
+  const jellySync = { state: 'synced', kind: 'jellyfin', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null, loss: null } as const
   beforeEach(() => {
     const status = server.answers['GET /api/v1/catalog/status']
-    const local = { state: 'local', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } as const
+    const local = jellySync
     server.answers = {
       'GET /api/v1/catalog/status?server=2': status,
       'GET /api/v1/catalog?server=2': CATALOG,
@@ -307,13 +308,46 @@ describe('a playlist on a server without moods (Jellyfin)', () => {
     expect(plain(document.querySelector('[data-testid="suggestions"] .suggest-timing')!.textContent)).toContain('aus Genre, Jahrzehnt und Beliebtheit')
   })
 
-  it('says it lives in nexmix only, and deleting does not speak of Plex', async () => {
+  it('says it is saved in Jellyfin, and deleting says it goes from Jellyfin, not from Plex', async () => {
     await open()
-    expect(plain(document.querySelector('[data-testid="sync-state"]')!.textContent)).toBe('Nur in nexmix. In Jellyfin legt nexmix Playlisten noch nicht an.')
+    expect(plain(document.querySelector('[data-testid="sync-state"]')!.textContent)).toBe('In Jellyfin gespeichert')
     await page.click(page.button('Löschen'))
     expect(plain(page.dialog!.textContent)).not.toContain('Plex')
-    expect(plain(page.dialog!.textContent)).toContain('liegt dann 30 Tage im Papierkorb')
+    expect(plain(page.dialog!.textContent)).toContain('In Jellyfin verschwindet sie sofort')
     await page.inDialog('Abbrechen')
     expect(server.changes()).toEqual([])
+  })
+
+  it('shows entries Jellyfin lost, and the note of many lost at once asks before taking them out', async () => {
+    const lost = playlist({ server: 2, plex: { ...jellySync, loss: { at: '2026-11-15T12:00:00Z', count: 2 } } })
+    lost.items = lost.items.map((entry, index) => (index < 2 ? { ...entry, plex_hint: 'missing' as const } : entry))
+    server.answers['GET /api/v1/playlists/7'] = lost
+    server.answers['POST /api/v1/playlists/7/missing/remove'] = { version: lost.version + 1, op: 'remove', entries: [], order: [lost.items[2].id], summary: lost, removed: [lost.items[0].id, lost.items[1].id] }
+    server.answers['DELETE /api/v1/playlists/7/missing'] = jellySync
+    await open()
+    const rows = document.querySelectorAll('[data-testid="track-row"]')
+    expect(plain(rows[0].textContent)).toContain('Fehlt gerade in Jellyfin, kommt nach dem nächsten Katalogabgleich wieder hinein')
+    const note = document.querySelector('[data-testid="loss-note"]')!
+    expect(plain(note.textContent)).toContain('In Jellyfin fehlen auf einmal 2 Titel')
+    expect(note.textContent).not.toMatch(/[–—]/)
+    // Taking them out asks first, and says whether it can be undone; cancelled, nothing is sent.
+    await page.click(page.button('Hier auch entfernen'))
+    expect(plain(page.dialog!.textContent)).toContain('Gleich danach lässt sich das über Rückgängig zurückholen, später nicht mehr.')
+    await page.inDialog('Abbrechen')
+    expect(server.changes()).toEqual([])
+    await page.click(page.button('Hier auch entfernen'))
+    await page.inDialog('Hier auch entfernen')
+    await until(() => server.called('POST', '/api/v1/playlists/7/missing/remove'), 'taken over')
+    await until(() => !document.querySelector('[data-testid="loss-note"]'), 'the note goes')
+  })
+
+  it('keeps the entries Jellyfin lost when asked to', async () => {
+    server.answers['GET /api/v1/playlists/7'] = playlist({ server: 2, plex: { ...jellySync, loss: { at: '2026-11-15T12:00:00Z', count: 6 } } })
+    server.answers['DELETE /api/v1/playlists/7/missing'] = jellySync
+    await open()
+    await page.click(page.button('Behalten'))
+    await until(() => server.called('DELETE', '/api/v1/playlists/7/missing'), 'kept')
+    await until(() => !document.querySelector('[data-testid="loss-note"]'), 'the note goes')
+    expect(server.called('POST', '/api/v1/playlists/7/missing/remove')).toBeFalsy()
   })
 })

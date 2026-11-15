@@ -62,3 +62,53 @@ def number_of(server: int, track_id: str) -> int:
 def key_of(server: int, number: int, kind: str = media.TRACK) -> str:
     with SessionLocal() as db:
         return media.keys(db, server, kind, [number])[number]
+
+
+def numbers(server: int, track_ids: list[str]) -> list[int]:
+    with SessionLocal() as db:
+        found = media.known_numbers(db, server, media.TRACK, track_ids)
+    return [found[one] for one in track_ids]
+
+
+def keys(server: int, tracks: list[int]) -> list[str]:
+    with SessionLocal() as db:
+        found = media.keys(db, server, media.TRACK, tracks)
+    return [found[one] for one in tracks]
+
+
+def list_key(playlist_id: int) -> str:
+    """The playlist's id in Jellyfin."""
+    from .plex_world import mirror
+
+    key = mirror(playlist_id).ext_key
+    assert key is not None
+    return key
+
+
+def make(client: TestClient, server: int, name: str, tracks: list[int] | None = None) -> dict[str, Any]:
+    """A playlist taking its tracks from the Jellyfin server, with ``tracks`` (nexmix's numbers)."""
+    made = client.post("/api/v1/playlists", json={"name": name, "server": server})
+    assert made.status_code == 201, made.text
+    if tracks:
+        added = client.post(f"/api/v1/playlists/{made.json()['id']}/items", json={"tracks": tracks})
+        assert added.status_code == 200, added.text
+    return client.get(f"/api/v1/playlists/{made.json()['id']}").json()
+
+
+def both_equal(fake: FakeJellyfin, server: int, playlist_id: int) -> list[str]:
+    """Both sides hold the same tracks in the same order, each once in nexmix (copies in Jellyfin count once);
+    returns them by Jellyfin's ids."""
+    from .plex_world import local_tracks
+
+    here = keys(server, local_tracks(playlist_id))
+    there = list(dict.fromkeys(fake.tracks_of(list_key(playlist_id))))
+    assert here == there, (here, there)
+    assert len(set(here)) == len(here)
+    return here
+
+
+def sync(rounds: int = 12, *, look: bool = False) -> int:
+    """The clock and the lane until nothing is due any more; ``look``: with a look at every server's list first."""
+    from .plex_world import sync as run
+
+    return run(None, rounds=rounds, look_at_plex=look)

@@ -82,7 +82,7 @@ def test_two_kinds_of_server_keep_their_catalogues_and_their_playlists_apart(
                                                                             (jelly, "jellyfin", False)]
     caps = {one["kind"]: one["capabilities"] for one in listed}
     assert caps["jellyfin"] == {"moods": False, "sound": False, "smart_playlists": False, "duplicates": True,
-                                "changes": "poll", "playlists": False}
+                                "changes": "both", "playlists": True}
     assert caps["plex"]["moods"] and caps["plex"]["playlists"]
     # Each catalogue finds its own.
     assert client.get("/api/v1/catalog/search", params={"q": "Glasfluss", "server": jelly}).json()["tracks"]
@@ -104,16 +104,18 @@ def test_two_kinds_of_server_keep_their_catalogues_and_their_playlists_apart(
     wrong = client.post(f"/api/v1/playlists/{on_jelly['id']}/items", json={"tracks": [3001]})
     assert wrong.status_code == 200 and wrong.json()["skipped"] == [3001] and wrong.json()["entries"] == []
     assert client.post(f"/api/v1/playlists/{on_plex['id']}/items", json={"tracks": [3001]}).status_code == 200
-    # Plex syncs its playlist; the one on Jellyfin lives in nexmix only and says so.
+    # Each server keeps its own playlist: the one on Jellyfin there, the one on Plex in Plex.
     sync(fake_plex)
     detail = client.get(f"/api/v1/playlists/{on_jelly['id']}").json()
-    assert detail["plex"]["state"] == "local" and detail["count"] == 4
+    assert detail["plex"]["state"] == "synced" and detail["plex"]["kind"] == "jellyfin" and detail["count"] == 4
+    assert client.get(f"/api/v1/playlists/{on_plex['id']}").json()["plex"]["kind"] == "plex"
     assert client.get(f"/api/v1/playlists/{on_plex['id']}").json()["plex"]["state"] == "synced"
     with SessionLocal() as db:
-        assert db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == on_jelly["id"])).all() == []
-    assert client.post(f"/api/v1/playlists/{on_jelly['id']}/sync").json()["state"] == "local"
-    sync(fake_plex)
-    assert not any(path.startswith("/Playlists") for _method, path, _params in fake.calls)
+        rows = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == on_jelly["id"])).all()
+        assert [row.server_id for row in rows] == [jelly]
+        jelly_key = rows[0].ext_key
+    assert jelly_key in fake.lists and len(fake.lists[jelly_key].entries) == 4
+    assert not any(one.title == "Auf Jellyfin" for one in fake_plex.lists.lists.values())
     # Listening and covers from the playlist's own server.
     assert client.get(f"/api/v1/preview/{glass}").status_code == 200
     covers = detail["covers"]
@@ -150,8 +152,12 @@ def test_two_kinds_of_server_keep_their_catalogues_and_their_playlists_apart(
     assert guest.get(f"/api/v1/guest/cover/{plex_album}?s=80").status_code == 404
     assert guest.get(f"/api/v1/preview/{glass}").status_code == 200
     assert guest.get("/api/v1/preview/3001").status_code == 404
-    added = guest.post("/api/v1/guest/items", json={"tracks": [more[0] + 0]})
-    assert added.status_code in (200, 409), added.text
+    fresh = number_of(jelly, next(key for key, one in fake.tracks.items() if one.name == "Eisblume"))
+    added = guest.post("/api/v1/guest/items", json={"tracks": [fresh]})
+    assert added.status_code == 200, added.text
+    # What a guest adds goes to Jellyfin like everything else.
+    sync(fake_plex)
+    assert len(fake.lists[jelly_key].entries) == 5
 
     # Not one of Jellyfin's ids, its address or a token in anything a browser got.
     forbidden = secrets_of(fake)

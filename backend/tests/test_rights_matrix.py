@@ -137,6 +137,7 @@ def test_every_route_of_a_playlist_with_a_body_is_named_here() -> None:
     bodiless = {("POST", "/api/v1/playlists/{playlist_id}/restore"), ("POST", "/api/v1/playlists/{playlist_id}/sync"),
                 ("POST", "/api/v1/playlists/{playlist_id}/invite"),
                 ("POST", "/api/v1/playlists/{playlist_id}/plex-order"),
+                ("POST", "/api/v1/playlists/{playlist_id}/missing/remove"),
                 ("PUT", "/api/v1/playlists/{playlist_id}/hidden")}
     assert changing - bodiless == set(BODIES)
     assert VIEW | MANAGE <= set(playlist_routes())

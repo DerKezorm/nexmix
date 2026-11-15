@@ -65,6 +65,7 @@ from .services import (
     accounts,
     backups,
     catalog,
+    jellyfin_events,
     jobs,
     locales,
     logs,
@@ -161,6 +162,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # The clock of the playlists' sync with Plex: due playlists, and a look at Plex every 15 seconds.
         tasks.append(asyncio.create_task(sync.run_forever(stop)))
         tasks.append(asyncio.create_task(plex_events.run_forever(stop)))
+        tasks.append(asyncio.create_task(jellyfin_events.run_forever(stop)))
     logger.info("nexmix %s started", __version__)
     with SessionLocal() as db:
         accounts.announce_setup_code(db)

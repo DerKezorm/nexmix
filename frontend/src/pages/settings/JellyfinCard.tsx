@@ -7,7 +7,7 @@
  * address and no id of Jellyfin comes back to the browser: a library and a user are named by nexmix's own handles.
  *
  * Connected: the steps with their ticks, the catalogue (counts, progress of a run, the last sync, a failure), that
- * Jellyfin has no moods, that playlists live in nexmix only for now, and the buttons to sync now, to choose another
+ * Jellyfin has no moods, how its playlists stand (saved there, waiting, failed, the last look), and the buttons to sync now, to choose another
  * library or user and to disconnect (asks first and says what goes).
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
@@ -20,7 +20,7 @@ import { useConfirm } from '../../components/useConfirm'
 import { percentOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
-import { Steps } from './PlexCard'
+import { ServerPlaylists, Steps } from './PlexCard'
 import { Button, Card, Feedback, Input, useAction } from './ui'
 
 /** How long to wait between two asks whether the code was confirmed; the tests shorten it. */
@@ -216,8 +216,7 @@ export function JellyfinCard({ server, onChanged }: { server: JellyfinServer; on
               <>
                 <dt>{t('plex.moods')}</dt>
                 <dd>{t('jellyfin.moodsValue')}</dd>
-                <dt>{t('jellyfin.playlists')}</dt>
-                <dd>{t('jellyfin.playlistsValue')}</dd>
+                <ServerPlaylists kind="jellyfin" load={() => jellyfinApi.playlists(server.id)} syncAll={() => jellyfinApi.syncPlaylists(server.id)} />
               </>
             }
           />

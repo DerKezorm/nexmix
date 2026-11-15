@@ -9,11 +9,12 @@ export type Access = 'owner' | 'operator' | 'edit' | 'read'
 
 export type Summary = { count: number; duration: number; covers: number[]; people: Person[]; contributors: number; moods?: string[] }
 
-/** How the copy of a playlist in Plex stands. */
+/** How the copy of a playlist on its media server (Plex or Jellyfin) stands. */
 export type PlexSync = {
-  /** `local`: the playlist lives in nexmix only (its server takes no playlists from nexmix yet). */
-  state: 'synced' | 'pending' | 'waiting' | 'error' | 'off' | 'local'
-  /** The code of the last failure, while it waits for Plex or failed. */
+  state: 'synced' | 'pending' | 'waiting' | 'error' | 'off'
+  /** The kind of the playlist's server: `plex` or `jellyfin` (null: none). */
+  kind?: string | null
+  /** The code of the last failure, while it waits for the server or failed. */
   error: string | null
   smart: boolean
   /** All entries of a smart playlist (the page shows the first ones). */
@@ -23,6 +24,8 @@ export type PlexSync = {
   gone_in_plex: boolean
   /** Sorted in Plex and here at the same time: this order stands, Plex's can be taken. */
   note: { at: string; count: number } | null
+  /** The server lost many entries at once (or became empty): nexmix kept them, they go back after the catalogue sync. */
+  loss?: { at: string; count: number } | null
 }
 
 export type Card = Summary & {
@@ -64,7 +67,7 @@ export type Entry = {
   /** Put in through Plex (Plexamp, Plex Web); `added_at` is when nexmix saw it. */
   from_plex?: boolean
   /** Why the entry is in nexmix only: Plex refused its track, or the connected server has no such track. */
-  plex_hint?: 'refused' | 'elsewhere' | null
+  plex_hint?: 'refused' | 'elsewhere' | 'missing' | null
   added_by: Person | null
   added_by_name: string
   added_at: string
@@ -112,6 +115,10 @@ export const playlistsApi = {
   sync: (id: number) => api<PlexSync>(`${base(id)}/sync`, { method: 'POST' }),
   takePlexOrder: (id: number) => api<Change>(`${base(id)}/plex-order`, { method: 'POST' }),
   keepOrder: (id: number) => api<PlexSync>(`${base(id)}/plex-order`, { method: 'DELETE' }),
+  /** Take over what the server lost at once: the entries kept for it go here too. */
+  takeLoss: (id: number) => api<Change>(`${base(id)}/missing/remove`, { method: 'POST' }),
+  /** Keep them: the note goes, they go back to the server after the next catalogue sync. */
+  keepLoss: (id: number) => api<PlexSync>(`${base(id)}/missing`, { method: 'DELETE' }),
   /** Hide from the own overview, or show again: only this account's view. */
   hide: (id: number) => api<{ id: number; hidden: boolean }>(`${base(id)}/hidden`, { method: 'PUT' }),
   show: (id: number) => api<{ id: number; hidden: boolean }>(`${base(id)}/hidden`, { method: 'DELETE' }),

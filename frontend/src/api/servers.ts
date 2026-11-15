@@ -4,6 +4,7 @@
  * named by a handle of nexmix's own.
  */
 import { api } from './client'
+import type { PlaylistSync } from './plex'
 
 export type Capabilities = {
   moods: boolean
@@ -56,4 +57,7 @@ export const jellyfinApi = {
   chooseLibrary: (server: number, handle: string) => api<JellyfinServer>(`/api/v1/jellyfin/${server}/library`, { method: 'PUT', body: { handle } }),
   chooseUser: (server: number, handle: string) => api<JellyfinServer>(`/api/v1/jellyfin/${server}/user`, { method: 'PUT', body: { handle } }),
   disconnect: (server: number) => api<void>(`/api/v1/jellyfin/${server}`, { method: 'DELETE' }),
+  /** How the playlists stand in this Jellyfin, and "sync every playlist now". */
+  playlists: (server: number) => api<PlaylistSync>(`/api/v1/jellyfin/${server}/playlists`),
+  syncPlaylists: (server: number) => api<PlaylistSync>(`/api/v1/jellyfin/${server}/playlists/sync`, { method: 'POST' }),
 }

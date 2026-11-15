@@ -43,7 +43,9 @@ def secret_of(db: Session, row: MediaServer) -> tuple[str, str]:
 
 def open_server(db: Session, row: MediaServer, **options: Any) -> PlexSource | JellyfinSource:
     """The connector of the server, opened (``with``). ``plex_link.Unreadable`` when its token cannot be opened. A
-    Jellyfin server opened for a long piece of work (``stop`` given) waits while it starts."""
+    Jellyfin server opened for a long piece of work (``stop`` given) waits while it starts, unless ``patient`` is
+    False: the sync of the playlists never asks twice (a write whose answer was lost would be done twice) and waits
+    with its own pauses."""
     from .. import jellyfin_link, plex_link
 
     if row.kind == SERVER_JELLYFIN:
@@ -54,5 +56,7 @@ def open_server(db: Session, row: MediaServer, **options: Any) -> PlexSource | J
         return JellyfinSource(row.url, token, device, row.section_key, row.user_id or "", **options)
     if row.kind != SERVER_PLEX:
         raise NotSupported(row.kind)
+    # Plex is never waited for inside its connector.
+    options.pop("patient", None)
     return PlexSource(row.url, plex_link.token_of(row), plex_link.client_id(db), row.machine_id, row.section_key,
                       **options)

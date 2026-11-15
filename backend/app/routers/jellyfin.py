@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from ..deps import DbSession, OperatorAccount, session_of
 from ..errors import error
 from ..models import SERVER_JELLYFIN, MediaServer
-from ..services import catalog, jellyfin_link, media
+from ..services import catalog, jellyfin_link, media, sync
 from ..services.jellyfin import JellyfinError, Library, User
 
 logger = logging.getLogger("nexmix.jellyfin")
@@ -202,6 +202,19 @@ def choose_user(server_id: ServerId, body: Choice, _operator: OperatorAccount, d
     if first:
         _start_catalogue(db, row)
     return view(row)
+
+
+@router.get("/{server_id}/playlists",
+            summary="How the playlists stand in this Jellyfin: saved, waiting, failed, the last look")
+def jellyfin_playlists(server_id: ServerId, _operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
+    return sync.overview(db, _row(db, server_id).id)
+
+
+@router.post("/{server_id}/playlists/sync", summary="Sync every playlist with this Jellyfin now, and look for new ones")
+def sync_playlists(server_id: ServerId, _operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
+    row = _row(db, server_id)
+    sync.request_all(db, row.id)
+    return sync.overview(db, row.id)
 
 
 @router.delete("/{server_id}", status_code=204,

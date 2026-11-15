@@ -225,6 +225,25 @@ def keep_own_order(playlist_id: PlaylistId, account: Account, db: DbSession) -> 
     return sync.view(db, playlist_id)
 
 
+@router.post("/{playlist_id}/missing/remove",
+             summary="Take over what the media server lost: the entries kept for it are taken out here too")
+def take_loss(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[str, Any]:
+    playlists.load(db, account, playlist_id, "edit")
+    entries = sync.missing_tracks(db, playlist_id)
+    db.rollback()
+    change = playlists.remove(db, account, playlist_id, entries)
+    sync.drop_note(db, playlist_id, "loss")
+    return change
+
+
+@router.delete("/{playlist_id}/missing",
+               summary="Keep what the media server lost: the note goes, the entries go back after the catalogue run")
+def keep_loss(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[str, Any]:
+    playlists.load(db, account, playlist_id, "edit")
+    sync.drop_note(db, playlist_id, "loss")
+    return sync.view(db, playlist_id)
+
+
 def _still_sees(request: Request, account_id: int, playlist_id: int) -> bool:
     """Whether the stream may go on: its credential still speaks for the account (not signed out, revoked or blocked),
     and the account still sees the playlist."""

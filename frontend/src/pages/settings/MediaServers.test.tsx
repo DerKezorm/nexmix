@@ -176,18 +176,25 @@ describe('the Jellyfin card', () => {
     server.answers['GET /api/v1/jellyfin'] = { servers: [JELLY_VIEW] }
   })
 
-  it('shows the catalogue and says what Jellyfin cannot do yet', async () => {
+  it('shows the catalogue, what Jellyfin cannot do, and how its playlists stand', async () => {
+    server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 2, pending: 0, waiting: 1, error: 0, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: null }
+    server.answers['POST /api/v1/jellyfin/2/playlists/sync'] = server.answers['GET /api/v1/jellyfin/2/playlists']
     await page.show(<MediaServers />)
     const box = card('jellyfin-2')
+    await until(() => box.querySelector('[data-testid="jellyfin-playlists"]'), 'the playlists of Jellyfin')
     const text = plain(box.textContent)
     expect(text).toContain('Mit Jellyfin „Probe“ verbunden.')
     expect(text).toContain('7 Künstler · 9 Alben · 21 Titel')
     expect(text).toContain('gibt es bei Jellyfin nicht, Genre und Jahrzehnt gehen')
     expect(text).toContain('lokal in nexmix, Jellyfin wird beim Tippen nie gefragt')
     expect(text).not.toContain('Plex')
-    expect(text).toContain('leben vorerst nur in nexmix. In Jellyfin legt nexmix noch keine an.')
+    expect(text).toContain('2 von 3 in Jellyfin gespeichert · 1 wartet auf Jellyfin')
+    expect(plain(box.querySelector('[data-testid="jellyfin-playlists-looked"]')!.textContent)).toContain('danach alle 15 Sekunden')
+    expect(text).not.toMatch(/[–—]/)
     await page.click(page.button('Jetzt abgleichen', box))
     expect(server.changes()).toEqual(['POST /api/v1/catalog/sync?server=2'])
+    await page.click(page.button('Playlisten jetzt abgleichen', box))
+    await until(() => server.called('POST', '/api/v1/jellyfin/2/playlists/sync'), 'synced the playlists')
   })
 
   it('asks before disconnecting, says what goes, and sends nothing without the yes', async () => {

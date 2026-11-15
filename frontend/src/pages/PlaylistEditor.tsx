@@ -18,7 +18,7 @@ import { applyChange, playlistsApi, type Change, type Entry, type Playlist, type
 import { Mosaic } from '../components/Mosaic'
 import { People } from '../components/People'
 import { Spark } from '../components/Spark'
-import { SyncLine } from '../components/PlexSync'
+import { serverName, SyncLine } from '../components/PlexSync'
 import { useConfirm } from '../components/useConfirm'
 import type { TrackHit } from '../lib/catalogSearch'
 import { useCatalogSource } from '../lib/catalogSource'
@@ -128,10 +128,10 @@ export function PlaylistEditor() {
     }
   }, [fresh_, playlist, navigate, location.pathname])
 
-  /** A change made here or by somebody else goes to Plex in a moment: the head says so until the sync answers. */
+  /** A change made here or by somebody else goes to the server in a moment: the head says so until the sync answers. */
   const pending = useCallback(() => {
     const now = current.current
-    if (!now?.plex || now.plex.state === 'off' || now.plex.state === 'local' || now.plex.smart) return
+    if (!now?.plex || now.plex.state === 'off' || now.plex.smart) return
     show({ ...now, plex: { ...now.plex, state: 'pending', error: null } })
   }, [show])
 
@@ -357,8 +357,35 @@ export function PlaylistEditor() {
     const now = current.current
     if (change && now) {
       show({ ...now, plex: { ...now.plex, note: null } })
-      setToast({ text: t('sync.noteUndone') })
+      setToast({ text: t('sync.noteUndone', { server: serverName(now.plex.kind) }) })
     }
+  }, [playlistId, run, show, t])
+  /** The note "many missing in the server at once": keep drops the note, take over takes them out here too (asked first). */
+  const keepLoss = useCallback(async () => {
+    try {
+      const plex = await playlistsApi.keepLoss(playlistId)
+      const now = current.current
+      if (now) show({ ...now, plex })
+    } catch (error) {
+      setProblem(errorText(codeOf(error)))
+    }
+  }, [playlistId, show])
+  const takeLoss = useCallback(async () => {
+    const now = current.current
+    if (!now) return
+    const gone = now.items.filter((entry) => entry.plex_hint === 'missing')
+    const first = now.items.findIndex((entry) => entry.plex_hint === 'missing')
+    const before = first > 0 ? now.items[first - 1].id : null
+    const change = await run(() => playlistsApi.takeLoss(playlistId))
+    const latest = current.current
+    if (latest) show({ ...latest, plex: { ...latest.plex, loss: null } })
+    if (!change || change.op === 'none') return
+    setToast({
+      text: t('sync.lossRemoved'),
+      undo: async () => {
+        await run(() => playlistsApi.bringBack(playlistId, gone.map((entry) => entry.id), before))
+      },
+    })
   }, [playlistId, run, show, t])
   const keepOrder = useCallback(async () => {
     try {
@@ -484,7 +511,7 @@ export function PlaylistEditor() {
                     onClick={() =>
                       ask({
                         title: t('editor.deleteTitle'),
-                        text: playlist.plex && playlist.plex.state !== 'off' && playlist.plex.state !== 'local' ? t('sync.deleteText', { name: iso(playlist.name), days: 30 }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 }),
+                        text: playlist.plex && playlist.plex.state !== 'off' ? t('sync.deleteText', { name: iso(playlist.name), days: 30, server: serverName(playlist.plex.kind) }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 }),
                         confirm: t('editor.deleteConfirm'),
                         danger: false,
                         run: async () => {
@@ -501,8 +528,8 @@ export function PlaylistEditor() {
             )}
             {playlist.plex?.note && (
               <div className="note" data-testid="plex-note" role="status">
-                <b>{t('sync.noteTitle')}</b>
-                {t('sync.noteText')}
+                <b>{t('sync.noteTitle', { server: serverName(playlist.plex.kind) })}</b>
+                {t('sync.noteText', { server: serverName(playlist.plex.kind) })}
                 {canEdit && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button type="button" className="btn" onClick={() => void takePlexOrder()}>
@@ -510,6 +537,34 @@ export function PlaylistEditor() {
                     </button>
                     <button type="button" className="btn ghost" onClick={() => void keepOrder()}>
                       {t('sync.noteKeep')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {playlist.plex?.loss && (
+              <div className="note" data-testid="loss-note" role="status">
+                <b>{t('sync.lossTitle', { server: serverName(playlist.plex.kind), count: playlist.plex.loss.count })}</b>
+                {t('sync.lossText', { server: serverName(playlist.plex.kind) })}
+                {canEdit && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" className="btn" onClick={() => void keepLoss()}>
+                      {t('sync.lossKeep')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() =>
+                        ask({
+                          title: t('sync.lossRemoveTitle'),
+                          text: t('sync.lossRemoveText', { server: serverName(playlist.plex.kind), name: iso(playlist.name) }),
+                          confirm: t('sync.lossRemove'),
+                          danger: true,
+                          run: takeLoss,
+                        })
+                      }
+                    >
+                      {t('sync.lossRemove')}
                     </button>
                   </div>
                 )}
@@ -525,6 +580,7 @@ export function PlaylistEditor() {
         <div className="col-body soft-scroll" ref={list}>
           <TrackList
             items={playlist.items}
+            server={serverName(playlist.plex?.kind)}
             canEdit={canEdit}
             fresh={fresh}
             focusEntry={focusEntry}

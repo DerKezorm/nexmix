@@ -100,8 +100,8 @@ With a session, a device token or an API key: the media servers nexmix knows, ea
 `jellyfin`), `name`, `active` (connected; a server let go of rests with its numbers and the copies of the playlists on
 it), `library`, `ready` (its catalogue is there), `primary` (the first one connected, the source of a new playlist
 unless another is named) and `capabilities` (`moods`, `sound`, `smart_playlists`, `duplicates`, `changes`, and
-`playlists`: nexmix keeps its playlists there; Jellyfin has no moods and no sonic analysis, and its playlists live in
-nexmix only for now). Never an address, a token or an id of the server.
+`playlists`: nexmix keeps its playlists there; Jellyfin has no moods and no sonic analysis). Never an address, a
+token or an id of the server.
 
 `DELETE /api/v1/servers/{id}` (the operator, in a browser) lets go of a server: its token and its catalogue go, the
 server itself stays as it is, and the playlists that take their tracks from it wait for it in nexmix.
@@ -155,13 +155,15 @@ album ids of up to four `covers`, the first `people` who added something; `?tras
 bring back, with `purge_at` (30 days after `deleted_at`), and `server`, the media server the playlist takes its tracks
 from (its catalogue is the one to search; `null` before any was connected). `GET /{id}` adds `items` in order (each entry has its own
 `id`, the `track`, title, artist, album, `album_id`, `year`, `duration`, `song`, `missing` when the track is no longer in
-the catalogue, `from_plex` when it was put in through Plex, `plex_hint` when it is in nexmix only (`refused`: Plex
-did not take its track, five tries over some 80 minutes; `elsewhere`: the connected server has no such track),
+the catalogue, `from_plex` when it was put in through its server (Plex or Jellyfin), `plex_hint` when it is in nexmix
+only (`refused`: the server did not take its track, five tries over some 80 minutes; `elsewhere`: the connected server
+has no such track; `missing`: the server lost it while its track left the library, it goes back after the next run of
+the catalogue),
 `added_by`) and the playlist's `moods`. Each playlist has
-`smart` and `plex`: how its copy in Plex stands (`state`: `synced`, `pending`, `waiting` when Plex was not reached and
-it is tried again, `error` with its code in `error`, `off` without Plex, `local` when the playlist's server takes no
-playlists from nexmix: a playlist on Jellyfin lives in nexmix only for now), `total` of a smart playlist, `gone_in_plex`
-for one deleted there, and `note` when it was sorted in Plex and here at the same time. These read with an API key too;
+`smart` and `plex`: how its copy on its server stands (`kind`: `plex` or `jellyfin`; `state`: `synced`, `pending`,
+`waiting` when the server was not reached and it is tried again, `error` with its code in `error`, `off` without a
+server), `total` of a smart playlist, `gone_in_plex` for one deleted there, `note` when it was sorted there and here at
+the same time, and `loss` when the server lost many entries at once (see below). These read with an API key too;
 everything else needs a session or a device token. A playlist the account may not see answers `404`.
 
 - `POST` `{"name", "server"}` makes one, taking its tracks from `server` (an `id` of `GET /api/v1/servers`; without
@@ -187,6 +189,24 @@ everything else needs a session or a device token. A playlist the account may no
   `smart_playlist`, and it takes no guests. On another Plex server than its own it is never made as an ordinary
   playlist: its sync stands at `error` `smart_not_here` until it is back on its own server. Entries added by guests go to Plex like all others (their names stay in
   nexmix); a playlist deleted in Plex goes to the trash, and its invitation for guests ends.
+- Jellyfin: a playlist whose source is a Jellyfin server is a playlist there, of the Jellyfin user chosen when
+  connecting and public, kept both ways like one of Plex (changes there arrive within 15 seconds, moves too: Jellyfin's
+  list carries a mark of every change; made, renamed or deleted there also through Jellyfin's websocket). Playlists of
+  that user made in Jellyfin come to nexmix and belong to the operator, but only when nexmix is connected as that user
+  (Quick Connect by him): with an API key nexmix cannot tell whose a playlist is, and takes none in. A track standing
+  twice in Jellyfin is one entry here. The playlist's `plex` carries `kind` (`plex` or `jellyfin`); while Jellyfin
+  starts or cannot be reached it is `waiting` (`jellyfin_starting`, `jellyfin_unreachable`, `jellyfin_timeout`), a
+  token Jellyfin no longer takes is `error` `jellyfin_refused` (connect again), a change this user may not make there
+  `error` `jellyfin_forbidden`.
+- Entries the server lost: when the server's playlist loses an entry while its track left the library (Jellyfin drops
+  an entry without a word when the file is renamed or moved), the entry stays here with `plex_hint` `missing`, and goes
+  back to the server after the next run of the catalogue (under the track's new id where the file was renamed). When
+  the server's playlist loses many entries at once (five or more) while some of their tracks left the library, or it is
+  empty all of a sudden (a library made anew in Jellyfin empties every playlist), nothing of it is taken: the entries
+  stay with the same hint and `plex.loss` says `{"at", "count"}`. `POST /{id}/missing/remove` takes them out here too
+  (needs the right to change the playlist; the answer is the change, as for `items/remove`, and the entries can be
+  brought back with `items/restore`), `DELETE /{id}/missing` keeps them (the note goes; they go back to the server
+  after the next run of the catalogue). The same holds for Plex.
 - `GET /{id}/events`: Server-Sent Events (`hello` with the version, `items` (also with `op` `sync` for what came from
   Plex), `playlist` for a rename or the trash, `plex` when its sync with Plex changes state, `access` when the shares
   change, `gone` when the account may no longer see it, or the session, device or key that opened the stream is
@@ -311,7 +331,9 @@ jellyfin_starting` while Jellyfin starts. The answer has the `server`, its music
 a `handle` of nexmix's own (never an id of Jellyfin); a single library or user is chosen at once. `GET /{id}`, `GET
 /{id}/choices`, `PUT /{id}/library` `{"handle"}` (the catalogue is fetched anew), `PUT /{id}/user` `{"handle"}` (the
 Jellyfin user the playlists will belong to there; their play counts say how well known a track is), `DELETE /{id}`
-lets go of it. The catalogue is fetched once the library and the user are chosen. nexmix gives itself one device id
+lets go of it. The catalogue is fetched once the library and the user are chosen. `GET /{id}/playlists` tells how
+the playlists stand in that Jellyfin (as `GET /api/v1/plex/playlists` does for Plex, with `kind`), `POST
+/{id}/playlists/sync` syncs them all now and looks for new ones there. nexmix gives itself one device id
 per installation and server at Jellyfin (Jellyfin keeps one token per device id). Only the operator, only in a signed-in browser. A sign-in through plex.tv belongs to the
 session that began it: for every other one, even of another operator, it does not exist (`pin_expired`); the same
 holds for a Quick Connect of Jellyfin (`quick_expired`). No answer ever holds a token.

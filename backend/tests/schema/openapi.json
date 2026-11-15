@@ -5820,6 +5820,108 @@
         ]
       }
     },
+    "/api/v1/jellyfin/{server_id}/playlists": {
+      "get": {
+        "operationId": "jellyfin_playlists_api_v1_jellyfin__server_id__playlists_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Jellyfin Playlists Api V1 Jellyfin  Server Id  Playlists Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "How the playlists stand in this Jellyfin: saved, waiting, failed, the last look",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/{server_id}/playlists/sync": {
+      "post": {
+        "operationId": "sync_playlists_api_v1_jellyfin__server_id__playlists_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sync Playlists Api V1 Jellyfin  Server Id  Playlists Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync every playlist with this Jellyfin now, and look for new ones",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
     "/api/v1/jellyfin/{server_id}/user": {
       "put": {
         "operationId": "choose_user_api_v1_jellyfin__server_id__user_put",
@@ -8463,6 +8565,108 @@
           }
         ],
         "summary": "Bring entries taken out back (the undo), after a given entry",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/missing": {
+      "delete": {
+        "operationId": "keep_loss_api_v1_playlists__playlist_id__missing_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Keep Loss Api V1 Playlists  Playlist Id  Missing Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Keep what the media server lost: the note goes, the entries go back after the catalogue run",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/missing/remove": {
+      "post": {
+        "operationId": "take_loss_api_v1_playlists__playlist_id__missing_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Take Loss Api V1 Playlists  Playlist Id  Missing Remove Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Take over what the media server lost: the entries kept for it are taken out here too",
         "tags": [
           "playlists"
         ]

@@ -14,6 +14,7 @@ What it does as Jellyfin does:
 * ``MinDateLastSaved`` filters what was saved since; ``MinDateCreated`` is ignored. ``Limit=0`` gives the total.
 * Sound (``/Audio/<id>/stream.mp3``) and pictures (``/Items/<album>/Images/Primary``) answer **without** a token.
 * While it starts (``starting``: so many requests) everything answers 503.
+* Playlists as ``playlists.py`` says.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from urllib.parse import parse_qsl, urlsplit
 import httpx
 
 from ..fakeplex import sound
+from .playlists import Playlists
 
 #: The made-up server's own id.
 SERVER_ID = hashlib.md5(b"stand-in jellyfin").hexdigest()
@@ -171,7 +173,7 @@ def _jpeg(color: tuple[int, int, int], size: int) -> bytes:
 
 
 @dataclass
-class FakeJellyfin:
+class FakeJellyfin(Playlists):
     """The stand-in. ``now`` is its clock (the ``Date`` of its answers); the tests move it."""
 
     name: str = "Probe"
@@ -188,6 +190,8 @@ class FakeJellyfin:
     starts: list[dict[str, str]] = field(default_factory=list)
     sound_bytes: int = 900_000
     lock: threading.Lock = field(default_factory=threading.Lock)
+    #: Called with the number of requests so far and the path, before each is answered (a test stops nexmix there).
+    hook: Any = None
 
     def __post_init__(self) -> None:
         self.albums, self.tracks = made_up_library()
@@ -198,6 +202,7 @@ class FakeJellyfin:
         self.tokens[self.api_key] = (None, "")
         #: Quick Connect under way, by secret.
         self.quick: dict[str, dict[str, Any]] = {}
+        self._init_playlists()
 
     # --- Changing things, as somebody would in Jellyfin or on the disk -----------------------------------------
 
@@ -217,10 +222,25 @@ class FakeJellyfin:
         track.path = track.path.rsplit("/", 1)[0] + f"/{new_name}.flac"
         track.saved = track.created = self.now
         self.tracks[track.id] = track
+        self.drop_from_lists(track_id)
         return track.id
 
     def delete(self, track_id: str) -> None:
         self.tracks.pop(track_id)
+        self.drop_from_lists(track_id)
+
+    def bulk(self, count: int, *, artist: str = "Brakkel", name: str = "Lange Nacht") -> list[str]:
+        """``count`` more made-up tracks on one album of their own; their ids in order."""
+        ident = make_id("album", artist, name)
+        self.albums[ident] = Album(ident, name, artist, 2011, ["Rock"], created=self.now, saved=self.now)
+        made: list[str] = []
+        for number in range(1, count + 1):
+            track = Track(f"/music/{artist}/{name}/{number:05d} Stueck {number}.flac", f"Stueck {number}", ident,
+                          [artist], 120 + number % 200, 2011, ["Rock"], number=number, created=self.now,
+                          saved=self.now)
+            self.tracks[track.id] = track
+            made.append(track.id)
+        return made
 
     def add(self, album_id: str, name: str, seconds: int = 200) -> str:
         owner = self.albums[album_id]
@@ -298,6 +318,8 @@ class FakeJellyfin:
         path = parts.path
         params = dict(parse_qsl(parts.query, keep_blank_values=True))
         self.calls.append((request.method, path, params))
+        if self.hook is not None:
+            self.hook(len(self.calls), path)
         if self.starting > 0:
             self.starting -= 1
             return self._answer(503, text="Jellyfin server is loading. Please try again shortly.")
@@ -334,8 +356,16 @@ class FakeJellyfin:
                 {"Name": "Musik", "Id": LIBRARY_ID, "CollectionType": "music", "Type": "CollectionFolder"},
                 {"Name": "Filme", "Id": OTHER_LIBRARY_ID, "CollectionType": "movies", "Type": "CollectionFolder"},
             ], "TotalRecordCount": 2, "StartIndex": 0})
+        if method == "GET" and path == "/Items" and params.get("IncludeItemTypes") == "Playlist":
+            listed = self._listing(params, user)
+            return self._answer(200, {"Items": listed, "TotalRecordCount": len(listed), "StartIndex": 0})
+        if method == "GET" and path == "/Items" and "Ids" in params:
+            found = self._by_ids(params)
+            return self._answer(200, {"Items": found, "TotalRecordCount": len(found), "StartIndex": 0})
         if method == "GET" and path == "/Items":
             return self._items(params, user)
+        if path.startswith("/Playlists") or (method == "DELETE" and path.startswith("/Items/")):
+            return self._playlists(request, method, path, params, user)
         return self._answer(404, text=ERROR)
 
     def _user(self, ident: str) -> dict[str, Any]:

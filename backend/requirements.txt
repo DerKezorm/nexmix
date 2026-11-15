@@ -9,6 +9,8 @@ argon2-cffi==25.1.0
 cryptography==50.0.1
 pyjwt==2.15.1
 httpx==0.28.1
+# Jellyfin's websocket (a playlist made, renamed or deleted there); also what uvicorn[standard] brings.
+websockets==17.4
 segno==1.6.6
 tzdata==2026.1
 # Web Push: the message encrypted for one device (RFC 8291, aes128gcm).

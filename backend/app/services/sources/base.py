@@ -28,6 +28,9 @@ class Capabilities:
     changes: str
     #: nexmix keeps its playlists there (else a playlist with that source lives in nexmix only).
     playlists: bool = True
+    #: How the server names an entry of a playlist: ``own`` (an id of its own, given in order as entries are added:
+    #: Plex's ``playlistItemID``) or ``track`` (the track's id: Jellyfin's ``PlaylistItemId`` is the track's ``Id``).
+    entries: str = "own"
 
     def view(self) -> dict[str, object]:
         return {"moods": self.moods, "sound": self.sound, "smart_playlists": self.smart_playlists,
@@ -44,14 +47,18 @@ class Listed:
     smart: bool
     #: How many entries the list says it has (stale for a smart playlist of Plex).
     leaf_count: int
-    #: When the server last changed it, whole seconds on its own clock.
+    #: When the server last changed it, whole seconds on its own clock (0: the server does not say).
     updated_at: int
+    #: A mark that changes with every change of the playlist, its entries' order too (Jellyfin's ``Etag``; "": none).
+    etag: str = ""
 
 
 @dataclass(frozen=True)
 class Entry:
-    """An entry of a playlist on the server: its id there (None in a smart playlist), the track's key, and what the
-    server says of the track (for an entry whose track the catalogue does not know yet)."""
+    """An entry of a playlist on the server: its id there (None in a smart playlist, and where the server names an
+    entry by its track: ``Capabilities.entries``), the track's key, and what the server says of the track (for an entry
+    whose track the catalogue does not know yet). ``ref`` is how the server's requests name the entry (``str(item)``,
+    or the track's key)."""
 
     item: int | None
     track: str
@@ -62,6 +69,7 @@ class Entry:
     year: int | None
     duration: int
     guid: str = ""
+    ref: str = ""
 
 
 class NotSupported(Exception):

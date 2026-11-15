@@ -197,8 +197,11 @@ class JellyfinServer:
             if self.began is None:
                 self.began = moment
         status = answer.status_code
-        if status in (401, 403):
+        if status == 401:
             raise JellyfinError("jellyfin_refused")
+        if status == 403:
+            # Signed in, but this user may not do it (another user's playlist, a library not shared with him).
+            raise JellyfinError("jellyfin_forbidden")
         if status == 404:
             raise JellyfinError("jellyfin_not_found", 404)
         if status == 503:

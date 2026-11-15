@@ -684,6 +684,14 @@ def _run(db: Session, job: Job, kind: str,
         except Exception:
             db.rollback()
             logger.exception("Entries could not be found again after the run server=%s", run.server_id)
+        # Entries the server lost (a file renamed, a library made anew) go back to it now that the catalogue is new.
+        try:
+            from . import sync
+
+            sync.after_catalogue(db, run.server_id)
+        except Exception:
+            db.rollback()
+            logger.exception("Lost entries could not be written back after the run server=%s", run.server_id)
 
 
 def run_full(db: Session, job: Job) -> None:

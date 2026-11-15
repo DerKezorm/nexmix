@@ -131,7 +131,8 @@ def begin(db: Session, url: str, owner: str) -> tuple[str, Pending]:
         try:
             started = server.quick_begin()
         except JellyfinError as exc:
-            if exc.code in ("jellyfin_refused", "jellyfin_bad_request", "jellyfin_error", "jellyfin_not_found"):
+            if exc.code in ("jellyfin_refused", "jellyfin_forbidden", "jellyfin_bad_request", "jellyfin_error",
+                            "jellyfin_not_found"):
                 # Quick Connect is switched off in that Jellyfin: the API key is left.
                 raise JellyfinError("quick_off", 409) from exc
             raise

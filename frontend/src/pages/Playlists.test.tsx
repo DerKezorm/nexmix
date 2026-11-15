@@ -360,9 +360,11 @@ describe('a new playlist with more than one media server', () => {
     expect(server.called('POST', '/api/v1/playlists')!.body).toEqual({ name: 'Neue Playlist' })
   })
 
-  it('marks a playlist that lives in nexmix only', async () => {
-    server.answers['GET /api/v1/playlists'] = { playlists: [card({ id: 7, name: 'Auf Jellyfin', server: 2, plex: { state: 'local', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } })], trash_days: 30 }
+  it('marks a playlist saved in Jellyfin as such', async () => {
+    server.answers['GET /api/v1/playlists'] = { playlists: [card({ id: 7, name: 'Auf Jellyfin', server: 2, plex: { state: 'synced', kind: 'jellyfin', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } }), card({ id: 8, name: 'Wartet', server: 2, plex: { state: 'waiting', kind: 'jellyfin', error: 'jellyfin_starting', smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } })], trash_days: 30 }
     await page.show(<PlaylistsPage />)
-    expect(plain(document.querySelector('[data-testid="sync-mark"]')!.textContent)).toBe('Nur in nexmix')
+    const marks = document.querySelectorAll('[data-testid="sync-mark"]')
+    expect(plain(marks[0].textContent)).toBe('In Jellyfin')
+    expect(plain(marks[1].textContent)).toBe('Wartet auf Jellyfin')
   })
 })

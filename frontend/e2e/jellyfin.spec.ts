@@ -2,7 +2,8 @@
  * Jellyfin from end to end, against the stand-in Jellyfin and its made-up library: the operator adds the server in the
  * settings by Quick Connect (the code shown, confirmed in the stand-in as one would in Jellyfin's profile), chooses the
  * user, the catalogue comes; a playlist is made with Jellyfin as its source, a track found and added, a preview heard.
- * The playlist says it lives in nexmix only, and the filter of moods says Jellyfin has none. Runs in Chromium, Firefox
+ * The playlist is saved in Jellyfin ("Saved in Jellyfin", the stand-in holds it), a track added in the stand-in as from
+ * a Jellyfin app shows up in the open playlist, and the filter of moods says Jellyfin has none. Runs in Chromium, Firefox
  * and WebKit; each browser connects anew (the one before lets go of the server at the end).
  */
 import { expect, request, test, type APIRequestContext } from '@playwright/test'
@@ -53,7 +54,7 @@ test('Jellyfin is connected by Quick Connect, a playlist takes its tracks from i
   if (await users.isVisible()) await users.getByRole('button', { name: 'Choose: Erika' }).click()
   const card = page.locator('[id^="jellyfin-"]').filter({ has: connected })
   await expect(card.getByTestId('server-catalog')).toContainText('21 tracks', { timeout: 60_000 })
-  await expect(card).toContainText('live in nexmix only for now')
+  await expect(card.getByTestId('jellyfin-playlists')).toBeVisible()
   // Nothing of the token, the address or Jellyfin's ids in the page.
   const html = await page.content()
   expect(html).not.toContain('"Token"')
@@ -74,7 +75,6 @@ test('Jellyfin is connected by Quick Connect, a playlist takes its tracks from i
   await page.getByLabel('Name of the playlist').press('Enter')
   const made = await (await page.request.get(`/api/v1/playlists/${id}`)).json()
   expect(made.server).toBe(jelly)
-  await expect(page.getByTestId('sync-state')).toHaveText('Only in nexmix. nexmix does not make playlists in Jellyfin yet.')
   await expect(page.getByTestId('no-moods')).toContainText('No moods')
 
   // Search and add.
@@ -85,6 +85,15 @@ test('Jellyfin is connected by Quick Connect, a playlist takes its tracks from i
   const row = page.getByTestId('track-row').filter({ hasText: title })
   await expect(row).toHaveCount(1)
   await expect.poll(async () => (await (await page.request.get(`/api/v1/playlists/${id}`)).json()).count).toBe(1)
+
+  // Saved in Jellyfin, and there the stand-in holds it.
+  await expect(page.getByTestId('sync-state')).toHaveText('Saved in Jellyfin', { timeout: 20_000 })
+  const name = `Jellyfin ${browserName}`
+  await expect.poll(async () => (await (await jellyfin.get(`/fake/list?name=${encodeURIComponent(name)}`)).json()).tracks, { timeout: 20_000 }).toEqual([title])
+  // Added in Jellyfin, as from a Jellyfin app: it shows up in the open playlist.
+  const other = title === 'Möwenruf' ? 'Teerseile' : 'Möwenruf'
+  expect((await jellyfin.post('/fake/list-add', { data: { playlist: name, track: other } })).ok()).toBe(true)
+  await expect(page.getByTestId('track-row').filter({ hasText: other })).toHaveCount(1, { timeout: 40_000 })
 
   // Listen in: the server asks Jellyfin's stream.mp3, the browser plays it.
   const begun = ((await (await jellyfin.get('/fake/sound')).json()).starts as unknown[]).length

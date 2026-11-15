@@ -142,7 +142,7 @@ def _entry(entry: dict[str, Any], smart: bool) -> Entry | None:
         artist=(own or str(entry.get("grandparentTitle") or "").strip())[:500],
         album=str(entry.get("parentTitle") or "").strip()[:500], album_key=str(album) if album else "",
         year=_int(entry.get("parentYear")), duration=max(0, _int(entry.get("duration")) or 0),
-        guid=str(entry.get("guid") or "")[:200],
+        guid=str(entry.get("guid") or "")[:200], ref=str(item) if item is not None else "",
     )
 
 
@@ -281,6 +281,23 @@ class PlexSource:
                 return False
             raise
         return True
+
+    def remove_many(self, key: str, refs: Sequence[str]) -> None:
+        """The entries out, one request each (an entry gone already is no fault)."""
+        for ref in refs:
+            self.remove(key, _key(ref))
+
+    def reorder(self, key: str, steps: Sequence[tuple[str, str | None]]) -> bool:
+        """The moves in turn, each an entry right after another of the state just read (None: to the start). False:
+        an entry was gone, the rest is left (the caller reads again and plans anew)."""
+        for ref, after in steps:
+            if not self.move(key, _key(ref), _key(after) if after is not None else None):
+                return False
+        return True
+
+    def owned(self, keys: Iterable[str]) -> set[str]:
+        """The playlists of the list nexmix may take in: every one in the connected account."""
+        return set(keys)
 
     def rename(self, key: str, title: str) -> None:
         self.server._send("PUT", f"/playlists/{_key(key)}", {"title": title[:200]}, timeout=30.0)

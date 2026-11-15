@@ -425,7 +425,7 @@ function Connected({ status, onSync, onLibraries, onDisconnect, working }: {
         <dd>
           <Nightly value={status?.nightly ?? '03:30'} />
         </dd>
-        <Playlists />
+        <ServerPlaylists load={plexApi.playlists} syncAll={plexApi.syncPlaylists} />
       </dl>
       {failed && (
         <p role="alert" className="alert" data-testid="plex-failed">
@@ -450,40 +450,44 @@ function Connected({ status, onSync, onLibraries, onDisconnect, working }: {
   )
 }
 
-/** How the playlists stand in Plex: how many are saved there, waiting or failed, the smart ones, the last look. */
-function Playlists() {
+/**
+ * How the playlists stand on a server (Plex, or a Jellyfin with `kind` "jellyfin"): how many are saved there, waiting
+ * or failed, the smart ones, the last look.
+ */
+export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load: () => Promise<PlaylistSync>; syncAll: () => Promise<PlaylistSync>; kind?: 'plex' | 'jellyfin' }) {
   const { t, i18n } = useTranslation()
   const [found, setFound] = useState<PlaylistSync | null>(null)
   const [started, setStarted] = useState(false)
+  const server = kind === 'jellyfin' ? 'Jellyfin' : 'Plex'
   const load = useCallback(async () => {
     try {
-      setFound(await plexApi.playlists())
+      setFound(await fetch())
     } catch {
       setFound(null)
     }
-  }, [])
+  }, [fetch])
   useEffect(() => {
     void load()
     const timer = window.setInterval(() => void load(), 15000)
     return () => window.clearInterval(timer)
   }, [load])
   if (!found || typeof found.playlists !== 'number') return null
-  const parts = [t('sync.plex.counts', { synced: found.synced, count: found.playlists })]
-  if (found.waiting) parts.push(t('sync.plex.waiting', { count: found.waiting }))
+  const parts = [t('sync.plex.counts', { synced: found.synced, count: found.playlists, server })]
+  if (found.waiting) parts.push(t('sync.plex.waiting', { count: found.waiting, server }))
   if (found.error) parts.push(t('sync.plex.error', { count: found.error }))
   if (found.smart) parts.push(t('sync.plex.smart', { count: found.smart }))
   const at = found.polled_at ? when(found.polled_at, i18n.language) : ''
   return (
     <>
       <dt>{t('sync.plex.title')}</dt>
-      <dd data-testid="plex-playlists">
-        {found.playlists ? parts.join(' · ') : t('sync.plex.none')}{' '}
+      <dd data-testid={`${kind}-playlists`}>
+        {found.playlists ? parts.join(' · ') : kind === 'jellyfin' ? t('sync.plex.noneJellyfin') : t('sync.plex.none', { server })}{' '}
         <button
           type="button"
           className="linkbtn"
           onClick={async () => {
             try {
-              setFound(await plexApi.syncPlaylists())
+              setFound(await syncAll())
               setStarted(true)
             } catch {
               setStarted(false)
@@ -495,8 +499,14 @@ function Playlists() {
         {started && <span className="text-xs text-muted"> {t('sync.plex.syncStarted')}</span>}
       </dd>
       <dt>{t('sync.plex.looked')}</dt>
-      <dd data-testid="plex-playlists-looked">
-        {!at ? t('sync.plex.notYet') : found.poll_error ? t('sync.plex.lookedFailed', { when: at, reason: errorText(found.poll_error) }) : t('sync.plex.lookedValue', { when: at, minutes: found.order_minutes ?? 2 })}
+      <dd data-testid={`${kind}-playlists-looked`}>
+        {!at
+          ? t('sync.plex.notYet')
+          : found.poll_error
+            ? t('sync.plex.lookedFailed', { when: at, server, reason: errorText(found.poll_error) })
+            : kind === 'jellyfin'
+              ? t('sync.plex.lookedEvery', { when: at })
+              : t('sync.plex.lookedValue', { when: at, server, minutes: found.order_minutes ?? 2 })}
       </dd>
     </>
   )

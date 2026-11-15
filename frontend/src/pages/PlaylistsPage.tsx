@@ -18,7 +18,7 @@ import { Dialog } from '../components/Dialog'
 import { Mosaic } from '../components/Mosaic'
 import { PageHead } from '../components/PageHead'
 import { People } from '../components/People'
-import { SyncMark } from '../components/PlexSync'
+import { serverName, SyncMark } from '../components/PlexSync'
 import { useConfirm } from '../components/useConfirm'
 import { percentOf, useCatalogStatus } from '../lib/catalogStatus'
 import { shortDate } from '../lib/dates'
@@ -161,7 +161,7 @@ function Trash({ cards, days, reload }: { cards: Card[]; days: number; reload: (
             <b dir="auto">{card.name}</b>
             <small>
               {t('playlists.trash.left', { date: shortDate(card.deleted_at ?? '', i18n.language), count: card.days_left ?? 0 })}
-              {card.plex?.gone_in_plex && <> · {t('sync.goneInPlex')}</>}
+              {card.plex?.gone_in_plex && <> · {t('sync.goneInPlex', { server: serverName(card.plex.kind) })}</>}
             </small>
           </div>
           <button

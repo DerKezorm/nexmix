@@ -659,8 +659,9 @@ class PlaylistItem(Base):
     from_plex: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("0"))
     #: The track's ``guid`` in Plex when it was put in: with it the entry finds its track on another server.
     guid: Mapped[str] = mapped_column(String(200), default="", server_default="")
-    #: Why the entry is in nexmix only (``services/plex_sync.py``): ``refused`` (Plex would not take its track) or
-    #: ``elsewhere`` (the connected server has no such track); empty: nothing to say.
+    #: Why the entry is in nexmix only (``services/sync.py``): ``refused`` (the server would not take its track),
+    #: ``elsewhere`` (the connected server has no such track) or ``missing`` (the server lost it while its track left
+    #: the library, or with many others at once: it goes back after the next run of the catalogue); empty: nothing.
     plex_hint: Mapped[str] = mapped_column(String(16), default="", server_default="")
 
 
