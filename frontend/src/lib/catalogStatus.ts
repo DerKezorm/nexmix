@@ -9,20 +9,22 @@ import { busy, catalogApi, type CatalogStatus } from '../api/plex'
 /** How long to wait between two asks while a run is under way; the tests shorten it. */
 export const timing = { poll: 2000 }
 
-export function useCatalogStatus(): { status: CatalogStatus | null; failed: boolean; refresh: () => Promise<void> } {
+/** `server`: the catalogue of that media server (a playlist's), none: the first one connected; `wait`: not yet asked (the
+ * playlist that names the server is still on its way). */
+export function useCatalogStatus(server?: number | null, wait = false): { status: CatalogStatus | null; failed: boolean; refresh: () => Promise<void> } {
   const [status, setStatus] = useState<CatalogStatus | null>(null)
   const [failed, setFailed] = useState(false)
   const refresh = useCallback(async () => {
     try {
-      setStatus(await catalogApi.status())
+      setStatus(await catalogApi.status(server))
       setFailed(false)
     } catch {
       setFailed(true)
     }
-  }, [])
+  }, [server])
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    if (!wait) void refresh()
+  }, [refresh, wait])
   useEffect(() => {
     if (!busy(status)) return
     const timer = window.setTimeout(() => void refresh(), timing.poll)

@@ -92,15 +92,17 @@ export function browserSource(url = '/api/v1/catalog'): CatalogSource {
   }
 }
 
-export function serverSource(): CatalogSource {
+/** `server`: the catalogue of that media server (a playlist's); none: the first one connected. */
+export function serverSource(server?: number | null): CatalogSource {
+  const own = server ? { server } : {}
   const search = async <T,>(query: Record<string, string | number | undefined>) => {
     const started = performance.now()
-    const found = await api<T & { took_ms: number }>('/api/v1/catalog/search', { query })
+    const found = await api<T & { took_ms: number }>('/api/v1/catalog/search', { query: { ...query, ...own } })
     return { ...found, ms: performance.now() - started }
   }
   const orNull = async <T,>(path: string): Promise<T | null> => {
     try {
-      return await api<T>(path)
+      return await api<T>(path, { query: own })
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) return null
       throw error
@@ -108,7 +110,7 @@ export function serverSource(): CatalogSource {
   }
   return {
     mode: 'server',
-    load: async () => ({ facets: await api<Facets>('/api/v1/catalog/facets'), changed: false }),
+    load: async () => ({ facets: await api<Facets>('/api/v1/catalog/facets', { query: own }), changed: false }),
     tracks: (query, filters) => search<TrackResult>({ q: query, kind: 'tracks', mood: filters.mood || undefined, decade: filters.decade || undefined, genre: filters.genre || undefined }),
     albums: (query) => search<AlbumResult>({ q: query, kind: 'albums' }),
     artists: (query) => search<ArtistResult>({ q: query, kind: 'artists' }),
@@ -128,8 +130,8 @@ export function serverSource(): CatalogSource {
 export const REFRESH_MS = 5 * 60 * 1000
 
 /** The source for the server's choice, loaded; `version` counts the states of the catalogue taken in, so the page
- * searches again when a new one came. */
-export function useCatalogSource(mode: 'browser' | 'server' | null) {
+ * searches again when a new one came. `server`: the catalogue of that media server (a playlist's). */
+export function useCatalogSource(mode: 'browser' | 'server' | null, server?: number | null) {
   const [source, setSource] = useState<CatalogSource | null>(null)
   const [facets, setFacets] = useState<Facets | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
@@ -137,7 +139,7 @@ export function useCatalogSource(mode: 'browser' | 'server' | null) {
   useEffect(() => {
     if (mode === null) return
     // Made here, not during drawing: a worker belongs to the effect that starts it and ends with it.
-    const source = mode === 'server' ? serverSource() : browserSource()
+    const source = mode === 'server' ? serverSource(server) : browserSource(server ? `/api/v1/catalog?server=${server}` : undefined)
     setSource(source)
     setFacets(null)
     let gone = false
@@ -169,6 +171,6 @@ export function useCatalogSource(mode: 'browser' | 'server' | null) {
       document.removeEventListener('visibilitychange', back)
       source.dispose()
     }
-  }, [mode])
+  }, [mode, server])
   return { source, facets, failed, version }
 }

@@ -74,6 +74,17 @@ const rows = () => [...document.querySelectorAll<HTMLElement>('[data-testid="tra
 const searchInput = () => document.querySelector<HTMLInputElement>('input[type="search"]')
 
 describe('the editor', () => {
+  it('searches the catalogue of the own media server of the playlist', async () => {
+    const status = server.answers['GET /api/v1/catalog/status']
+    server.answers = { 'GET /api/v1/catalog/status?server=2': status, 'GET /api/v1/catalog?server=2': CATALOG, 'GET /api/v1/playlists/7': playlist({ server: 2 }) }
+    await open()
+    const asked = server.calls.map((c) => c.url)
+    expect(asked).toContain('/api/v1/catalog/status?server=2')
+    expect(asked).toContain('/api/v1/catalog?server=2')
+    // Never the catalogue of another server, not even before the playlist said which one is its own.
+    expect(asked.filter((url) => url.startsWith('/api/v1/catalog') && !url.includes('server=2'))).toEqual([])
+  })
+
   it('shows the head: name, count and length, people, the moods in German, share and delete for the owner', async () => {
     await open()
     expect(document.querySelector<HTMLInputElement>('input.name')!.value).toBe('Grillabend')

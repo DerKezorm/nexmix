@@ -15,9 +15,10 @@ from sqlalchemy import select
 
 from app import clock
 from app.db import SessionLocal
-from app.models import OPERATOR, Account, Job, Playlist, PlaylistItem, PlexPlaylist
-from app.services import catalog, jobs, playlists, plex_sync
-from app.services import plex_playlists as plexlists
+from app.models import OPERATOR, Account, Job, Playlist, PlaylistItem, ServerPlaylist
+from app.services import catalog, jobs, playlists
+from app.services import sync as server_sync
+from app.services.sources import plex as plexlists
 
 from .conftest import make_account, new_client
 from .fakeplex import FakePlex
@@ -40,7 +41,7 @@ from .plex_world import (
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -51,7 +52,7 @@ def quiet(fake: FakePlex) -> None:
     fake.tick(20)
     sync(fake, look_at_plex=True)
     with SessionLocal() as db:
-        assert not any(db.scalars(select(PlexPlaylist.recheck)))
+        assert not any(db.scalars(select(ServerPlaylist.recheck)))
 
 
 def writes(fake: FakePlex, since: int = 0) -> list[tuple[str, str, dict[str, str]]]:
@@ -94,8 +95,8 @@ def test_a_playlist_made_in_nexmix_is_made_in_plex_with_its_entries(client: Test
     assert playlist["plex"]["state"] == "pending"
     sync(world)
     row = mirror(playlist["id"])
-    assert row.state == "synced" and row.rating_key is not None
-    assert world.lists.lists[row.rating_key].title == "Grillabend"
+    assert row.state == "synced" and row.ext_key is not None
+    assert world.lists.lists[int(row.ext_key)].title == "Grillabend"
     assert both_equal(world, playlist["id"]) == [3001, 3003, 3013]
     assert client.get(f"/api/v1/playlists/{playlist['id']}").json()["plex"]["state"] == "synced"
     # Made empty (Plex wants the library as its address), then filled at the end in one request.
@@ -124,11 +125,11 @@ def test_changes_gather_two_seconds_and_go_in_one_sync(client: TestClient, world
     assert mirror(playlist_id).due_at == due
     # Not due yet: a moment later it is.
     with SessionLocal() as db:
-        assert plex_sync.tick(db, clock.now()) <= 1
+        assert server_sync.tick(db, clock.now()) <= 1
     assert jobs.run_pending(lane="playlists") <= 1
     assert len(writes(world)) == before
     # No look at Plex is needed for it: the change itself made it due.
-    plex_sync._polled_at = clock.now() + timedelta(hours=1)
+    server_sync._polled_at[1] = clock.now() + timedelta(hours=1)
     sync(world)
     done = writes(world, before)
     assert [method for method, _path, _params in done].count("PUT") >= 1
@@ -164,10 +165,10 @@ def test_deleted_in_nexmix_goes_from_plex_at_once_and_comes_back_anew(client: Te
     assert client.delete(f"/api/v1/playlists/{playlist_id}").status_code == 200
     # At once, not after two seconds.
     with SessionLocal() as db:
-        plex_sync.tick(db, clock.now())
+        server_sync.tick(db, clock.now())
     jobs.run_pending(lane="playlists")
     assert key not in world.lists.lists
-    assert mirror(playlist_id).rating_key is None
+    assert mirror(playlist_id).ext_key is None
     # Plex's list later on does not bring it back.
     sync(world, look_at_plex=True)
     assert playlist_row(playlist_id).deleted_at is not None
@@ -198,7 +199,7 @@ def test_deleted_for_good_before_the_sync_still_goes_from_plex(client: TestClien
     assert key not in world.lists.lists
     with SessionLocal() as db:
         assert db.scalars(select(Playlist).where(Playlist.name == "Endgültig")).all() == []
-        assert db.scalars(select(PlexPlaylist)).all() == []
+        assert db.scalars(select(ServerPlaylist)).all() == []
 
 
 # --- Plex to nexmix ----------------------------------------------------------------------------------------------------
@@ -244,8 +245,8 @@ def test_a_move_in_plex_alone_comes_with_the_regular_read(client: TestClient, wo
     assert local_tracks(playlist_id) == [3001, 3003, 3013]
     # Two minutes after its last read the playlist is read anyway.
     with SessionLocal() as db:
-        row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
-        row.synced_at = clock.now() - plex_sync.CHECK_EVERY
+        row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).one()
+        row.synced_at = clock.now() - server_sync.CHECK_EVERY
         db.commit()
     sync(world, look_at_plex=True)
     assert both_equal(world, playlist_id) == [3013, 3001, 3003]
@@ -253,12 +254,12 @@ def test_a_move_in_plex_alone_comes_with_the_regular_read(client: TestClient, wo
 
 def test_a_regular_read_takes_a_few_at_a_look_the_longest_unread_first(client: TestClient, world: FakePlex,
                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(plex_sync, "CHECK_PER_LOOK", 2)
+    monkeypatch.setattr(server_sync, "CHECK_PER_LOOK", 2)
     made = [synced(client, world, f"Liste {number}", [3001])[0] for number in range(3)]
     quiet(world)
     with SessionLocal() as db:
         for age, playlist_id in zip((5, 7, 6), made, strict=True):
-            row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
+            row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).one()
             row.synced_at = clock.now() - timedelta(minutes=age)
             db.commit()
     world.calls.clear()
@@ -272,7 +273,7 @@ def test_a_playlist_open_in_nexmix_is_read_at_every_look(client: TestClient, wor
                                                         monkeypatch: pytest.MonkeyPatch) -> None:
     playlist_id, key = synced(client, world, "Offen", [3001, 3003])
     quiet(world)
-    monkeypatch.setattr(plex_sync.hub, "topics", lambda: {f"playlist:{playlist_id}"})
+    monkeypatch.setattr(server_sync.hub, "topics", lambda: {f"playlist:{playlist_id}"})
     world.lists.move_track(key, 3003, None)
     world.tick(5)
     sync(world, look_at_plex=True)
@@ -326,7 +327,7 @@ def test_at_the_first_connect_every_playlist_of_plex_comes_in(client: TestClient
     fake_plex.lists.make("Schon da", [3001])
     fake_plex.lists.make("Auch da", [3003, 3013])
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     sync(fake_plex)
     names = sorted(card["name"] for card in client.get("/api/v1/playlists").json()["playlists"])
     assert names == ["Auch da", "Schon da"]
@@ -542,7 +543,7 @@ def test_waiting_tries_again_later_and_later(client: TestClient, world: FakePlex
     waits = []
     for _try in range(4):
         with SessionLocal() as db:
-            row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
+            row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).one()
             row.due_at = clock.now()
             db.commit()
         tick(0)
@@ -565,7 +566,7 @@ def test_while_plex_is_away_changes_gather_until_the_next_try(client: TestClient
     world.fail_after = 0
     for _try in range(3):
         with SessionLocal() as db:
-            row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
+            row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).one()
             row.due_at = clock.now()
             db.commit()
         tick(0)
@@ -596,14 +597,14 @@ def test_a_stop_in_the_middle_of_a_write_goes_on_at_the_next_start(client: TestC
     world.hook = stop_at_first_move
     sync(world, rounds=2)
     with SessionLocal() as db:
-        waiting = db.scalars(select(Job).where(Job.kind == plex_sync.ROUND, Job.state == "queued")).all()
+        waiting = db.scalars(select(Job).where(Job.kind == server_sync.ROUND, Job.state == "queued")).all()
     assert len(waiting) == 1, "the job waits for the next start"
     assert mirror(playlist_id).writing is not None
     # The next start.
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
     sync(world)
     assert both_equal(world, playlist_id) == [3026, 3003, 3013, 3020, 3001]
     row = mirror(playlist_id)
@@ -612,23 +613,23 @@ def test_a_stop_in_the_middle_of_a_write_goes_on_at_the_next_start(client: TestC
 
 def test_a_lost_answer_after_plex_made_it_finds_that_one_and_makes_no_second(client: TestClient, world: FakePlex,
                                                                            monkeypatch: pytest.MonkeyPatch) -> None:
-    real = plexlists.create
+    real = plexlists.PlexSource.create
 
     def made_then_lost(*args: object) -> object:
         # Plex made it, but its answer never came.
         real(*args)  # type: ignore[arg-type]
-        raise plex_sync.PlexError("plex_timeout", 504)
+        raise server_sync.PlexError("plex_timeout", 504)
 
-    monkeypatch.setattr(plexlists, "create", made_then_lost)
+    monkeypatch.setattr(plexlists.PlexSource, "create", made_then_lost)
     playlist = make(client, "Kurz vor dem Halt", [3001, 3003])
     # One turn: the try that loses the answer, then the look at Plex (which finds the playlist made there).
     sync(world, rounds=1)
     row = mirror(playlist["id"])
-    assert row.rating_key is None and row.creating_at is not None and row.state == "waiting"
+    assert row.ext_key is None and row.creating_at is not None and row.state == "waiting"
     assert len([one for one in world.lists.lists.values() if one.title == "Kurz vor dem Halt"]) == 1
-    monkeypatch.setattr(plexlists, "create", real)
+    monkeypatch.setattr(plexlists.PlexSource, "create", real)
     # The look at Plex comes before the next try: the playlist made there is not taken in as a new one.
-    plex_sync.look_now()
+    server_sync.look_now()
     tick()
     jobs.run_pending(lane="playlists")
     names = [card["name"] for card in client.get("/api/v1/playlists").json()["playlists"]]
@@ -660,7 +661,7 @@ def test_a_fault_in_the_middle_of_the_moves_is_finished_by_the_next_sync(client:
     world.lists.add(key, [3026])
     world.tick()
     with SessionLocal() as db:
-        row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
+        row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).one()
         row.due_at = clock.now()
         db.commit()
     sync(world, look_at_plex=True)
@@ -673,10 +674,10 @@ def test_a_change_in_nexmix_while_the_sync_merges_is_never_overwritten(client: T
     playlist_id, key = synced(client, world, "Mittendrin", [3001, 3003, 3013])
     world.lists.add(key, [3020])
     world.tick()
-    original = plex_sync.Round._plan
+    original = server_sync.Round._plan
     calls: list[int] = []
 
-    def plan_with_a_change_meanwhile(self: plex_sync.Round, *args: object) -> plex_sync.Plan:
+    def plan_with_a_change_meanwhile(self: server_sync.Round, *args: object) -> server_sync.Plan:
         found = original(self, *args)
         if not calls:
             calls.append(1)
@@ -684,7 +685,7 @@ def test_a_change_in_nexmix_while_the_sync_merges_is_never_overwritten(client: T
             move(client, playlist_id, 3013, None)
         return found
 
-    monkeypatch.setattr(plex_sync.Round, "_plan", plan_with_a_change_meanwhile)
+    monkeypatch.setattr(server_sync.Round, "_plan", plan_with_a_change_meanwhile)
     sync(world, look_at_plex=True)
     assert both_equal(world, playlist_id) == [3013, 3001, 3003, 3020]
 
@@ -824,8 +825,8 @@ def test_a_smart_playlist_is_only_read(client: TestClient, world: FakePlex) -> N
     sync(world, look_at_plex=True)
     assert [entry["track"] for entry in client.get(base).json()["items"]] == [3001, 3003, 3013]
     with SessionLocal() as db:
-        row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == card["id"])).one()
-        row.synced_at = clock.now() - plex_sync.SMART_EVERY
+        row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == card["id"])).one()
+        row.synced_at = clock.now() - server_sync.SMART_EVERY
         db.commit()
     sync(world, look_at_plex=True)
     assert [entry["track"] for entry in client.get(base).json()["items"]] == [3020, 3001]
@@ -852,7 +853,7 @@ def big_world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Ite
         fake_plex.items[100_000 + number] = Item(100_000 + number, TRACK, f"Song {number}", 2001,
                                                  index=number + 1, rating=10)
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -903,7 +904,7 @@ def test_200_playlists_go_to_plex_and_a_quiet_look_costs_one_request(client: Tes
     took = time.perf_counter() - started
     assert len(world.lists.lists) == 200
     with SessionLocal() as db:
-        states = set(db.scalars(select(PlexPlaylist.state)))
+        states = set(db.scalars(select(ServerPlaylist.state)))
     assert states == {"synced"}
     world.tick(10)
     sync(world, look_at_plex=True, rounds=40)

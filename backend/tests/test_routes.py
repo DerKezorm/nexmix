@@ -232,6 +232,8 @@ TOKEN_ROUTES = {
 #: The routes that only read and that a program with an API key reaches too (as the browser and a device do). A route
 #: that changes something is never in this list. Routes that read for a program are added here.
 READ_ROUTES: set[tuple[str, str]] = {
+    # The media servers: names and how they stand, never where they are.
+    ("GET", "/api/v1/servers"),
     # Where the catalogue stands, and the covers of its albums.
     ("GET", "/api/v1/catalog/status"),
     ("GET", "/api/v1/catalog/cover/{album_id}"),

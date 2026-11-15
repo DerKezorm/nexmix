@@ -16,11 +16,12 @@ from sqlalchemy import select
 from app import clock
 from app.db import SessionLocal
 from app.models import OPERATOR, Account
-from app.services import jobs, playlists, plex_sync
+from app.services import jobs, media, playlists
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .fakeplex.library import TRACK, Item
-from .plex_world import both_equal, connect, local_items, local_tracks, mirror, plex_key, sync, tick
+from .plex_world import both_equal, connect, keys_of, local_items, local_tracks, mirror, plex_key, sync, tick
 from .test_plex_sync import add, quiet, synced
 
 _shift = [0.0]
@@ -36,7 +37,7 @@ def moving_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -89,7 +90,7 @@ def test_200_quiet_playlists_are_each_read_within_what_the_card_says(client: Tes
     sync(world, rounds=40)
     quiet(world)
     promised = client.get("/api/v1/plex/playlists").json()["order_minutes"]
-    assert promised == math.ceil(plex_sync.order_seconds(200) / 60) == 5
+    assert promised == math.ceil(server_sync.order_seconds(200) / 60) == 5
     reads: dict[int, list[float]] = {}
     counts = []
     for _minute in range(8):
@@ -124,7 +125,7 @@ def test_a_sync_after_a_look_does_not_ask_for_the_list_again(client: TestClient,
     assert ("GET", "/playlists") not in asked, asked
     assert both_equal(world, playlist_id) == [3001, 3003]
     # Without a fresh look it asks for the list (and never for the playlist itself).
-    plex_sync.forget()
+    server_sync.forget()
     world.calls.clear()
     add(client, playlist_id, 3013)
     sync(world)
@@ -154,7 +155,7 @@ def big_world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Ite
         fake_plex.items[100_000 + number] = Item(100_000 + number, TRACK, f"Song {number}", 2001,
                                                  index=number + 1, rating=10)
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -246,7 +247,9 @@ def test_another_server_gets_the_tracks_by_guid_title_or_song_never_by_key_alone
     there = world.lists.tracks(plex_key(playlist_id))
     assert there == [8001, 8003, 8013]
     assert 3003 not in there
-    assert mirror(playlist_id).machine == "fake-machine-attic"
+    with SessionLocal() as db:
+        server = media.get(db, mirror(playlist_id).server_id)
+        assert server is not None and server.machine_id == "fake-machine-attic"
     # Who added what stays with the entry.
     assert all(item.added_by_name for item in local_items(playlist_id))
 
@@ -272,7 +275,8 @@ def test_two_tracks_whose_keys_changed_places_on_the_other_server(client: TestCl
     connect(client, world)
     sync(world, look_at_plex=True)
     titles = [entry["title"] for entry in client.get(f"/api/v1/playlists/{playlist_id}").json()["items"]]
-    assert local_tracks(playlist_id) == [3003, 3001, 3013]
+    # The other server numbers its tracks itself: by its keys, the entries found the swapped tracks.
+    assert keys_of(local_tracks(playlist_id)) == [3003, 3001, 3013]
     assert titles[:2] == [first.title, second.title]
     assert both_equal(world, playlist_id) == [3003, 3001, 3013]
 

@@ -363,28 +363,41 @@ class Job(Base):
     error: Mapped[str] = mapped_column(String(300), default="", server_default=text("''"))
 
 
-# --- Plex and the catalogue ------------------------------------------------------------------------------------------
+# --- Media servers and the catalogue ---------------------------------------------------------------------------------
+
+#: The kinds of media server nexmix speaks with (``services/sources``).
+SERVER_PLEX = "plex"
+SERVER_KINDS = (SERVER_PLEX,)
 
 
-class PlexConnection(Base):
-    """The one Plex server all playlists live on (``services/plex_link.py``): at most one row. The token is sealed with
-    the server secret and never leaves the server.
+class MediaServer(Base):
+    """A media server the playlists live on (``services/media.py``), one row per server: Plex today, others later. The
+    token is sealed with the server secret (context ``plex`` for a Plex server: the context names the kind of secret)
+    and never leaves the server.
 
-    ``serial`` changes whenever the server or the library changes: a catalogue run that began under another serial is
-    thrown away instead of switched on. ``generation`` names the catalogue rows that are live; a full run writes the
-    next one and switches over in one step, so that nobody ever sees half a catalogue."""
+    A server let go of stays as a row without its token (``active`` false): the numbers its tracks were given
+    (``server_items``) and the copies of the playlists on it (``server_playlists``) wait there, and connected again it
+    takes them up instead of making everything anew.
 
-    __tablename__ = "plex_connection"
+    ``serial`` changes whenever the server's address, token or library changes: a catalogue run that began under
+    another serial is thrown away instead of switched on. ``generation`` names the catalogue rows that are live; a full
+    run writes the next one and switches over in one step, so that nobody ever sees half a catalogue."""
+
+    __tablename__ = "media_servers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: ``plex`` (``SERVER_KINDS``).
+    kind: Mapped[str] = mapped_column(String(16), default=SERVER_PLEX)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
     serial: Mapped[int] = mapped_column(Integer, default=1)
-    #: ``plextv`` (signed in with a PIN) or ``manual`` (address and token typed).
-    via: Mapped[str] = mapped_column(String(8))
-    server_name: Mapped[str] = mapped_column(String(200), default="")
+    #: How it was connected: ``plextv`` (signed in with a PIN) or ``manual`` (address and token typed).
+    via: Mapped[str] = mapped_column(String(8), default="")
+    name: Mapped[str] = mapped_column(String(200), default="")
+    #: The server's own id (Plex's ``machineIdentifier``): the same server is found again by it.
     machine_id: Mapped[str] = mapped_column(String(100), default="")
     owned: Mapped[bool] = mapped_column(Boolean, default=True)
-    url: Mapped[str] = mapped_column(String(500))
-    token_enc: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(String(500), default="")
+    token_enc: Mapped[str] = mapped_column(Text, default="")
     section_key: Mapped[str] = mapped_column(String(16), default="")
     section_title: Mapped[str] = mapped_column(String(200), default="")
     connected_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
@@ -401,9 +414,30 @@ class PlexConnection(Base):
     analysis_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
+class ServerItem(Base):
+    """The number nexmix gives a track, album or artist of a server: servers name their things in their own way (Plex
+    by numbers, others by text), and two servers may use the same name for different things. Every catalogue row, every
+    entry of a playlist and every common state of a sync holds these numbers. A number is never given twice, not even
+    after its row is gone (``AUTOINCREMENT``); the things of the Plex server connected when nexmix learnt about several
+    servers kept their ``ratingKey`` as their number."""
+
+    __tablename__ = "server_items"
+    __table_args__ = (
+        UniqueConstraint("server_id", "kind", "ext_key", name="uq_server_items_key"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    server_id: Mapped[int] = mapped_column(ForeignKey("media_servers.id", ondelete="CASCADE"))
+    #: ``track``, ``album`` or ``artist``.
+    kind: Mapped[str] = mapped_column(String(8))
+    #: The server's own name for it (Plex: the ``ratingKey`` as text).
+    ext_key: Mapped[str] = mapped_column(String(64))
+
+
 class SyncRun(Base):
-    """One run of the catalogue (``services/catalog.py``): full or partial, how far it got, what it found, and why it
-    failed (a code, never a text from Plex)."""
+    """One run of the catalogue of one server (``services/catalog.py``): full or partial, how far it got, what it
+    found, and why it failed (a code, never a text from the server)."""
 
     __tablename__ = "sync_runs"
     __table_args__ = (Index("ix_sync_runs_state", "state", "id"),)
@@ -423,7 +457,7 @@ class SyncRun(Base):
     albums: Mapped[int] = mapped_column(Integer, default=0)
     tracks: Mapped[int] = mapped_column(Integer, default=0)
     songs: Mapped[int] = mapped_column(Integer, default=0)
-    #: A partial run: entries taken in, and entries gone from Plex.
+    #: A partial run: entries taken in, and entries gone from the server.
     changed: Mapped[int] = mapped_column(Integer, default=0)
     removed: Mapped[int] = mapped_column(Integer, default=0)
     #: Where a running one stands: the step, and the share of the whole run done, in thousandths.
@@ -432,14 +466,17 @@ class SyncRun(Base):
     error: Mapped[str] = mapped_column(String(40), default="")
     #: Seconds per step, for the operator's curiosity and the measurement of large libraries.
     timings: Mapped[Any] = mapped_column(JSON, nullable=True)
+    #: The server whose catalogue it fetched.
+    server_id: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
 
 class CatalogArtist(Base):
-    """An artist of the music library. Plex's ``ratingKey`` is the id; ``generation`` keeps a catalogue being fetched
-    apart from the live one. Times are Plex's own (seconds, the server's clock)."""
+    """An artist of a server's music library, by its number (``server_items``); ``generation`` keeps a catalogue being
+    fetched apart from the live one. Times are the server's own (seconds, its clock)."""
 
     __tablename__ = "artists"
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(500), default="")
@@ -451,11 +488,12 @@ class CatalogArtist(Base):
 class CatalogAlbum(Base):
     __tablename__ = "albums"
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     artist_id: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str] = mapped_column(String(500), default="")
-    #: The album's year as Plex has it (a reissue carries its own).
+    #: The album's year as the server has it (a reissue carries its own).
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thumb: Mapped[str] = mapped_column(String(300), default="")
     added_at: Mapped[int] = mapped_column(Integer, default=0)
@@ -469,16 +507,17 @@ class CatalogTrack(Base):
 
     __tablename__ = "tracks"
     __table_args__ = (
-        Index("ix_tracks_song", "generation", "song_key"),
-        Index("ix_tracks_album", "generation", "album_id"),
+        Index("ix_tracks_song", "server_id", "generation", "song_key"),
+        Index("ix_tracks_album", "server_id", "generation", "album_id"),
     )
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     album_id: Mapped[int] = mapped_column(Integer, default=0)
     artist_id: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str] = mapped_column(String(500), default="")
-    #: Who performs it, when Plex names somebody (``originalTitle``); empty: the album's artist.
+    #: Who performs it, when the server names somebody (Plex's ``originalTitle``); empty: the album's artist.
     artist: Mapped[str] = mapped_column(String(500), default="")
     #: Milliseconds.
     duration: Mapped[int] = mapped_column(Integer, default=0)
@@ -493,16 +532,18 @@ class CatalogTrack(Base):
     variant: Mapped[bool] = mapped_column(Boolean, default=False)
     shown: Mapped[bool] = mapped_column(Boolean, default=True)
     original_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: Plex's ``guid`` of the track: one of its agents (``plex://track/..``) names the same recording on every server.
+    #: The server's ``guid`` of the track: one of Plex's agents (``plex://track/..``) names the same recording on every
+    #: server of Plex.
     guid: Mapped[str] = mapped_column(String(200), default="", server_default="")
 
 
 class CatalogTag(Base):
-    """A mood, genre or style, by its name as Plex writes it."""
+    """A mood, genre or style, by its name as the server writes it."""
 
     __tablename__ = "tags"
-    __table_args__ = (UniqueConstraint("generation", "kind", "name", name="uq_tags_name"),)
+    __table_args__ = (UniqueConstraint("server_id", "generation", "kind", "name", name="uq_tags_name"),)
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     #: ``mood``, ``genre`` or ``style``.
@@ -513,6 +554,7 @@ class CatalogTag(Base):
 class TrackTag(Base):
     __tablename__ = "track_tags"
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tag_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -521,6 +563,7 @@ class TrackTag(Base):
 class AlbumTag(Base):
     __tablename__ = "album_tags"
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tag_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -529,15 +572,17 @@ class AlbumTag(Base):
 class ArtistTag(Base):
     __tablename__ = "artist_tags"
 
+    server_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tag_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
 
-#: The search index of the tracks: the live generation's tracks, each as one folded text (title, artists, album; see
+#: The search index of the tracks: each server's live tracks, each as one folded text (title, artists, album; see
 #: ``services/search.fold``), cut in threes so that any part of a word of three letters or more is found. The row id is
-#: the track's id. Made with the tables (``after_create``), kept by ``services/catalog_view.reindex``.
-TRACK_SEARCH_DDL = "CREATE VIRTUAL TABLE track_search USING fts5(text, tokenize = 'trigram')"
+#: the track's number (``server_items``), ``server_id`` the server it belongs to. Made with the tables
+#: (``after_create``), kept by ``services/catalog_view.reindex``.
+TRACK_SEARCH_DDL = "CREATE VIRTUAL TABLE track_search USING fts5(text, server_id UNINDEXED, tokenize = 'trigram')"
 event.listen(Base.metadata, "after_create", DDL(TRACK_SEARCH_DDL))
 
 
@@ -566,6 +611,9 @@ class Playlist(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
+    #: The server the playlist takes its tracks from (``media_servers``): its catalogue is searched, its tracks are the
+    #: entries. None while no server was connected yet.
+    source_server_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class PlaylistItem(Base):
@@ -714,65 +762,74 @@ class GuestEntry(Base):
     guest_id: Mapped[int] = mapped_column(ForeignKey("guests.id", ondelete="CASCADE"), index=True)
 
 
-class PlexPlaylist(Base):
-    """The copy of a playlist in Plex (``services/plex_sync.py``): which one it is there, the last state both sides
-    agreed on (``base``), and how the sync stands. A playlist deleted for good leaves its row without ``playlist_id``
-    until the copy in Plex is gone too, so that it is never taken in again as a new one."""
+class ServerPlaylist(Base):
+    """The copy of a playlist on one media server (``services/sync.py``): which one it is there, the last state both
+    sides agreed on (``base``), and how the sync stands. One row per playlist and server: the playlist's source server,
+    and the servers it lay on before (a server let go of, or one the playlists moved away from), whose copies are taken
+    up again when that server is back (``resume``). A playlist deleted for good leaves its rows without
+    ``playlist_id`` until the copies are gone too, so that they are never taken in again as new ones."""
 
-    __tablename__ = "plex_playlists"
+    __tablename__ = "server_playlists"
     __table_args__ = (
-        Index("uq_plex_playlists_playlist", "playlist_id", unique=True, sqlite_where=text("playlist_id IS NOT NULL")),
-        Index("uq_plex_playlists_key", "rating_key", unique=True, sqlite_where=text("rating_key IS NOT NULL")),
-        Index("ix_plex_playlists_due", "due_at"),
+        Index("uq_server_playlists_playlist", "playlist_id", "server_id", unique=True,
+              sqlite_where=text("playlist_id IS NOT NULL")),
+        Index("uq_server_playlists_key", "server_id", "ext_key", unique=True, sqlite_where=text("ext_key IS NOT NULL")),
+        Index("ix_server_playlists_due", "due_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     playlist_id: Mapped[int | None] = mapped_column(ForeignKey("playlists.id", ondelete="SET NULL"), nullable=True)
-    #: The server (its machine id) the key belongs to: another server knows other keys.
-    machine: Mapped[str] = mapped_column(String(100), default="")
-    #: Plex's ``ratingKey`` and ``guid`` of the playlist; None while it is not made there.
-    rating_key: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    server_id: Mapped[int] = mapped_column(ForeignKey("media_servers.id", ondelete="CASCADE"))
+    #: The server's own key of the playlist (Plex: its ``ratingKey`` as text) and its ``guid``; None while it is not
+    #: made there.
+    ext_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     guid: Mapped[str] = mapped_column(String(200), default="")
-    #: A smart playlist of Plex: read only, its entries as Plex lists them, ``smart_total`` of them in all.
+    #: A smart playlist of the server: read only, its entries as the server lists them, ``smart_total`` of them in all.
     smart: Mapped[bool] = mapped_column(Boolean, default=False)
     smart_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: ``pending`` (to be written or read), ``synced``, ``waiting`` (Plex not reached, tried again), ``error``.
+    #: ``pending`` (to be written or read), ``synced``, ``waiting`` (server not reached, tried again), ``error``.
     state: Mapped[str] = mapped_column(String(8), default="pending")
     error: Mapped[str] = mapped_column(String(40), default="")
     #: Tries in a row that failed, for the growing wait before the next one.
     tries: Mapped[int] = mapped_column(Integer, default=0)
-    #: When the next sync of this playlist is due (a change in nexmix waits two seconds for more); None: none due.
+    #: When the next sync of this copy is due (a change in nexmix waits two seconds for more); None: none due.
     due_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
-    #: Set while Plex is asked to make the playlist, with the name it is made with: a fault or a stop in between finds
-    #: the one it made instead of making a second.
+    #: Set while the server is asked to make the playlist, with the name it is made with: a fault or a stop in between
+    #: finds the one it made instead of making a second.
     creating_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     creating_title: Mapped[str] = mapped_column(String(200), default="", server_default="")
-    #: The last state both sides agreed on: ``{"title": str, "items": [[track, entry id, Plex item id], ...]}``.
+    #: The last state both sides agreed on: ``{"title": str, "items": [[track, entry id, server's item id], ...]}``.
     base: Mapped[Any] = mapped_column(JSON, nullable=True)
-    #: Set while a write to Plex is under way: what it is to bring (the name, the order with Plex's ids as they were,
-    #: what Plex is to lose and to get). A fault or a stop in between finds it, and the next sync finishes it.
+    #: Set while a write to the server is under way: what it is to bring (the name, the order with the server's ids as
+    #: they were, what the server is to lose and to get). A fault or a stop in between finds it, and the next sync
+    #: finishes it.
     writing: Mapped[Any] = mapped_column(JSON, nullable=True)
-    #: Tracks Plex refused, by key: ``{"tries": n, "next": time}`` (offered again from then on; no ``next``: never).
+    #: Tracks the server refused, by number: ``{"tries": n, "next": time}`` (offered again from then on; no ``next``:
+    #: never).
     refused: Mapped[Any] = mapped_column(JSON, nullable=True)
-    #: What the list of Plex said last (``updated_at``, ``leaf_count``), and whether to read it again anyway (it changed
-    #: within two seconds of being asked: a second change in the same second would not show).
+    #: What the list of the server said last (``updated_at``, ``leaf_count``), and whether to read it again anyway (it
+    #: changed within two seconds of being asked: a second change in the same second would not show).
     seen: Mapped[Any] = mapped_column(JSON, nullable=True)
     recheck: Mapped[bool] = mapped_column(Boolean, default=False)
-    #: Both sides sorted at the same time: Plex's order, kept for the undo (``{"order": [...], "at": ...}``).
+    #: Both sides sorted at the same time: the server's order, kept for the undo (``{"order": [...], "at": ...}``).
     note: Mapped[Any] = mapped_column(JSON, nullable=True)
     synced_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
-    #: The playlist went to the trash because it was deleted in Plex.
-    gone_in_plex: Mapped[bool] = mapped_column(Boolean, default=False)
-    #: Its copies on servers connected before, by machine id: ``{machine: {"key": ..., "guid": ..., "base": ...}}``.
-    #: Back on such a server the copy is taken up again with the state both sides last agreed on, never taken in as a
-    #: playlist of its own.
-    elsewhere: Mapped[Any] = mapped_column(JSON(none_as_null=True), nullable=True)
+    #: The playlist went to the trash because it was deleted on the server.
+    gone_there: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: A copy left on a server before: once the server is back, the next sync takes it up only when the server still
+    #: lists it under its key (and ``guid``), else the copy is forgotten and the playlist made anew there.
+    resume: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: The entries are to be found on this server first (the playlist came here from another server): ``all`` every
+    #: entry, ``since`` the ones put in before the server was connected; empty: nothing to do.
+    settle: Mapped[str] = mapped_column(String(8), default="", server_default="")
 
 
 __all__ = [
     "MEMBER",
     "OPERATOR",
     "ROLES",
+    "SERVER_KINDS",
+    "SERVER_PLEX",
     "SIGN_IN_OIDC",
     "SIGN_IN_PASSWORD",
     "STAGE_CODES",
@@ -796,6 +853,7 @@ __all__ = [
     "HiddenSuggestion",
     "Invite",
     "Job",
+    "MediaServer",
     "OidcLink",
     "OidcProvider",
     "Passkey",
@@ -803,9 +861,9 @@ __all__ = [
     "Playlist",
     "PlaylistItem",
     "PlaylistShare",
-    "PlexConnection",
-    "PlexPlaylist",
     "PushDevice",
+    "ServerItem",
+    "ServerPlaylist",
     "Setting",
     "SyncRun",
     "TrackTag",

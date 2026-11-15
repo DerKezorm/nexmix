@@ -3902,6 +3902,28 @@
     "/api/v1/catalog": {
       "get": {
         "operationId": "catalog_compact_api_v1_catalog_get",
+        "parameters": [
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3910,6 +3932,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -3936,6 +3968,26 @@
               "minimum": 1,
               "title": "Album Id",
               "type": "integer"
+            }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
             }
           }
         ],
@@ -3987,6 +4039,26 @@
               "minimum": 1,
               "title": "Artist Id",
               "type": "integer"
+            }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
             }
           }
         ],
@@ -4087,6 +4159,28 @@
     "/api/v1/catalog/facets": {
       "get": {
         "operationId": "catalog_facets_api_v1_catalog_facets_get",
+        "parameters": [
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4099,6 +4193,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -4187,6 +4291,26 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
           }
         ],
         "responses": {
@@ -4227,6 +4351,28 @@
     "/api/v1/catalog/status": {
       "get": {
         "operationId": "catalog_status_api_v1_catalog_status_get",
+        "parameters": [
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4239,6 +4385,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -4255,6 +4411,28 @@
     "/api/v1/catalog/sync": {
       "post": {
         "operationId": "catalog_sync_api_v1_catalog_sync_post",
+        "parameters": [
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
+          }
+        ],
         "responses": {
           "202": {
             "content": {
@@ -4263,6 +4441,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -8852,6 +9040,34 @@
         ]
       }
     },
+    "/api/v1/servers": {
+      "get": {
+        "operationId": "servers_api_v1_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Servers Api V1 Servers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The media servers: name, kind, connected or resting, ready, and what each can do",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "operationId": "read_api_v1_settings_get",
@@ -9266,6 +9482,26 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
           }
         ],
         "responses": {
@@ -9522,6 +9758,26 @@
               "title": "Seed",
               "type": "integer"
             }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
           }
         ],
         "responses": {
@@ -9578,6 +9834,26 @@
               "title": "Track",
               "type": "array"
             }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
+            }
           }
         ],
         "responses": {
@@ -9633,6 +9909,26 @@
               "minItems": 1,
               "title": "Songs",
               "type": "array"
+            }
+          },
+          {
+            "description": "The media server (none: the first connected)",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The media server (none: the first connected)",
+              "title": "Server"
             }
           }
         ],

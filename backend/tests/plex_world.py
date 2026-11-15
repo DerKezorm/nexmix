@@ -11,8 +11,9 @@ from sqlalchemy import select
 
 from app import clock
 from app.db import SessionLocal
-from app.models import Playlist, PlaylistItem, PlexPlaylist
-from app.services import jobs, plex_sync
+from app.models import Playlist, PlaylistItem, ServerPlaylist
+from app.services import jobs, media
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 
@@ -25,12 +26,12 @@ def connect(client: TestClient, fake: FakePlex) -> None:
 
 def tick(seconds: float = 3.0) -> int:
     with SessionLocal() as db:
-        return plex_sync.tick(db, clock.now() + timedelta(seconds=seconds))
+        return server_sync.tick(db, clock.now() + timedelta(seconds=seconds))
 
 
 def look() -> None:
     """A look at the list of Plex right now (as every 15 seconds), and what it makes due."""
-    plex_sync.look_now()
+    server_sync.look_now()
 
 
 def sync(fake: FakePlex | None = None, *, rounds: int = 12, look_at_plex: bool = False) -> int:
@@ -50,11 +51,31 @@ def sync(fake: FakePlex | None = None, *, rounds: int = 12, look_at_plex: bool =
     return ran
 
 
-def mirror(playlist_id: int) -> PlexPlaylist:
+def mirror(playlist_id: int) -> ServerPlaylist:
+    """The copy of the playlist on its source server."""
     with SessionLocal() as db:
-        row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).one()
+        source = db.scalar(select(Playlist.source_server_id).where(Playlist.id == playlist_id))
+        row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id,
+                                                      ServerPlaylist.server_id == source)).one()
         db.expunge(row)
     return row
+
+
+def keys_of(tracks: list[int], server_id: int | None = None) -> list[int]:
+    """The tracks as the stand-in Plex names them (its ``ratingKey``), by the numbers nexmix gave them: of the server
+    connected (None) or of ``server_id``."""
+    with SessionLocal() as db:
+        server = server_id if server_id is not None else media.primary(db).id  # type: ignore[union-attr]
+        found = media.keys(db, server, media.TRACK, tracks)
+    return [int(found[track]) for track in tracks]
+
+
+def numbers_of(keys: list[int], server_id: int | None = None) -> list[int]:
+    """The numbers nexmix gave tracks of the stand-in Plex, by its keys."""
+    with SessionLocal() as db:
+        server = server_id if server_id is not None else media.primary(db).id  # type: ignore[union-attr]
+        found = media.known_numbers(db, server, media.TRACK, [str(key) for key in keys])
+    return [found[str(key)] for key in keys]
 
 
 def local_tracks(playlist_id: int) -> list[int]:
@@ -83,9 +104,9 @@ def playlist_row(playlist_id: int) -> Playlist:
 
 
 def plex_key(playlist_id: int) -> int:
-    key = mirror(playlist_id).rating_key
+    key = mirror(playlist_id).ext_key
     assert key is not None
-    return key
+    return int(key)
 
 
 def make(client: TestClient, name: str, tracks: list[int] | None = None) -> dict[str, Any]:
@@ -106,7 +127,7 @@ def entry_of(client: TestClient, playlist_id: int, track: int) -> int:
 
 def both_equal(fake: FakePlex, playlist_id: int) -> list[int]:
     """Both sides hold the same tracks in the same order, each once; returns them."""
-    here = local_tracks(playlist_id)
+    here = keys_of(local_tracks(playlist_id))
     there = fake.lists.tracks(plex_key(playlist_id))
     assert here == there, (here, there)
     assert len(set(here)) == len(here)

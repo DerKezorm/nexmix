@@ -16,7 +16,8 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.main import app
 from app.models import Account, CatalogTrack, GuestEntry, GuestInvite
-from app.services import catalog, plex_sync
+from app.services import catalog
+from app.services import sync as server_sync
 
 from .conftest import TAB, make_account, new_client
 from .fakeplex import FakePlex
@@ -26,7 +27,7 @@ from .plex_world import both_equal, connect, local_items, make, playlist_row, pl
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 

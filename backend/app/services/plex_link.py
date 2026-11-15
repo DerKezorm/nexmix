@@ -1,5 +1,7 @@
-"""The one Plex connection: signing in through plex.tv, picking the server and its library, the address and token by
-hand, and letting go of it.
+"""The Plex server of the operator's Plex card: signing in through plex.tv, picking the server and its library, the
+address and token by hand, and letting go of it. The server is a row of ``media_servers`` (``services/media.py``);
+connecting another one in its place moves the playlists there (their entries are found on it, ``services/sync.py``),
+and the one before rests with its copies of the playlists, to be taken up again when it is connected once more.
 
 The token is sealed with the server secret (``security.encrypt_secret``, context ``plex``) the moment it is stored;
 it is never in an answer, never in the log, and the browser never sees it. Sign-ins under way live in memory only,
@@ -16,24 +18,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import (
-    AlbumTag,
-    ArtistTag,
-    CatalogAlbum,
-    CatalogArtist,
-    CatalogTag,
-    CatalogTrack,
-    Job,
-    PlexConnection,
-    SyncRun,
-    TrackTag,
-)
+from ..models import SERVER_PLEX, MediaServer, Playlist, ServerPlaylist
 from ..security import decrypt_secret, encrypt_secret
-from . import plextv, settings_service
+from . import media, plextv, settings_service
 from .plex import PlexError, PlexServer, Section, check_address
 
 logger = logging.getLogger("nexmix.plex")
@@ -59,18 +50,19 @@ def client_id(db: Session) -> str:
     return str(settings_service.get(db, "plex_client_id") or made)
 
 
-def current(db: Session) -> PlexConnection | None:
-    return db.scalars(select(PlexConnection).order_by(PlexConnection.id).limit(1)).first()
+def current(db: Session) -> MediaServer | None:
+    """The Plex server the Plex card shows: the first one connected."""
+    return media.primary(db, SERVER_PLEX)
 
 
-def token_of(row: PlexConnection) -> str:
+def token_of(row: MediaServer) -> str:
     try:
         return decrypt_secret(row.token_enc, _CONTEXT)
     except Exception as exc:
         raise Unreadable from exc
 
 
-def server_of(db: Session, row: PlexConnection, **options: Any) -> PlexServer:
+def server_of(db: Session, row: MediaServer, **options: Any) -> PlexServer:
     return PlexServer(row.url, token_of(row), client_id(db), **options)
 
 
@@ -214,28 +206,54 @@ def by_hand(db: Session, url: str, token: str) -> Found:
     return Found(identity["name"] or "Plex", True, identity["machine_id"], token, address, sections)
 
 
-def store(db: Session, found: Found, via: str) -> PlexConnection:
-    """Keeps the server (and the library, when it has exactly one); whatever was connected before goes with its
-    catalogue."""
-    drop_catalog(db)
-    old = current(db)
-    serial = (old.serial + 1) if old is not None else 1
-    db.execute(delete(PlexConnection))
-    row = PlexConnection(
-        serial=serial, via=via, server_name=found.name, machine_id=found.machine_id, owned=found.owned, url=found.url,
-        token_enc=encrypt_secret(found.token, _CONTEXT), connected_at=clock.now(), generation=0, marks={},
-    )
+def _resting(db: Session) -> MediaServer | None:
+    """The Plex server connected last, now resting: connecting a server makes it the place of that one's playlists."""
+    return db.scalars(select(MediaServer).where(MediaServer.kind == SERVER_PLEX, MediaServer.active.is_(False))
+                      .order_by(MediaServer.connected_at.desc(), MediaServer.id.desc()).limit(1)).first()
+
+
+def store(db: Session, found: Found, via: str, *, alongside: bool = False) -> MediaServer:
+    """Keeps the server (and the library, when it has exactly one); its catalogue is fetched anew. A server connected
+    before is taken up again with its numbers and its copies of the playlists. Another server in the place of the one
+    before: that one rests, and its playlists come here (``sync.moved``). ``alongside``: a server more, beside the ones
+    connected; nothing moves."""
+    from . import sync
+
+    before = None if alongside else current(db) or _resting(db)
+    row = media.by_machine(db, SERVER_PLEX, found.machine_id)
+    if row is None:
+        row = MediaServer(kind=SERVER_PLEX, serial=1, machine_id=found.machine_id, generation=0, marks={})
+        db.add(row)
+        db.flush()
+    else:
+        media.drop_catalog(db, row.id)
+        row.serial += 1
+    row.active, row.via, row.name, row.owned, row.url = True, via, found.name, found.owned, found.url
+    row.token_enc = encrypt_secret(found.token, _CONTEXT)
+    row.connected_at, row.generation, row.marks, row.synced_at, row.full_at = clock.now(), 0, {}, None, None
+    row.analysis_enabled, row.analysis_sampled, row.analysis_found, row.analysis_at = None, 0, 0, None
+    row.section_key, row.section_title = "", ""
     if len(found.sections) == 1:
         row.section_key, row.section_title = found.sections[0].key, found.sections[0].title
-    db.add(row)
     db.flush()
-    logger.info("Plex connected via=%s owned=%s libraries=%s", via, found.owned, len(found.sections))
+    if before is not None and before.id != row.id:
+        if before.active:
+            rest(db, before)
+        # Its copies are taken up again only once their server is back and still lists them.
+        db.execute(update(ServerPlaylist).where(ServerPlaylist.server_id == before.id).values(resume=True))
+        moving = list(db.scalars(select(Playlist.id).where(
+            (Playlist.source_server_id == before.id) | Playlist.source_server_id.is_(None))))
+        sync.moved(db, moving, row.id)
+    elif not alongside:
+        sync.moved(db, list(db.scalars(select(Playlist.id).where(Playlist.source_server_id.is_(None)))), row.id,
+                   settle="since")
+    logger.info("Plex connected via=%s owned=%s libraries=%s server=%s", via, found.owned, len(found.sections), row.id)
     return row
 
 
-def choose_library(db: Session, row: PlexConnection, section: Section) -> None:
+def choose_library(db: Session, row: MediaServer, section: Section) -> None:
     """Another library: the catalogue of the old one goes, a new one is fetched."""
-    drop_catalog(db)
+    media.drop_catalog(db, row.id)
     row.serial += 1
     row.section_key, row.section_title = section.key, section.title
     row.generation, row.marks, row.synced_at, row.full_at = 0, {}, None, None
@@ -243,37 +261,19 @@ def choose_library(db: Session, row: PlexConnection, section: Section) -> None:
     db.flush()
 
 
-_epoch = 0
-_epoch_lock = threading.Lock()
-
-
-def epoch() -> int:
-    """Counts up whenever the catalogue is let go of (another server, another library, disconnected): a run that began
-    before stops at its next request to Plex instead of asking on with a token or a library that is no longer wanted.
-    One process holds the server (``--workers 1``); the serial of the connection still decides at the switch."""
-    return _epoch
-
-
-def drop_catalog(db: Session) -> None:
-    """Every catalogue row, waiting catalogue jobs and the record of runs; the covers kept on disk go too. A run under
-    way stops (``epoch``)."""
-    global _epoch
-    with _epoch_lock:
-        _epoch += 1
-    for model in (TrackTag, AlbumTag, ArtistTag, CatalogTag, CatalogTrack, CatalogAlbum, CatalogArtist):
-        db.execute(delete(model))
-    db.execute(text("DELETE FROM track_search"))
-    db.execute(delete(Job).where(Job.kind.in_(("catalog_full", "catalog_part")), Job.state == "queued"))
-    db.execute(delete(SyncRun).where(SyncRun.state != "running"))
-    from . import covers
-
-    covers.forget_all()
+def rest(db: Session, row: MediaServer) -> None:
+    """The server let go of: its token and its catalogue go, its numbers and its copies of the playlists stay."""
+    media.drop_catalog(db, row.id)
+    row.active, row.token_enc, row.url, row.serial = False, "", "", row.serial + 1
+    row.generation, row.marks, row.synced_at, row.full_at = 0, {}, None, None
+    row.analysis_enabled, row.analysis_sampled, row.analysis_found, row.analysis_at = None, 0, 0, None
+    db.flush()
 
 
 def disconnect(db: Session) -> None:
-    drop_catalog(db)
-    db.execute(delete(PlexConnection))
-    db.flush()
+    row = current(db)
+    if row is not None:
+        rest(db, row)
     logger.info("Plex disconnected")
 
 

@@ -94,9 +94,21 @@ With a session or a device token: the account, its profile and what this server 
 
 `{"status": "ok", "version": "…"}`, open to everybody (the container's health check uses it).
 
+### `GET /api/v1/servers`
+
+With a session, a device token or an API key: the media servers nexmix knows, each with `id`, `kind` (`plex`), `name`,
+`active` (connected; a server let go of rests with its numbers and the copies of the playlists on it), `library`,
+`ready` (its catalogue is there), `primary` (the one the Plex card shows, the source of new playlists) and
+`capabilities` (`moods`, `sound`, `smart_playlists`, `duplicates`, `changes`). Never an address or a token.
+
+Every media server has a catalogue of its own. The routes of the catalogue take `server` (an `id` of the list) and
+answer for that one; without it, for the first one connected. Track, album and artist ids are nexmix's own numbers,
+each the thing of one server only (a Plex server's `ratingKey`, while no other thing has that number); a playlist's
+tracks are of its server (`server` of the playlist).
+
 ### `GET /api/v1/catalog/status`
 
-With a session, a device token or an API key: where the catalogue of the Plex library stands. `connected` and
+With a session, a device token or an API key: where the catalogue of the Plex library stands (`server` names it). `connected` and
 `library` (Plex is connected, a music library chosen), `ready` (a catalogue is there), `counts` (`artists`, `albums`,
 `tracks`, `songs`, `moods`), `synced_at` and `full_at`, the run under way (`running`, with `step` and `progress` in
 thousandths) or waiting (`queued`: `full` or `partial`), the `last` run that ended (`state`, `error` as a code), the
@@ -135,7 +147,8 @@ its best-known songs and its albums.
 `GET` lists the playlists the account sees (a member: their own and the ones shared with them; the operator: all), each
 with `access` (`owner`, `operator`, `edit`, `read`), `owner`, `shares`, `version`, `count`, `duration` (seconds), the
 album ids of up to four `covers`, the first `people` who added something; `?trash=true` the deleted ones the account may
-bring back, with `purge_at` (30 days after `deleted_at`). `GET /{id}` adds `items` in order (each entry has its own
+bring back, with `purge_at` (30 days after `deleted_at`), and `server`, the media server the playlist takes its tracks
+from (its catalogue is the one to search; `null` before any was connected). `GET /{id}` adds `items` in order (each entry has its own
 `id`, the `track`, title, artist, album, `album_id`, `year`, `duration`, `song`, `missing` when the track is no longer in
 the catalogue, `from_plex` when it was put in through Plex, `plex_hint` when it is in nexmix only (`refused`: Plex
 did not take its track, five tries over some 80 minutes; `elsewhere`: the connected server has no such track),
@@ -243,7 +256,9 @@ seed, `style`, `decade`, `together`: playlists it shares with the seed, `sound`:
 
 - `GET ?seed=<track>&seed=…&mode=fit|known|new&playlist=<id>&limit=` songs that fit the seed tracks (at most two per
   artist, one for `new`; never the seed's songs, the playlist's, or the hidden ones). With `playlist` (one the account
-  may see) its songs stay out, and without `seed` its last five tracks are the seed.
+  may see) its songs stay out, without `seed` its last five tracks are the seed, and the songs come from its server's
+  catalogue (else from `server`'s, else from the first one connected; the same holds for `/mood`, `together` and
+  `sonic` take `server`).
 - `GET /mood?moods=<name>&moods=…&decades=1980&minutes=60&hits=55&playlist=<id>&seed=<n>` fills by mood: songs of the
   chosen moods for about `minutes`, `hits` from 0 (discoveries) to 100 (hits), at most two per artist, the same artist
   never twice in a row; the same `seed` gives the same mix.

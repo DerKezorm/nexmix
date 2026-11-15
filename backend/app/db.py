@@ -38,7 +38,7 @@ _settings.data_dir.mkdir(parents=True, exist_ok=True)
 BUSY_SECONDS = 15
 
 #: The version of the schema the models describe.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 #: The same, as it was when the module was loaded: only a database brought to it is compared with the models (the
 #: tests of the schema bring records to older versions).
 _MODELS_VERSION = SCHEMA_VERSION
@@ -144,10 +144,26 @@ _SCHEMA_3 = (
 def _to_3(connection: Connection) -> None:
     for statement in _SCHEMA_3:
         connection.exec_driver_sql(statement)
-    # The catalogue that is there already is indexed at once: its next run may be a quarter of an hour away.
-    from .services import catalog_view
+    # The catalogue that is there already is indexed at once: its next run may be a quarter of an hour away. As the
+    # tables stood then (one Plex connection, one live generation), not as ``catalog_view`` reads them today.
+    from .services import search
 
-    catalog_view.reindex_connection(connection)
+    generation = connection.execute(text("SELECT generation FROM plex_connection LIMIT 1")).scalar() or 0
+    if not generation:
+        return
+    albums = {row[0]: (row[1], row[2]) for row in connection.execute(
+        text("SELECT id, title, artist_id FROM albums WHERE generation = :g"), {"g": generation})}
+    artists = dict(connection.execute(text("SELECT id, title FROM artists WHERE generation = :g"),
+                                      {"g": generation}).all())
+    rows = []
+    for track_id, title, album_id, own in connection.execute(
+            text("SELECT id, title, album_id, artist FROM tracks WHERE generation = :g"), {"g": generation}):
+        album_title, artist_id = albums.get(album_id, ("", 0))
+        parts = (title, own, artists.get(artist_id, ""), album_title)
+        rows.append({"id": int(track_id), "text": search.fold(" ".join(part for part in parts if part))})
+    for start in range(0, len(rows), 5000):
+        connection.execute(text("INSERT INTO track_search (rowid, text) VALUES (:id, :text)"),
+                           rows[start:start + 5000])
 
 
 #: Version 4: the copies of the playlists in Plex, entries put in through Plex, and the tracks' guids.
@@ -262,10 +278,20 @@ def _to_8(connection: Connection) -> None:
         connection.exec_driver_sql(statement)
 
 
+def _to_9(connection: Connection) -> None:
+    from . import migrate_9
+
+    migrate_9.run(connection)
+
+
+# The catalogue's tables are made anew with the server in their keys: SQLite changes no primary key in place.
+_to_9.rebuilds_tables = True  # type: ignore[attr-defined]
+
+
 #: ``MIGRATIONS[n]`` brings a database from version ``n - 1`` to ``n``. Version 1 is the first schema; it has no step.
 #: Later steps are written out as the tables stood then, not taken from the models, which move on.
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {2: _to_2, 3: _to_3, 4: _to_4, 5: _to_5, 6: _to_6, 7: _to_7,
-                                                       8: _to_8}
+                                                       8: _to_8, 9: _to_9}
 
 
 # No pool with an upper bound: with the default pool the sixteenth concurrent request would block the event
@@ -482,9 +508,16 @@ def _foreign_objects(plain: sqlite3.Connection) -> list[str]:
     for name, kind, sql in plain.execute(query):
         if kind == "table" and not str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL"):
             continue
-        if own.get(name) != _squeezed(sql):
+        if own.get(name) != _squeezed(sql) and _squeezed(sql) not in _EARLIER.get(name, ()):
             found.append(name)
     return found
+
+
+#: Statements of objects an older nexmix made, as their schema had them: a backup of that version holds them, and its
+#: steps make them anew (schema 3 to 8: the search index without the server of each row).
+_EARLIER: dict[str, frozenset[str]] = {
+    "track_search": frozenset({_squeezed("CREATE VIRTUAL TABLE track_search USING fts5(text, tokenize = 'trigram')")}),
+}
 
 
 def rehearse(path: Path) -> None:

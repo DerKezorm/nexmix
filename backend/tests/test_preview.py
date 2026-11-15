@@ -293,7 +293,7 @@ async def test_a_listener_who_left_is_not_asked_for_again(synced: FakePlex, oper
                                                           waits: list[float]) -> None:
     synced.sound_queue = [(500, b"no"), (200, FRAME * 10)]
     plan = preview.Plan(preview.Listener(f"account:{operator.id}"), "http://127.0.0.1:32400",
-                        synced.account_token, "client-x", TRACK, 70)
+                        synced.account_token, "client-x", TRACK, 70, str(TRACK))
 
     async def left() -> bool:
         return True
@@ -308,7 +308,8 @@ async def test_another_preview_meanwhile_ends_the_second_try(synced: FakePlex, o
                                                              monkeypatch: pytest.MonkeyPatch) -> None:
     synced.sound_queue = [(500, b"no"), (200, FRAME * 10)]
     key = f"account:{operator.id}"
-    plan = preview.Plan(preview.Listener(key), "http://127.0.0.1:32400", synced.account_token, "client-x", TRACK, 70)
+    plan = preview.Plan(preview.Listener(key), "http://127.0.0.1:32400", synced.account_token, "client-x", TRACK, 70,
+                        str(TRACK))
 
     async def replaced_while_waiting(_seconds: float) -> None:
         with preview._lock:

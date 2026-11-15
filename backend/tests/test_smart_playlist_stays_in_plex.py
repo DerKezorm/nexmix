@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Account, PlexPlaylist
-from app.services import plex_sync
+from app.models import Account, ServerPlaylist
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .plex_world import connect, sync
@@ -21,7 +21,7 @@ from .plex_world import connect, sync
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -30,7 +30,7 @@ def test_a_smart_playlist_cannot_be_deleted_through_the_api(client: TestClient, 
     world.tick()
     sync(world, look_at_plex=True)
     with SessionLocal() as db:
-        playlist_id = db.scalar(select(PlexPlaylist.playlist_id).where(PlexPlaylist.rating_key == smart.key))
+        playlist_id = db.scalar(select(ServerPlaylist.playlist_id).where(ServerPlaylist.ext_key == str(smart.key)))
     assert playlist_id is not None
     answer = client.delete(f"/api/v1/playlists/{playlist_id}")
     sync(world, look_at_plex=True)

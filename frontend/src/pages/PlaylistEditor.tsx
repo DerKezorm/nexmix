@@ -49,9 +49,10 @@ export function PlaylistEditor() {
   const { me } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const { status } = useCatalogStatus()
-  const catalog = useCatalogSource(status?.ready ? (status.search ?? 'browser') : null)
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
+  // The catalogue of the playlist's own server: asked once the playlist says which.
+  const { status } = useCatalogStatus(playlist?.server, playlist === null)
+  const catalog = useCatalogSource(status?.ready ? (status.search ?? 'browser') : null, playlist?.server)
   const [missing, setMissing] = useState<string | null>(null)
   const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<Toast | null>(null)

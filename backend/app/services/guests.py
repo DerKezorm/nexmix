@@ -661,7 +661,7 @@ def door(db: Session, request: Request, code: str) -> dict[str, Any]:
     if guest is not None and guest.invite_id == invite.id and guest.removed_at is not None:
         raise error("guest_removed", "The host has taken you out of this playlist.", 403)
     items = playlists.live_items(db, playlist.id)
-    summary = playlists.summary(db, items)
+    summary = playlists.summary(db, items, server_id=playlist.source_server_id)
     return {
         "playlist": {"name": playlist.name, "count": summary["count"], "duration": summary["duration"],
                      "covers": summary["covers"]},
@@ -732,7 +732,7 @@ def join_cover(db: Session, request: Request, code: str, album_id: int) -> None:
     """The covers on the page of the link: only those of the playlist's mosaic, only with a running invitation. They
     count against a brake of their own, not against reading the page or joining."""
     _invite, playlist = find(db, request, code, DOOR_COVER)
-    summary = playlists.summary(db, playlists.live_items(db, playlist.id))
+    summary = playlists.summary(db, playlists.live_items(db, playlist.id), server_id=playlist.source_server_id)
     if album_id not in summary["covers"]:
         raise error("not_found", "Not found.", 404)
 
@@ -812,11 +812,12 @@ def view(db: Session, who: Caller) -> dict[str, Any]:
     from . import catalog_view
 
     items = playlists.live_items(db, who.playlist.id)
-    known = playlists.catalogue_of(db, (item.track_id for item in items))
+    server = who.playlist.source_server_id
+    known = playlists.catalogue_of(db, (item.track_id for item in items), server_id=server)
     people = playlists.people_of(db, (item.added_by_user for item in items))
     mine = own_entries(db, who.guest.id)
     by_guests = _guest_entries(db, [item.id for item in items if item.added_by_user is None])
-    summary = playlists.summary(db, items, known, people)
+    summary = playlists.summary(db, items, known, people, server_id=server)
     entries = []
     for item in items:
         found = playlists.item_view(item, known.get(item.track_id), people)
@@ -828,7 +829,8 @@ def view(db: Session, who: Caller) -> dict[str, Any]:
         })
     from . import catalog
 
-    state = catalog.status(db)
+    # The catalogue the guest searches is the one of the playlist's server.
+    state = catalog.status(db, server) if server is not None else {"ready": False, "counts": {"tracks": 0}}
     tracks = int(state["counts"]["tracks"])
     return {
         "me": {"id": who.guest.id, "name": who.guest.name, "count": sum(1 for entry in entries if entry["mine"])},
@@ -882,7 +884,7 @@ def add(db: Session, guest_id: int, tracks: list[int]) -> dict[str, Any]:
         raise error("guest_no_adding", "This invitation does not let guests add tracks.", 403)
     ordered = playlists.live_items(db, who.playlist.id)
     there = {item.track_id for item in ordered}
-    known = playlists.catalogue_of(db, wanted)
+    known = playlists.catalogue_of(db, wanted, server_id=who.playlist.source_server_id)
     fresh = [track for track in wanted if track in known and track not in there]
     skipped = [track for track in wanted if track not in fresh]
     if not fresh:
@@ -1057,7 +1059,8 @@ def preview_listener(request: Request, db: Session, track_id: int | None) -> pre
     who = _check(db, guest)
     if not who.invite.preview:
         raise error("preview_off", "Listening in is switched off for this invitation.", 403)
-    return preview.Listener(f"guest:{who.guest.id}", "guest")
+    # A guest hears tracks of its playlist's server only (0: none connected, so none).
+    return preview.Listener(f"guest:{who.guest.id}", "guest", who.playlist.source_server_id or 0)
 
 
 def hang_in() -> None:

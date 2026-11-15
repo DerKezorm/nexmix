@@ -40,7 +40,7 @@ def test_asked_while_a_run_reads_plex_starts_nothing(client: TestClient, operato
     connect(client, fake_plex)
     _running_job()
     with SessionLocal() as db:
-        db.add(SyncRun(kind="full", reason="manual", state="running", started_at=clock.now()))
+        db.add(SyncRun(kind="full", reason="manual", state="running", started_at=clock.now(), server_id=1))
         db.commit()
     assert client.post("/api/v1/catalog/sync").json() == {"started": False}
     with SessionLocal() as db:

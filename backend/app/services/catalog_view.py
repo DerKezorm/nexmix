@@ -1,23 +1,24 @@
-"""The catalogue as the browser gets it: compact, packed, built once per state of the catalogue.
+"""The catalogue as the browser gets it: compact, packed, built once per state of the catalogue of a server.
 
 **The compact catalogue** (``GET /api/v1/catalog``) is a JSON object of lists, places instead of names:
 
 * ``moods``, ``genres``, ``styles``: the names, sorted.
 * ``artists``: ``[id, name, [moods], [styles]]``.
 * ``albums``: ``[id, title, artist, year, cover, [genres], [styles], [moods], added]``; ``artist`` is a place in
-  ``artists`` (-1: unknown), ``cover`` 1 when Plex has one, ``added`` Plex's time.
+  ``artists`` (-1: unknown), ``cover`` 1 when the server has one, ``added`` the server's time.
 * ``tracks``: ``[id, title, album, own artist, seconds, listeners, plays, [moods], disc, number, song, original year]``;
   ``album`` a place in ``albums``, ``own artist`` empty where it is the album's, ``song`` the id of the version shown
   for the song (the track *is* that version when ``song`` equals its id), ``original year`` the earliest album year
   among the versions (0: none).
 
-It is built when first asked for after the catalogue changed (and right after each run), kept in memory with its
-packed form, and named by its content (``etag``): an unchanged catalogue after a partial run keeps its name, and the
+Each media server has its own: a playlist is searched in the catalogue of its source server. It is built when first
+asked for after the catalogue changed (and right after each run), kept in memory with its packed form, and named by
+its content (``etag``, which names the server too): an unchanged catalogue after a partial run keeps its name, and the
 browser's copy stays good (``304``).
 
-**The search index** (``track_search``, a full-text table cut in threes) holds the live tracks' folded texts; the
-server's search (``search_tracks``) takes from it the tracks worth looking at and then applies the same rules as the
-browser (``search.py``).
+**The search index** (``track_search``, a full-text table cut in threes) holds the live tracks' folded texts with the
+server of each; the server's search (``search_tracks``) takes from it the tracks worth looking at and then applies the
+same rules as the browser (``search.py``).
 """
 
 from __future__ import annotations
@@ -45,10 +46,10 @@ from ..models import (
     CatalogArtist,
     CatalogTag,
     CatalogTrack,
-    PlexConnection,
+    MediaServer,
     TrackTag,
 )
-from . import search
+from . import media, search
 
 logger = logging.getLogger("nexmix.catalog")
 
@@ -57,9 +58,10 @@ FORMAT = 1
 
 @dataclass(frozen=True)
 class View:
-    """One state of the catalogue: what it was made from, the compact JSON (plain and packed), its name, the index."""
+    """One state of the catalogue of one server: what it was made from (server, generation, last run), the compact
+    JSON (plain and packed), its name, the index."""
 
-    stamp: tuple[int, str]
+    stamp: tuple[int, int, str]
     body: bytes
     packed: bytes
     etag: str
@@ -67,33 +69,44 @@ class View:
     built_seconds: float
     tracks: int
 
+    @property
+    def server(self) -> int:
+        return self.stamp[0]
+
 
 _lock = threading.Lock()
-_view: View | None = None
+#: The views, by server.
+_views: dict[int, View] = {}
 
 
 def forget() -> None:
-    global _view
     with _lock:
-        _view = None
+        _views.clear()
 
 
-def _stamp(db: Session) -> tuple[int, str] | None:
-    """The live generation and the time of the last run, in one fixed state of the database (``catalog.pin``): every
-    query of the session after it sees that state, whatever a run switches or writes meanwhile."""
+def _stamp(db: Session, server_id: int | None) -> tuple[int, int, str] | None:
+    """The server (None: the first one connected), its live generation and the time of its last run, in one fixed state
+    of the database (``catalog.hold``): every query of the session after it sees that state, whatever a run switches or
+    writes meanwhile."""
     from . import catalog
 
-    generation = catalog.pin(db)
-    if not generation:
+    catalog.hold(db)
+    row = media.get(db, server_id) if server_id is not None else media.primary(db)
+    if row is None or not row.active or not row.generation:
         return None
-    synced = db.scalar(select(PlexConnection.synced_at).order_by(PlexConnection.id).limit(1))
-    return generation, synced.isoformat() if synced else ""
+    synced = db.scalar(select(MediaServer.synced_at).where(MediaServer.id == row.id))
+    return row.id, int(row.generation), synced.isoformat() if synced else ""
 
 
-def compact(db: Session, generation: int) -> dict[str, Any]:
-    """The compact catalogue of one generation (see the top of this file)."""
+def compact(db: Session, generation: int, server_id: int | None = None) -> dict[str, Any]:
+    """The compact catalogue of one generation of a server (None: the first one connected; see the top of this
+    file)."""
+    if server_id is None:
+        first = media.primary(db)
+        server_id = first.id if first is not None else 0
     tags = {row.id: (row.kind, row.name) for row in db.execute(
-        select(CatalogTag.id, CatalogTag.kind, CatalogTag.name).where(CatalogTag.generation == generation))}
+        select(CatalogTag.id, CatalogTag.kind, CatalogTag.name).where(CatalogTag.server_id == server_id,
+                                                                      CatalogTag.generation == generation))}
     names: dict[str, list[str]] = {"mood": [], "genre": [], "style": []}
     for kind, name in tags.values():
         if kind in names:
@@ -105,7 +118,8 @@ def compact(db: Session, generation: int) -> dict[str, Any]:
 
     def links(model: type[Any]) -> dict[int, dict[str, list[int]]]:
         found: dict[int, dict[str, list[int]]] = {}
-        for item, tag in db.execute(select(model.item_id, model.tag_id).where(model.generation == generation)):
+        for item, tag in db.execute(select(model.item_id, model.tag_id).where(model.server_id == server_id,
+                                                                               model.generation == generation)):
             known = tag_place.get(tag)
             if known is not None:
                 found.setdefault(item, {}).setdefault(known[0], []).append(known[1])
@@ -115,18 +129,20 @@ def compact(db: Session, generation: int) -> dict[str, Any]:
         return found
 
     artist_tags, album_tags, track_tags = links(ArtistTag), links(AlbumTag), links(TrackTag)
-    artists = db.execute(select(CatalogArtist.id, CatalogArtist.title).where(CatalogArtist.generation == generation)
-                         .order_by(CatalogArtist.id)).all()
+    artists = db.execute(select(CatalogArtist.id, CatalogArtist.title).where(
+        CatalogArtist.server_id == server_id, CatalogArtist.generation == generation).order_by(CatalogArtist.id)).all()
     artist_place = {row.id: number for number, row in enumerate(artists)}
     albums = db.execute(select(CatalogAlbum.id, CatalogAlbum.artist_id, CatalogAlbum.title, CatalogAlbum.year,
                                CatalogAlbum.thumb, CatalogAlbum.added_at)
-                        .where(CatalogAlbum.generation == generation).order_by(CatalogAlbum.id)).all()
+                        .where(CatalogAlbum.server_id == server_id, CatalogAlbum.generation == generation)
+                        .order_by(CatalogAlbum.id)).all()
     album_place = {row.id: number for number, row in enumerate(albums)}
     tracks = db.execute(select(
         CatalogTrack.id, CatalogTrack.title, CatalogTrack.album_id, CatalogTrack.artist, CatalogTrack.duration,
         CatalogTrack.rating_count, CatalogTrack.view_count, CatalogTrack.disc, CatalogTrack.number,
         CatalogTrack.song_key, CatalogTrack.shown, CatalogTrack.original_year,
-    ).where(CatalogTrack.generation == generation).order_by(CatalogTrack.id)).all()
+    ).where(CatalogTrack.server_id == server_id, CatalogTrack.generation == generation)
+        .order_by(CatalogTrack.id)).all()
     shown: dict[str, int] = {}
     for row in tracks:
         if row.shown and row.song_key not in shown:
@@ -151,44 +167,44 @@ def compact(db: Session, generation: int) -> dict[str, Any]:
     }
 
 
-def current(db: Session | None = None) -> View | None:
-    """The view of the live catalogue, built now when the catalogue changed since; None before the first run. The
-    generation is read once (``catalog.pin``), and everything else of it in the same read transaction."""
-    global _view
+def current(db: Session | None = None, server_id: int | None = None) -> View | None:
+    """The view of the live catalogue of a server (None: the first one connected), built now when the catalogue changed
+    since; None before its first run. The generation is read once (``catalog.hold``), and everything else of it in the
+    same read transaction."""
     if db is None:
         with SessionLocal() as own:
-            return current(own)
+            return current(own, server_id)
     db.rollback()
-    stamp = _stamp(db)
-    view = _view
+    stamp = _stamp(db, server_id)
+    view = _views.get(stamp[0]) if stamp is not None else None
     if stamp is None or (view is not None and view.stamp == stamp):
         db.rollback()
         return None if stamp is None else view
     with _lock:
-        view = _view
+        view = _views.get(stamp[0])
         if view is not None and view.stamp == stamp:
             db.rollback()
             return view
         started = time.monotonic()
-        data = compact(db, stamp[0])
+        data = compact(db, stamp[1], stamp[0])
         db.rollback()
         body = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         index = search.prepare(data)
         digest = hashlib.sha256(body).hexdigest()[:20]
         view = View(stamp=stamp, body=body, packed=gzip.compress(body, compresslevel=6, mtime=0),
-                    etag=f'"c{stamp[0]}-{digest}"', index=index, built_seconds=round(time.monotonic() - started, 3),
-                    tracks=len(data["tracks"]))
-        _view = view
-        logger.info("Catalogue prepared tracks=%s bytes=%s packed=%s seconds=%s", view.tracks, len(body),
-                    len(view.packed), view.built_seconds)
+                    etag=f'"c{stamp[0]}-{stamp[1]}-{digest}"', index=index,
+                    built_seconds=round(time.monotonic() - started, 3), tracks=len(data["tracks"]))
+        _views[stamp[0]] = view
+        logger.info("Catalogue prepared server=%s tracks=%s bytes=%s packed=%s seconds=%s", stamp[0], view.tracks,
+                    len(body), len(view.packed), view.built_seconds)
         return view
 
 
-def warm() -> None:
+def warm(server_id: int | None = None) -> None:
     """Built ahead, after a run: the first browser to ask does not wait for it. Then what the run and the old view
     left behind goes back to the system (``give_back``)."""
     try:
-        current()
+        current(server_id=server_id)
     except Exception:
         logger.exception("Catalogue could not be prepared")
     give_back()
@@ -214,36 +230,41 @@ def search_mode(tracks: int) -> str:
 # --- The search index ------------------------------------------------------------------------------------------------
 
 
-def _texts(connection: Connection, generation: int) -> list[tuple[int, str]]:
+def _texts(connection: Connection, server_id: int, generation: int) -> list[tuple[int, str]]:
+    values = {"s": server_id, "g": generation}
     album = {row[0]: (row[1], row[2]) for row in connection.execute(
-        text("SELECT id, title, artist_id FROM albums WHERE generation = :g"), {"g": generation})}
-    artist = dict(connection.execute(text("SELECT id, title FROM artists WHERE generation = :g"),
-                                     {"g": generation}).all())
+        text("SELECT id, title, artist_id FROM albums WHERE server_id = :s AND generation = :g"), values)}
+    artist = dict(connection.execute(text("SELECT id, title FROM artists WHERE server_id = :s AND generation = :g"),
+                                     values).all())
     found = []
     for track_id, title, album_id, own in connection.execute(
-            text("SELECT id, title, album_id, artist FROM tracks WHERE generation = :g"), {"g": generation}):
+            text("SELECT id, title, album_id, artist FROM tracks WHERE server_id = :s AND generation = :g"), values):
         album_title, artist_id = album.get(album_id, ("", 0))
         parts = (title, own, artist.get(artist_id, ""), album_title)
         found.append((int(track_id), search.fold(" ".join(part for part in parts if part))))
     return found
 
 
-def reindex_connection(connection: Connection) -> int:
-    """The search index made anew from the live generation, on a connection inside its transaction."""
-    generation = connection.execute(text("SELECT generation FROM plex_connection LIMIT 1")).scalar() or 0
-    connection.execute(text("DELETE FROM track_search"))
+def reindex_connection(connection: Connection, server_id: int) -> int:
+    """The search index of a server made anew from its live generation, on a connection inside its transaction."""
+    generation = connection.execute(text("SELECT generation FROM media_servers WHERE id = :s AND active"),
+                                    {"s": server_id}).scalar() or 0
+    connection.execute(text("DELETE FROM track_search WHERE server_id = :s"), {"s": server_id})
     if not generation:
         return 0
-    rows = _texts(connection, int(generation))
+    rows = _texts(connection, server_id, int(generation))
     for start in range(0, len(rows), 5000):
-        connection.execute(text("INSERT INTO track_search (rowid, text) VALUES (:id, :text)"),
-                           [{"id": track_id, "text": folded} for track_id, folded in rows[start:start + 5000]])
+        connection.execute(text("INSERT INTO track_search (rowid, text, server_id) VALUES (:id, :text, :s)"),
+                           [{"id": track_id, "text": folded, "s": server_id}
+                            for track_id, folded in rows[start:start + 5000]])
     return len(rows)
 
 
-def reindex(db: Session) -> int:
+def reindex(db: Session, server_id: int | None = None) -> int:
+    """The search index of a server (None: of every server) made anew."""
     started = time.monotonic()
-    count = reindex_connection(db.connection())
+    chosen = [server_id] if server_id is not None else [row.id for row in media.every(db)]
+    count = sum(reindex_connection(db.connection(), ident) for ident in chosen)
     db.commit()
     logger.info("Search index made tracks=%s seconds=%s", count, round(time.monotonic() - started, 2))
     return count
@@ -257,7 +278,8 @@ def candidates(db: Session, view: View, query: str) -> list[int] | None:
         return None
     # The words are folded: letters and digits only, nothing that means anything to the full-text syntax.
     match = " AND ".join(f'"{word}"' for word in long_words)
-    found = db.execute(text("SELECT rowid FROM track_search WHERE track_search MATCH :m"), {"m": match}).scalars()
+    found = db.execute(text("SELECT rowid FROM track_search WHERE track_search MATCH :m AND server_id = :s"),
+                       {"m": match, "s": view.server}).scalars()
     position = view.index.position
     return [position[track_id] for track_id in found if track_id in position]
 

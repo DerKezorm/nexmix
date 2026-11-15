@@ -2,12 +2,12 @@
 at once, as a ``timeline`` entry of type 15 with state 0 (made), 5 (renamed, after 3) or 9 (deleted). Entries added,
 taken out or moved do not show there at all.
 
-The stream only says "look now" (``plex_sync.look_now``): what changed is read from Plex as at every look, never taken
-from the event. A thread of its own keeps it open (Plex sends a ping about every ten seconds, so a stream silent for
-45 seconds is opened anew); it is opened again after it ends or fails, waiting a little longer each time up to a minute,
-and anew when Plex is connected to another server. The waits start over only after a stream that brought an event or
-stayed open a while: one that ends after every ping (a proxy may do that) is not opened again every second. The token
-goes in a header, as with every request to Plex.
+The stream only says "look now" (``sync.look_now`` for that server): what changed is read from Plex as at every look,
+never taken from the event. Every connected Plex server has its own stream; a thread of its own keeps each open (Plex
+sends a ping about every ten seconds, so a stream silent for 45 seconds is opened anew); it is opened again after it
+ends or fails, waiting a little longer each time up to a minute, and anew when Plex is connected to another server.
+The waits start over only after a stream that brought an event or stayed open a while: one that ends after every ping
+(a proxy may do that) is not opened again every second. The token goes in a header, as with every request to Plex.
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ from typing import Any
 import httpx
 
 from ..db import SessionLocal
-from . import plex_link, plex_sync
+from ..models import SERVER_PLEX
+from . import media, plex_link, sources, sync
 from .plex import PlexError, PlexServer
 
 logger = logging.getLogger("nexmix.plexevents")
@@ -86,8 +87,9 @@ def read(lines: Iterable[str], on_playlists: Callable[[], None], stop: Callable[
     return count
 
 
-def listen(server: PlexServer, stop: Callable[[], bool]) -> int:
-    """One stream of one server, until it ends: the number of events it brought (pings left out)."""
+def listen(server: PlexServer, stop: Callable[[], bool], server_id: int | None = None) -> int:
+    """One stream of one server, until it ends: the number of events it brought (pings left out). ``server_id``: the
+    server to look at when a playlist changed (None: every one)."""
     timeout = httpx.Timeout(SILENCE, connect=8.0)
     headers = server._headers({"Accept": "text/event-stream"})
     try:
@@ -96,7 +98,7 @@ def listen(server: PlexServer, stop: Callable[[], bool]) -> int:
                 raise PlexError("plex_refused")
             if answer.status_code != 200:
                 raise PlexError("plex_error")
-            return read(answer.iter_lines(), plex_sync.look_now, stop)
+            return read(answer.iter_lines(), lambda: sync.look_now(server_id), stop)
     except httpx.TimeoutException as exc:
         raise PlexError("plex_timeout", 504) from exc
     except httpx.HTTPError as exc:
@@ -104,9 +106,10 @@ def listen(server: PlexServer, stop: Callable[[], bool]) -> int:
 
 
 class Listener:
-    """The thread that keeps the stream open."""
+    """The thread that keeps the stream of one server open (None: of the first Plex server connected)."""
 
-    def __init__(self) -> None:
+    def __init__(self, server_id: int | None = None) -> None:
+        self.server_id = server_id
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._server: PlexServer | None = None
@@ -114,7 +117,7 @@ class Listener:
 
     def start(self) -> None:
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="plex-events", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=f"plex-events-{self.server_id or 0}", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -128,29 +131,32 @@ class Listener:
             except Exception:  # noqa: BLE001 - it is going anyway
                 logger.debug("Plex event stream closed while in use")
 
-    def _open(self) -> PlexServer | None:
+    def _open(self) -> tuple[int, PlexServer] | None:
         with SessionLocal() as db:
-            connection = plex_sync._ready(db)
-            if connection is None:
+            row = media.get(db, self.server_id) if self.server_id is not None else media.primary(db, SERVER_PLEX)
+            connection = sync._ready(db, row.id if row is not None else None)
+            if connection is None or connection.kind != SERVER_PLEX:
                 return None
-            return plex_link.server_of(db, connection, timeout=SILENCE)
+            return connection.id, sources.open_server(db, connection, timeout=SILENCE).server
 
     def _loop(self) -> None:
         tries = 0
         while not self._stop.is_set():
-            started = plex_link.epoch()
             try:
-                server = self._open()
+                opened_one = self._open()
             except plex_link.Unreadable:
-                server = None
-            if server is None:
+                opened_one = None
+            if opened_one is None:
                 self._stop.wait(IDLE)
                 continue
+            ident, server = opened_one
+            started = media.epoch(ident)
             with self._lock:
                 self._server = server
             opened = time.monotonic()
             try:
-                got = listen(server, lambda since=started: self._stop.is_set() or plex_link.epoch() != since)
+                got = listen(server, lambda since=started, one=ident: self._stop.is_set() or media.epoch(one) != since,
+                             ident)
                 tries = next_tries(tries, got, time.monotonic() - opened)
             except PlexError as exc:
                 tries += 1
@@ -163,7 +169,7 @@ class Listener:
                     self._server = None
                 server.close()
             # Whatever happened while it was closed: the next look finds it.
-            plex_sync.look_now()
+            sync.look_now(ident)
             self._stop.wait(WAITS[min(tries, len(WAITS) - 1)])
 
 
@@ -173,10 +179,30 @@ def next_tries(tries: int, events: int, seconds: float) -> int:
     return 0 if events or seconds >= STEADY else tries + 1
 
 
+def _wanted() -> set[int]:
+    with SessionLocal() as db:
+        return {row.id for row in media.ready(db) if row.kind == SERVER_PLEX}
+
+
 async def run_forever(stop: asyncio.Event) -> None:
-    listener = Listener()
-    listener.start()
+    """A listener for every connected Plex server, looked over every ``IDLE`` seconds: one for a server connected
+    since, none any more for one let go of."""
+    listeners: dict[int, Listener] = {}
     try:
-        await stop.wait()
+        while not stop.is_set():
+            try:
+                wanted = await asyncio.to_thread(_wanted)
+            except Exception:  # noqa: BLE001 - the streams are a help, never a reason to stop
+                wanted = set(listeners)
+            for ident in set(listeners) - wanted:
+                listeners.pop(ident).stop()
+            for ident in wanted - set(listeners):
+                listeners[ident] = Listener(ident)
+                listeners[ident].start()
+            try:
+                await asyncio.wait_for(stop.wait(), IDLE)
+            except TimeoutError:
+                continue
     finally:
-        listener.stop()
+        for listener in listeners.values():
+            listener.stop()

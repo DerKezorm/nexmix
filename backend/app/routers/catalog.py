@@ -1,5 +1,8 @@
 """The catalogue: where it stands (for everybody signed in), a full run on demand (the operator), and the covers of
-the albums, fetched through the server so that the Plex token never reaches a browser."""
+the albums, fetched through the server so that the Plex token never reaches a browser.
+
+Every media server has its catalogue: ``server`` names it (``GET /api/v1/servers``); without it, the first one
+connected. A playlist's search uses the catalogue of its server (``server`` of the playlist)."""
 
 from __future__ import annotations
 
@@ -14,24 +17,26 @@ from starlette.concurrency import run_in_threadpool
 from ..deps import DbSession, OperatorAccount, Reader
 from ..errors import error
 from ..models import CatalogAlbum
-from ..services import catalog, catalog_view, covers, plex, plex_link, search
+from ..services import catalog, catalog_view, covers, media, plex, plex_link, search, sources
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
 
 #: A week in the browser; a changed cover is another file at Plex and so another ETag.
 COVER_CACHE = "private, max-age=604800"
 
+ServerId = Annotated[int | None, Query(ge=1, le=10**9, description="The media server (none: the first connected)")]
+
 
 @router.get("/status", summary="How far the catalogue is: counts, the run under way, the last run, the sonic analysis")
-def catalog_status(_reader: Reader, db: DbSession) -> dict[str, Any]:
-    found = catalog.status(db)
+def catalog_status(_reader: Reader, db: DbSession, server: ServerId = None) -> dict[str, Any]:
+    found = catalog.status(db, server)
     # Where the interface searches: in the browser with the whole catalogue, or for a large one on the server.
     found["search"] = catalog_view.search_mode(int(found["counts"]["tracks"]))
     return found
 
 
-def _view(db: DbSession) -> catalog_view.View:
-    view = catalog_view.current(db)
+def _view(db: DbSession, server: int | None = None) -> catalog_view.View:
+    view = catalog_view.current(db, server)
     if view is None:
         raise error("no_catalog", "The catalogue is not there yet.", 409)
     return view
@@ -39,8 +44,8 @@ def _view(db: DbSession) -> catalog_view.View:
 
 @router.get("", summary="The whole catalogue, compact and packed, for searching in the browser (ETag, 304)",
             response_model=None)
-def catalog_compact(request: Request, _reader: Reader, db: DbSession) -> Response:
-    view = _view(db)
+def catalog_compact(request: Request, _reader: Reader, db: DbSession, server: ServerId = None) -> Response:
+    view = _view(db, server)
     headers = {"ETag": view.etag, "Cache-Control": "private, no-cache", "Vary": "Accept-Encoding"}
     if view.etag in [tag.strip() for tag in request.headers.get("if-none-match", "").split(",")]:
         return Response(status_code=304, headers=headers)
@@ -62,9 +67,10 @@ def catalog_search(
     decade: Decade = 0,
     genre: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=200)] = search.TRACK_LIMIT,
+    server: ServerId = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    view = _view(db)
+    view = _view(db, server)
     if kind == "albums":
         found = search.search_albums(view.index, q)
     elif kind == "artists":
@@ -77,8 +83,8 @@ def catalog_search(
 
 
 @router.get("/facets", summary="The moods, genres and decades the filters offer, with how many tracks each has")
-def catalog_facets(_reader: Reader, db: DbSession) -> dict[str, Any]:
-    ix = _view(db).index
+def catalog_facets(_reader: Reader, db: DbSession, server: ServerId = None) -> dict[str, Any]:
+    ix = _view(db, server).index
     return {
         "moods": [{"name": name, "tracks": len(ix.by_mood.get(number, []))} for number, name in enumerate(ix.moods)],
         "groups": [{"key": key, "moods": names} for key, names in search.MOOD_GROUPS],
@@ -89,16 +95,18 @@ def catalog_facets(_reader: Reader, db: DbSession) -> dict[str, Any]:
 
 
 @router.get("/albums/{album_id}", summary="An album with its tracks in order")
-def catalog_album(album_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession) -> dict[str, Any]:
-    found = search.album_detail(_view(db).index, album_id)
+def catalog_album(album_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession,
+                  server: ServerId = None) -> dict[str, Any]:
+    found = search.album_detail(_view(db, server).index, album_id)
     if found is None:
         raise error("not_found", "Not found.", 404)
     return found
 
 
 @router.get("/artists/{artist_id}", summary="An artist: the best-known songs and the albums")
-def catalog_artist(artist_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession) -> dict[str, Any]:
-    found = search.artist_detail(_view(db).index, artist_id)
+def catalog_artist(artist_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession,
+                   server: ServerId = None) -> dict[str, Any]:
+    found = search.artist_detail(_view(db, server).index, artist_id)
     if found is None:
         raise error("not_found", "Not found.", 404)
     return found
@@ -106,11 +114,11 @@ def catalog_artist(artist_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Re
 
 @router.post("/sync", status_code=202,
              summary="Fetch the whole catalogue again (a run already waiting or running is not doubled)")
-def catalog_sync(_operator: OperatorAccount, db: DbSession) -> JSONResponse:
-    row = plex_link.current(db)
-    if row is None or not row.section_key:
+def catalog_sync(_operator: OperatorAccount, db: DbSession, server: ServerId = None) -> JSONResponse:
+    row = media.get(db, server) if server is not None else plex_link.current(db)
+    if row is None or not row.active or not row.section_key:
         raise error("no_plex", "Connect Plex first.", 409)
-    started = catalog.request_full(db, "manual")
+    started = catalog.request_full(db, "manual", row.id)
     return JSONResponse(status_code=202, content={"started": started})
 
 
@@ -124,16 +132,20 @@ class _Wanted:
     url: str = ""
     token: str = ""
     client: str = ""
+    machine: str = ""
 
 
-def _look_up(db: DbSession, album_id: int, size: int, tag: str | None) -> _Wanted:
-    """The album's cover path, the file kept on disk, and (only when Plex must be asked) the server and its token.
-    Runs in a thread of the pool, briefly: the database and the disk, never Plex."""
-    # The generation and the album in one state of the database (a full run may switch over in between).
-    generation = catalog.pin(db)
-    row = plex_link.current(db)
-    album = db.get(CatalogAlbum, (generation, album_id)) if row is not None and generation else None
-    # Only a path the catalogue took from Plex, and only one shaped like a cover (``plex.THUMB``).
+def _look_up(db: DbSession, album_id: int, size: int, tag: str | None, server: int | None) -> _Wanted:
+    """The album's cover path, the file kept on disk, and (only when the server must be asked) the server and its
+    token. An album number belongs to one server; ``server`` limits the look to that one. Runs in a thread of the pool,
+    briefly: the database and the disk, never the media server."""
+    # The generations and the album in one state of the database (a full run may switch over in between).
+    album = None
+    for ident, generation in catalog.live(db).items():
+        if server is None or ident == server:
+            album = db.get(CatalogAlbum, (ident, generation, album_id)) or album
+    row = media.get(db, album.server_id) if album is not None else None
+    # Only a path the catalogue took from the server, and only one shaped like a cover (``plex.THUMB``).
     if row is None or album is None or not plex.THUMB.fullmatch(album.thumb or ""):
         db.rollback()
         raise error("not_found", "Not found.", 404)
@@ -146,7 +158,8 @@ def _look_up(db: DbSession, album_id: int, size: int, tag: str | None) -> _Wante
         db.rollback()
         return _Wanted(name, kept)
     try:
-        wanted = _Wanted(name, None, album.thumb, row.url, plex_link.token_of(row), plex_link.client_id(db))
+        wanted = _Wanted(name, None, album.thumb, row.url, plex_link.token_of(row), plex_link.client_id(db),
+                         row.machine_id)
     except plex_link.Unreadable as exc:
         raise error("token_unreadable", "Connect Plex again.", 409) from exc
     finally:
@@ -161,13 +174,15 @@ def _unavailable(code: str, retry: int) -> HTTPException:
     return exc
 
 
-async def serve_cover(request: Request, album_id: int, db: DbSession, size: int) -> Response:
-    """A cover from disk, or from Plex in one of the few places for covers (``covers.fetch``): the route itself holds
-    no thread of the server's pool while Plex works, and a Plex that is slow or down never holds up the rest."""
+async def serve_cover(request: Request, album_id: int, db: DbSession, size: int,
+                      server: int | None = None) -> Response:
+    """A cover from disk, or from its server in one of the few places for covers (``covers.fetch``): the route itself
+    holds no thread of the server's pool while the media server works, and one that is slow or down never holds up the
+    rest. ``server``: only an album of that server (a guest sees its playlist's server only)."""
     if size not in plex.COVER_SIZES:
         raise error("invalid_input", "The input is not valid.", 422, fields=["s"])
     tag = request.headers.get("if-none-match", "").strip() or None
-    wanted = await run_in_threadpool(_look_up, db, album_id, size, tag)
+    wanted = await run_in_threadpool(_look_up, db, album_id, size, tag, server)
     headers = {"ETag": f'"{wanted.name}"', "Cache-Control": COVER_CACHE}
     if tag is not None and tag == headers["ETag"]:
         return Response(status_code=304, headers=headers)
@@ -175,8 +190,8 @@ async def serve_cover(request: Request, album_id: int, db: DbSession, size: int)
         return Response(wanted.kept[0], media_type=wanted.kept[1], headers=headers)
 
     def ask_plex() -> tuple[bytes, str]:
-        with plex.PlexServer(wanted.url, wanted.token, wanted.client, timeout=20.0) as server:
-            data, kind = server.cover(wanted.thumb, size)
+        with sources.PlexSource(wanted.url, wanted.token, wanted.client, wanted.machine, "", timeout=20.0) as source:
+            data, kind = source.cover(wanted.thumb, size)
         covers.write(wanted.name, data)
         return data, kind
 

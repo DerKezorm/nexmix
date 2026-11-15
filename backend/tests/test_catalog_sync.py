@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session
 from app import clock
 from app import db as database
 from app.db import SessionLocal
-from app.models import CatalogAlbum, CatalogArtist, CatalogTag, CatalogTrack, Job, PlexConnection, SyncRun, TrackTag
+from app.models import CatalogAlbum, CatalogArtist, CatalogTag, CatalogTrack, Job, MediaServer, SyncRun, TrackTag
 from app.services import backups, catalog, jobs, plex_link, settings_service
+from app.services.sources import plex as plex_source
 
 from .conftest import make_account, new_client
 from .fakeplex import FakePlex
@@ -92,9 +93,9 @@ def test_the_full_run_takes_in_the_whole_library(client: TestClient, synced: Fak
     assert found[3001].duration == 200_000 and found[3001].rating_count == 52_000
     assert found[3009].view_count == 40
     with SessionLocal() as db:
-        album = db.get(CatalogAlbum, (live(), 2001))
+        album = db.get(CatalogAlbum, (1, live(), 2001))
         assert album is not None and album.thumb.startswith("/library/metadata/2001/thumb/")
-        assert db.get(CatalogArtist, (live(), 1001)).title == "The Velvet Harbour"  # type: ignore[union-attr]
+        assert db.get(CatalogArtist, (1, live(), 1001)).title == "The Velvet Harbour"  # type: ignore[union-attr]
 
 
 def test_lists_come_in_pages_of_five_thousand_and_tags_many_at_once(synced: FakePlex) -> None:
@@ -196,11 +197,11 @@ def test_a_reader_in_the_middle_of_the_switch_sees_one_catalogue(client: TestCli
     counts = catalog.counts
     switched: list[int] = []
 
-    def in_between(db: Session, generation: int) -> dict[str, int]:
+    def in_between(db: Session, generation: int, server_id: int | None = None) -> dict[str, int]:
         # The reader has read which generation is live; now the full run goes through, start to end.
         if not switched:
             switched.append(run())
-        return counts(db, generation)
+        return counts(db, generation, server_id)
 
     monkeypatch.setattr(catalog, "counts", in_between)
     seen = client.get("/api/v1/catalog/status").json()
@@ -320,9 +321,9 @@ def test_a_crash_in_the_middle_is_cleaned_up_at_the_next_start(client: TestClien
     with SessionLocal() as db:
         job = db.scalars(select(Job).where(Job.kind == "catalog_full")).one()
         job.state = "running"
-        db.add(SyncRun(kind="full", state="running", serial=1, generation=1, started_at=clock.now()))
+        db.add(SyncRun(kind="full", state="running", serial=1, generation=1, started_at=clock.now(), server_id=1))
         # Half a catalogue of the run that died with the server.
-        db.add(CatalogTrack(generation=1, id=3001, title="Northern Lights"))
+        db.add(CatalogTrack(server_id=1, generation=1, id=3001, title="Northern Lights"))
         db.commit()
         jobs.recover(db, catalog.LANE)
         jobs.settle(db, jobs.LANES[catalog.LANE])
@@ -461,7 +462,7 @@ def test_the_partial_run_looks_sixty_seconds_back_on_plexs_clock(client: TestCli
 
 def test_too_many_changes_hand_over_to_a_full_run(client: TestClient, synced: FakePlex,
                                                   monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(catalog, "PARTIAL_LIMIT", 3)
+    monkeypatch.setattr(plex_source, "PARTIAL_LIMIT", 3)
     for key in (3001, 3002, 3003, 3004):
         synced.touch(key, rating=1)
     synced.calls.clear()
@@ -486,7 +487,7 @@ def test_what_is_gone_from_plex_goes_from_the_catalogue(client: TestClient, sync
     found = tracks()
     assert 3018 not in found and 3019 not in found
     with SessionLocal() as db:
-        assert db.get(CatalogAlbum, (live(), 2009)) is None
+        assert db.get(CatalogAlbum, (1, live(), 2009)) is None
         assert db.scalars(select(TrackTag).where(TrackTag.item_id == 3019)).all() == []
     assert runs()[-1].removed == 3
     # The light list was asked for only where the totals differed.
@@ -521,7 +522,7 @@ def test_after_a_burst_of_changes_one_full_run_then_quiet_partial_runs(client: T
                                                                       monkeypatch: pytest.MonkeyPatch) -> None:
     """Plex touches more than the limit at once: one full run takes it in, and the partial runs after it neither ask
     for another nor fetch the burst again (it lies in the minute looked back)."""
-    monkeypatch.setattr(catalog, "PARTIAL_LIMIT", 3)
+    monkeypatch.setattr(plex_source, "PARTIAL_LIMIT", 3)
     for key in (3001, 3002, 3003, 3004):
         synced.touch(key, rating=1)
     for _ in range(4):
@@ -541,7 +542,7 @@ def test_new_entries_count_once_and_the_minute_looked_back_not_at_all(client: Te
                                                                       monkeypatch: pytest.MonkeyPatch) -> None:
     # Four new tracks carry a new ``addedAt`` and a new ``updatedAt``: four changes, not eight; the newest entries of
     # before, in the minute looked back, are no change either.
-    monkeypatch.setattr(catalog, "PARTIAL_LIMIT", 4)
+    monkeypatch.setattr(plex_source, "PARTIAL_LIMIT", 4)
     for number in range(4):
         synced.add(Item(3100 + number, TRACK, f"Fresh Tune {number}", 2005))
     partial()
@@ -678,7 +679,7 @@ def test_a_pinned_reader_sees_one_state_while_a_partial_run_writes(client: TestC
         assert tracks().keys() == {key for key in range(3001, 3033)} - {3018}
         # Taken out by the partial run meanwhile, still there for the reader who began before.
         assert catalog.counts(reader, generation)["tracks"] == 32
-        assert reader.get(CatalogTrack, (generation, 3018)) is not None
+        assert reader.get(CatalogTrack, (1, generation, 3018)) is not None
     finally:
         reader.close()
     with SessionLocal() as db:
@@ -725,7 +726,8 @@ def test_disconnecting_stops_a_run_under_way(client: TestClient, synced: FakePle
     # The request under way when the operator let go was the last one.
     assert synced.library_requests == asked[0]
     with SessionLocal() as db:
-        assert db.query(CatalogTrack).count() == 0 and db.query(PlexConnection).count() == 0
+        assert db.query(CatalogTrack).count() == 0
+        assert [(row.active, row.token_enc) for row in db.query(MediaServer)] == [(False, "")]
         assert db.scalars(select(Job.state).where(Job.kind == "catalog_full")).all()[-1] == "done"
         assert db.query(Job).filter(Job.state.in_(("queued", "running"))).count() == 0
     assert [(one.kind, one.state, one.error) for one in runs()] == [("full", "stopped", "disconnected")]
@@ -756,9 +758,9 @@ def test_old_runs_and_finished_jobs_are_cleared_away(client: TestClient, synced:
     with SessionLocal() as db:
         old = now - timedelta(days=31)
         recent = now - timedelta(days=2)
-        db.add_all([SyncRun(kind="partial", state="done", serial=1, generation=1, started_at=old, finished_at=old)
+        db.add_all([SyncRun(kind="partial", state="done", serial=1, generation=1, server_id=1, started_at=old, finished_at=old)
                     for _ in range(5)])
-        db.add_all([SyncRun(kind="partial", state="done", serial=1, generation=1, started_at=recent,
+        db.add_all([SyncRun(kind="partial", state="done", serial=1, generation=1, server_id=1, started_at=recent,
                             finished_at=recent) for _ in range(1100)])
         db.add_all([Job(kind="catalog_part", ref=0, state="done", created_at=old, finished_at=old) for _ in range(5)])
         db.add_all([Job(kind="catalog_part", ref=0, state=state, created_at=recent, finished_at=recent)
@@ -939,7 +941,7 @@ def test_a_database_of_schema_one_gets_the_catalogue_and_keeps_its_accounts(tmp_
     with closing(sqlite3.connect(path)) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == database.SCHEMA_VERSION
         names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert {"plex_connection", "sync_runs", "artists", "albums", "tracks", "tags", "track_tags", "album_tags",
+        assert {"media_servers", "sync_runs", "artists", "albums", "tracks", "tags", "track_tags", "album_tags",
                 "artist_tags"} <= names
         assert connection.execute("SELECT value FROM settings WHERE key = 'kept'").fetchone() == ('"yes"',)
     assert made == [f"before schema {database.SCHEMA_VERSION}"]
@@ -949,5 +951,5 @@ def test_only_one_connection_row_ever(client: TestClient, operator: object, fake
     connect(client, fake_plex)
     connect(client, fake_plex)
     with SessionLocal() as db:
-        rows = db.query(PlexConnection).all()
+        rows = db.query(MediaServer).all()
         assert len(rows) == 1 and rows[0].serial == 2

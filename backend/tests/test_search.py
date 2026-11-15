@@ -23,7 +23,7 @@ from sqlalchemy import delete, select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Account, CatalogTrack, PlexConnection
+from app.models import Account, CatalogTrack, MediaServer
 from app.services import catalog_view, search
 
 from . import made_up_catalog
@@ -181,13 +181,13 @@ def test_the_compact_form_names_song_shown_version_and_original_year(reader: Tes
 def test_a_partial_run_that_changed_nothing_keeps_the_name_and_a_change_gives_a_new_one(reader: TestClient) -> None:
     first = reader.get("/api/v1/catalog").headers["etag"]
     with SessionLocal() as db:
-        row = db.scalars(select(PlexConnection)).one()
+        row = db.scalars(select(MediaServer)).one()
         row.synced_at = row.synced_at.replace(year=row.synced_at.year + 1)
         db.commit()
     assert reader.get("/api/v1/catalog", headers={"If-None-Match": first}).status_code == 304
     with SessionLocal() as db:
-        db.get(CatalogTrack, (1, 302)).title = "Glasshouse (Remastered)"
-        row = db.scalars(select(PlexConnection)).one()
+        db.get(CatalogTrack, (1, 1, 302)).title = "Glasshouse (Remastered)"
+        row = db.scalars(select(MediaServer)).one()
         row.synced_at = row.synced_at.replace(year=row.synced_at.year + 1)
         db.commit()
     changed = reader.get("/api/v1/catalog", headers={"If-None-Match": first})
@@ -199,11 +199,11 @@ def test_the_catalogue_is_read_from_one_state_even_when_a_run_switches_meanwhile
     """The generation is read first; a run that deletes the rows right after must not leave the build half empty."""
     original = catalog_view.compact
 
-    def meanwhile(db: Any, generation: int) -> dict[str, Any]:
+    def meanwhile(db: Any, generation: int, server_id: int | None = None) -> dict[str, Any]:
         with SessionLocal() as other:
             other.execute(delete(CatalogTrack))
             other.commit()
-        return original(db, generation)
+        return original(db, generation, server_id)
 
     monkeypatch.setattr(catalog_view, "compact", meanwhile)
     view = catalog_view.current()

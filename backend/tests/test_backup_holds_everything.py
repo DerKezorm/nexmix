@@ -19,7 +19,8 @@ from sqlalchemy import func, select
 from app import models
 from app.db import SessionLocal
 from app.models import Account
-from app.services import backups, plex_link, plex_sync
+from app.services import backups, plex_link
+from app.services import sync as server_sync
 
 from .conftest import make_account, new_client
 from .fakeplex import FakePlex
@@ -29,8 +30,8 @@ from .test_guests_and_plex import invite, phone
 #: Every table whose rows a restore must bring back (the catalogue and its runs are fetched again and may be missing).
 KEPT_TABLES = {
     "settings", "users", "oidc_providers", "oidc_links", "passkeys", "invites", "api_keys", "devices", "push_devices",
-    "plex_connection", "playlists", "playlist_items", "playlist_shares", "hidden_suggestions", "guest_invites",
-    "guests", "guest_entries", "plex_playlists", "hidden_playlists",
+    "media_servers", "server_items", "playlists", "playlist_items", "playlist_shares", "hidden_suggestions",
+    "guest_invites", "guests", "guest_entries", "server_playlists", "hidden_playlists",
 }
 #: Tables a backup may carry but need not: made again (the catalogue), or worth nothing after a restore (sign-ins,
 #: one-time links, the queue of work).
@@ -69,7 +70,7 @@ def _state(client: TestClient, playlist_id: int) -> dict[str, Any]:
 def test_a_restore_brings_back_playlists_shares_the_sync_base_plex_and_the_guests(
         client: TestClient, operator: Account, fake_plex: FakePlex) -> None:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     playlist = make(client, "Gartenfest", [3001, 3003, 3013])
     sync(fake_plex)
     key = plex_key(playlist["id"])
@@ -88,11 +89,11 @@ def test_a_restore_brings_back_playlists_shares_the_sync_base_plex_and_the_guest
     assert client.put("/api/v1/me/preferences", json={"show_smart_playlists": True}).status_code == 200
     before = _counts()
     assert all(before[name] > 0 for name in ("playlists", "playlist_items", "playlist_shares", "hidden_suggestions",
-                                              "guest_invites", "guests", "guest_entries", "plex_playlists",
-                                              "plex_connection", "hidden_playlists")), before
+                                              "guest_invites", "guests", "guest_entries", "server_playlists",
+                                              "media_servers", "server_items", "hidden_playlists")), before
     view_before = _state(client, playlist["id"])
     with SessionLocal() as db:
-        base_before = {row.playlist_id: (row.rating_key, row.base) for row in db.scalars(select(models.PlexPlaylist))}
+        base_before = {row.playlist_id: (row.ext_key, row.base) for row in db.scalars(select(models.ServerPlaylist))}
 
     name = backups.create(kind=backups.MANUAL).name
 
@@ -104,8 +105,8 @@ def test_a_restore_brings_back_playlists_shares_the_sync_base_plex_and_the_guest
     assert client.delete(f"/api/v1/playlists/{playlist['id']}/hidden").status_code == 200
     assert client.put("/api/v1/me/preferences", json={"show_smart_playlists": False}).status_code == 200
     with SessionLocal() as db:
-        db.query(models.PlexPlaylist).delete()
-        db.query(models.PlexConnection).delete()
+        db.query(models.ServerPlaylist).delete()
+        db.query(models.MediaServer).delete()
         db.commit()
     assert lena.get("/api/v1/guest").status_code in (401, 403)
 
@@ -116,10 +117,10 @@ def test_a_restore_brings_back_playlists_shares_the_sync_base_plex_and_the_guest
     with SessionLocal() as db:
         row = plex_link.current(db)
         assert row is not None and plex_link.token_of(row) == fake_plex.account_token, "the token can be read again"
-        base_after = {one.playlist_id: (one.rating_key, one.base) for one in db.scalars(select(models.PlexPlaylist))}
+        base_after = {one.playlist_id: (one.ext_key, one.base) for one in db.scalars(select(models.ServerPlaylist))}
         trash = db.get(models.Playlist, trashed["id"])
         assert trash is not None and trash.deleted_at is not None, "the trash is as it was"
-    assert base_after == base_before and base_after[playlist["id"]][0] == key
+    assert base_after == base_before and base_after[playlist["id"]][0] == str(key)
     # The sign-ins of the archive end at a restore; the people sign in again and find everything.
     with new_client(operator) as again:
         assert _state(again, playlist["id"]) == view_before

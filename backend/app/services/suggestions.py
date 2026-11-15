@@ -9,8 +9,10 @@ choice outlives a new catalogue. Outward a song is named by the id of the versio
 may see (its own, the ones shared with it; the operator's: all). A playlist somebody may not see adds nothing, not
 even to a number.
 
-**Sounds alike** asks Plex (``/library/metadata/<id>/nearest``) only while the library's sonic analysis is on or
-running; the answers are kept a few minutes per track.
+**Sounds alike** asks the tracks' server (Plex: ``/library/metadata/<id>/nearest``, through its connector) only
+while the library's sonic analysis is on or running; the answers are kept a few minutes per track.
+
+Every media server has its catalogue (``catalog_view``): the suggestions of a playlist come from its server's.
 
 **A guest** of an invitation gets the same rules from its one playlist only (``for_guest``): no "often together" (it
 would count the household's playlists), no "sounds alike" and no hidden songs.
@@ -30,7 +32,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..errors import error
 from ..models import Account, CatalogTrack, HiddenSuggestion
-from . import brakes, catalog, catalog_view, playlists, plex_link, suggest
+from . import brakes, catalog, catalog_view, media, playlists, plex_link, sources, suggest
 from .plex import PlexError
 from .search import Index
 
@@ -50,8 +52,8 @@ GUEST_SEEDS = 5
 GUEST_LIMIT = 15
 
 
-def view_of(db: Session) -> catalog_view.View:
-    view = catalog_view.current(db)
+def view_of(db: Session, server_id: int | None = None) -> catalog_view.View:
+    view = catalog_view.current(db, server_id)
     if view is None:
         raise error("no_catalog", "The catalogue is not there yet.", 409)
     return view
@@ -66,26 +68,38 @@ def song_of(ix: Index, track: int) -> int | None:
 
 
 _SHOWN = text(
-    "SELECT song_key, id, shown FROM tracks WHERE generation = :g AND song_key IN :keys ORDER BY shown DESC, id"
+    "SELECT song_key, id, shown FROM tracks WHERE server_id = :s AND generation = :g AND song_key IN :keys "
+    "ORDER BY shown DESC, id"
 ).bindparams(bindparam("keys", expanding=True))
 
 
 def hidden_songs(db: Session, account_id: int) -> list[int]:
-    """The songs the account asked not to see again, by the version shown for each, as far as the catalogue has them."""
+    """The songs the account asked not to see again, by the version shown for each, as far as the catalogues have
+    them (a song by its key: one per server that has it)."""
     keys = list(db.scalars(select(HiddenSuggestion.song_key).where(HiddenSuggestion.account_id == account_id)))
-    generation = catalog.pin(db)
-    if not keys or not generation:
+    live = catalog.live(db)
+    if not keys or not live:
         return []
-    found: dict[str, int] = {}
-    for start in range(0, len(keys), 500):
-        for key, track, _shown in db.execute(_SHOWN, {"g": generation, "keys": keys[start:start + 500]}):
-            found.setdefault(str(key), int(track))
+    found: dict[tuple[int, str], int] = {}
+    for server, generation in live.items():
+        for start in range(0, len(keys), 500):
+            for key, track, _shown in db.execute(_SHOWN, {"s": server, "g": generation,
+                                                          "keys": keys[start:start + 500]}):
+                found.setdefault((server, str(key)), int(track))
     return sorted(set(found.values()))
 
 
+def _track_of(db: Session, track_id: int) -> CatalogTrack | None:
+    """The track in the live catalogue of the server it belongs to (a number belongs to one server)."""
+    for server, generation in catalog.live(db).items():
+        found = db.get(CatalogTrack, (server, generation, track_id))
+        if found is not None:
+            return found
+    return None
+
+
 def _key_of(db: Session, track_id: int) -> str:
-    generation = catalog.pin(db)
-    track = db.get(CatalogTrack, (generation, track_id)) if generation else None
+    track = _track_of(db, track_id)
     if track is None or not track.song_key:
         raise error("not_found", "Not found.", 404)
     return track.song_key
@@ -174,18 +188,21 @@ def _keep(server: str, track: int, found: list[tuple[int, float]]) -> None:
         _sound[(server, track)] = (clock.monotonic(), found)
 
 
-def sound(db: Session, ix: Index, tracks: Sequence[int], who: int | None = None) -> dict[str, Any]:
+def sound(db: Session, ix: Index, tracks: Sequence[int], who: int | None = None,
+          server_id: int | None = None) -> dict[str, Any]:
     """The songs that sound closest to the tracks (their smallest distance to any of them), closest first; empty while
-    the analysis is off or the tracks are not analysed yet. ``state`` is the analysis as the catalogue knows it. Each
-    time Plex is asked counts against ``who`` (``brakes``: a minute holds 60)."""
+    the analysis is off or the tracks are not analysed yet, or the server cannot tell. ``state`` is the analysis as the
+    catalogue knows it. Each time the server is asked counts against ``who`` (``brakes``: a minute holds 60). The
+    tracks are of ``server_id`` (the one of ``ix``; None: the first server connected)."""
     seeds = [int(track) for track in tracks if int(track) in ix.position][:SOUND_SEEDS]
     if not seeds:
         raise error("not_found", "Not found.", 404)
-    row = plex_link.current(db)
+    row = media.get(db, server_id) if server_id is not None else media.primary(db)
     state = catalog.analysis_of(row)["state"]
-    if row is None or state == "off":
+    if row is None or state == "off" or not sources.capabilities(row.kind).sound:
         return {"state": state, "songs": []}
     server = row.machine_id or row.url
+    keys = media.keys(db, row.id, media.TRACK, seeds)
     asked: dict[int, list[tuple[int, float]]] = {}
     missing = []
     for track in seeds:
@@ -200,9 +217,14 @@ def sound(db: Session, ix: Index, tracks: Sequence[int], who: int | None = None)
         db.expunge(row)
         db.rollback()
         try:
-            with plex_link.server_of(db, row, timeout=10.0) as plex:
+            with sources.open_server(db, row, timeout=10.0) as source:
                 for track in missing:
-                    found = plex.nearest(track, SOUND_LIMIT, SOUND_DISTANCE)
+                    if track not in keys:
+                        continue
+                    near = source.similar(keys[track], SOUND_LIMIT, SOUND_DISTANCE)
+                    numbers = media.known_numbers(db, row.id, media.TRACK, (key for key, _distance in near))
+                    db.rollback()
+                    found = [(numbers[key], distance) for key, distance in near if key in numbers]
                     _keep(server, track, found)
                     asked[track] = found
         except plex_link.Unreadable as exc:
@@ -229,7 +251,7 @@ def sound(db: Session, ix: Index, tracks: Sequence[int], who: int | None = None)
 def for_guest(db: Session, playlist_id: int) -> dict[str, Any]:
     """What fits the last tracks of a guest's playlist, in the kind "fitting": the rules of ``suggest.py``, without the
     playlist's songs, and nothing of any other playlist (the browser asks the same, ``guestSuggest.ts``)."""
-    ix = view_of(db).index
+    ix = view_of(db, media.source_of(db, playlist_id) or 0).index
     tracks = [item.track_id for item in playlists.live_items(db, playlist_id)]
     exclude = {song for song in (song_of(ix, track) for track in tracks) if song is not None}
     positions = suggest.seed_positions(ix, tracks)[-GUEST_SEEDS:]

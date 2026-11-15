@@ -15,8 +15,9 @@ from sqlalchemy import select
 
 from app import clock
 from app.db import SessionLocal
-from app.models import Account, PlexPlaylist
-from app.services import jobs, plex_sync
+from app.models import Account, ServerPlaylist
+from app.services import jobs
+from app.services import sync as server_sync
 
 from .conftest import make_account, new_client
 from .fakeplex import FakePlex
@@ -27,7 +28,7 @@ from .test_plex_sync import add, move, quiet, remove, synced
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -64,8 +65,8 @@ def heal(world: FakePlex) -> None:
 def restart() -> None:
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
 
 
 _shift = [0.0]
@@ -243,9 +244,9 @@ def test_two_jobs_for_one_playlist_in_a_row(client: TestClient, world: FakePlex)
     world.lists.add(key, [3020])
     world.tick()
     with SessionLocal() as db:
-        ident = db.scalars(select(PlexPlaylist.id).where(PlexPlaylist.playlist_id == playlist_id)).one()
-        jobs.enqueue(db, plex_sync.ROUND, ref=ident)
-        jobs.enqueue(db, plex_sync.ROUND, ref=ident)
+        ident = db.scalars(select(ServerPlaylist.id).where(ServerPlaylist.playlist_id == playlist_id)).one()
+        jobs.enqueue(db, server_sync.ROUND, ref=ident)
+        jobs.enqueue(db, server_sync.ROUND, ref=ident)
         db.commit()
     jobs.run_pending(lane="playlists")
     sync(world, look_at_plex=True)
@@ -269,7 +270,7 @@ def test_a_smart_playlist_deleted_in_plex_comes_back_as_an_ordinary_one(client: 
     assert _card(client, "Klug weg", trash=True)["plex"]["gone_in_plex"] is True
     assert client.post(f"/api/v1/playlists/{playlist_id}/restore").status_code == 200
     row = mirror(playlist_id)
-    assert (row.smart, row.gone_in_plex, row.state) == (False, False, "pending")
+    assert (row.smart, row.gone_there, row.state) == (False, False, "pending")
     sync(world)
     made = world.lists.by_title("Klug weg")
     assert made is not None and not made.smart
@@ -286,9 +287,9 @@ def test_an_ordinary_playlist_deleted_in_plex_comes_back_there(client: TestClien
     playlist_id, key = synced(client, world, "Normal weg", [3001, 3003])
     world.lists.delete(key)
     sync(world, look_at_plex=True)
-    assert mirror(playlist_id).gone_in_plex is True
+    assert mirror(playlist_id).gone_there is True
     assert client.post(f"/api/v1/playlists/{playlist_id}/restore").status_code == 200
-    assert mirror(playlist_id).gone_in_plex is False
+    assert mirror(playlist_id).gone_there is False
     sync(world)
     view = client.get(f"/api/v1/playlists/{playlist_id}").json()["plex"]
     assert view["gone_in_plex"] is False and view["state"] == "synced"
@@ -379,23 +380,23 @@ def test_a_refused_track_taken_out_in_nexmix_is_forgotten(client: TestClient, wo
 
 def test_a_lost_answer_then_a_new_name_makes_no_second_playlist(client: TestClient, world: FakePlex,
                                                                monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services import plex_playlists as plexlists
+    from app.services.sources import plex as plexlists
 
-    real = plexlists.create
+    real = plexlists.PlexSource.create
 
     def made_then_lost(*args: object) -> object:
         real(*args)  # type: ignore[arg-type]
-        raise plex_sync.PlexError("plex_timeout", 504)
+        raise server_sync.PlexError("plex_timeout", 504)
 
-    monkeypatch.setattr(plexlists, "create", made_then_lost)
+    monkeypatch.setattr(plexlists.PlexSource, "create", made_then_lost)
     playlist = make(client, "Erster Name", [3001, 3003])
     sync(world, rounds=1)
-    monkeypatch.setattr(plexlists, "create", real)
+    monkeypatch.setattr(plexlists.PlexSource, "create", real)
     assert client.put(f"/api/v1/playlists/{playlist['id']}", json={"name": "Zweiter Name"}).status_code == 200
     for _round in range(3):
         world.tick(20)
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         sync(world, look_at_plex=True)
     names = sorted(card["name"] for card in client.get("/api/v1/playlists").json()["playlists"])
     in_plex = sorted(one.title for one in world.lists.lists.values())
@@ -405,24 +406,24 @@ def test_a_lost_answer_then_a_new_name_makes_no_second_playlist(client: TestClie
 
 def test_an_orphan_of_another_name_or_with_entries_is_not_taken(client: TestClient, world: FakePlex,
                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services import plex_playlists as plexlists
+    from app.services.sources import plex as plexlists
 
-    real = plexlists.create
+    real = plexlists.PlexSource.create
 
     def lost_before(*_args: object) -> object:
-        raise plex_sync.PlexError("plex_timeout", 504)
+        raise server_sync.PlexError("plex_timeout", 504)
 
-    monkeypatch.setattr(plexlists, "create", lost_before)
+    monkeypatch.setattr(plexlists.PlexSource, "create", lost_before)
     playlist = make(client, "Gleicher Name", [3001])
     sync(world, rounds=1)
-    monkeypatch.setattr(plexlists, "create", real)
+    monkeypatch.setattr(plexlists.PlexSource, "create", real)
     # Meanwhile somebody made one of the same name in Plexamp, with entries: it is theirs, not the lost answer. No
     # look at the list comes before the next try (it would take that one in as a playlist of its own).
     world.lists.make("Gleicher Name", [3020])
     world.tick(20)
     with SessionLocal() as db:
-        plex_sync.request_all(db)
-    monkeypatch.setattr(plex_sync, "_polled_at", clock.now())
+        server_sync.request_all(db)
+    monkeypatch.setitem(server_sync._polled_at, 1, clock.now())
     sync(world)
     assert local_tracks(playlist["id"]) == [3001]
     sync(world, look_at_plex=True)
@@ -457,13 +458,13 @@ def test_the_token_is_nowhere_after_faults(client: TestClient, world: FakePlex, 
     heal(world)
     world.fail_after = 0
     world.fail_mode = "401"
-    plex_sync.look_now()
+    server_sync.look_now()
     sync(world)
     heal(world)
     texts = [client.get(f"/api/v1/playlists/{playlist_id}").text, client.get("/api/v1/plex/playlists").text,
              client.get("/api/v1/playlists").text, caplog.text]
     with SessionLocal() as db:
-        texts += [str(row.error) + str(row.base) + str(row.writing) for row in db.scalars(select(PlexPlaylist))]
+        texts += [str(row.error) + str(row.base) + str(row.writing) for row in db.scalars(select(ServerPlaylist))]
     for text in texts:
         assert world.account_token not in text
 

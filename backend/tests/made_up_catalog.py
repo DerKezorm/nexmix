@@ -20,12 +20,15 @@ from app.models import (
     CatalogArtist,
     CatalogTag,
     CatalogTrack,
-    PlexConnection,
+    MediaServer,
+    ServerItem,
     TrackTag,
 )
 from app.services import catalog, catalog_view
 
 GENERATION = 1
+#: The media server the catalogue belongs to.
+SERVER = 1
 
 #: (id, name, moods, styles)
 ARTISTS: list[tuple[int, str, list[str], list[str]]] = [
@@ -112,32 +115,37 @@ def install() -> None:
     album_artist = {album[0]: album[1] for album in ALBUMS}
     album_year = {album[0]: album[3] for album in ALBUMS}
     with SessionLocal() as db:
-        db.execute(delete(PlexConnection))
-        db.add(PlexConnection(id=1, serial=1, via="manual", server_name="Studio", machine_id="m", owned=True,
-                              url="http://127.0.0.1:32400", token_enc="-", section_key="7", section_title="Music",
-                              connected_at=now, generation=GENERATION, synced_at=now, full_at=now, marks={},
-                              analysis_sampled=0, analysis_found=0))
+        db.execute(delete(MediaServer))
+        db.add(MediaServer(id=SERVER, kind="plex", active=True, serial=1, via="manual", name="Studio", machine_id="m",
+                           owned=True, url="http://127.0.0.1:32400", token_enc="-", section_key="7",
+                           section_title="Music", connected_at=now, generation=GENERATION, synced_at=now, full_at=now,
+                           marks={}, analysis_sampled=0, analysis_found=0))
+        db.flush()
+        # The numbers are the keys, as for the first server of an older nexmix.
+        db.execute(insert(ServerItem), [
+            {"id": ident, "server_id": SERVER, "kind": kind, "ext_key": str(ident)}
+            for kind, rows in (("artist", ARTISTS), ("album", ALBUMS), ("track", TRACKS)) for ident, *_rest in rows])
         db.execute(insert(CatalogArtist), [
-            {"generation": GENERATION, "id": artist_id, "title": name, "thumb": "", "added_at": 0, "updated_at": 0}
+            {"server_id": SERVER, "generation": GENERATION, "id": artist_id, "title": name, "thumb": "", "added_at": 0, "updated_at": 0}
             for artist_id, name, _moods, _styles in ARTISTS])
         db.execute(insert(CatalogAlbum), [
-            {"generation": GENERATION, "id": album_id, "artist_id": artist, "title": title, "year": year,
+            {"server_id": SERVER, "generation": GENERATION, "id": album_id, "artist_id": artist, "title": title, "year": year,
              "thumb": f"/library/metadata/{album_id}/thumb/1" if album_id != 209 else "", "added_at": added,
              "updated_at": added}
             for album_id, artist, title, year, _genres, _moods, _styles, added in ALBUMS])
         db.execute(insert(CatalogTrack), [
-            {"generation": GENERATION, "id": track_id, "album_id": album, "artist_id": album_artist[album],
+            {"server_id": SERVER, "generation": GENERATION, "id": track_id, "album_id": album, "artist_id": album_artist[album],
              "title": title, "artist": own, "duration": seconds * 1000, "rating_count": listeners,
              "view_count": plays, "year": album_year[album], "disc": disc, "number": number, "added_at": 0,
              "updated_at": 0, "song_key": "", "variant": False, "shown": True, "original_year": None}
             for track_id, album, title, own, seconds, listeners, plays, _moods, disc, number in TRACKS])
-        db.execute(insert(CatalogTag), [{"generation": GENERATION, "id": number, "kind": kind, "name": name}
-                                        for (kind, name), number in tags.items()])
+        db.execute(insert(CatalogTag), [{"server_id": SERVER, "generation": GENERATION, "id": number, "kind": kind,
+                                         "name": name} for (kind, name), number in tags.items()])
         for model, pairs in links.items():
             if pairs:
-                db.execute(insert(model), [{"generation": GENERATION, "item_id": item, "tag_id": tag_id}
-                                           for item, tag_id in sorted(pairs)])
-        catalog.compute_songs(db, GENERATION)
+                db.execute(insert(model), [{"server_id": SERVER, "generation": GENERATION, "item_id": item,
+                                            "tag_id": tag_id} for item, tag_id in sorted(pairs)])
+        catalog.compute_songs(db, GENERATION, server_id=SERVER)
         db.commit()
         catalog_view.reindex(db)
     catalog_view.forget()

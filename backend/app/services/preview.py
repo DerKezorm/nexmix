@@ -1,10 +1,11 @@
 """Listening in: about thirty seconds of a track, from a good third of it, converted by Plex and passed through nexmix.
 
-**The way to Plex.** Only a track of the live catalogue, by its id; the server builds the request itself
-(``plex.sound_params``: Plex's converter, ``universal/start.mp3`` from 35 % of the track at 192 kbit/s) with the token
-in a header. Nothing the browser sends reaches Plex but the number of the track. The answer is passed on as it comes
-and cut at ``MAX_BYTES`` (about forty seconds) or ``MAX_SECONDS``; then, and whenever the listener goes away early
-(the browser stops, another preview of the same listener begins), Plex is told to end the session (``universal/stop``).
+**The way to Plex.** Only a track of a live catalogue, by its number; the track's server builds the request itself
+(its connector, ``sources.PlexSource.sound_start``: Plex's converter, ``universal/start.mp3`` from 35 % of the track at
+192 kbit/s) with the token in a header. Nothing the browser sends reaches Plex but the server's key of that track. The
+answer is passed on as it comes and cut at ``MAX_BYTES`` (about forty seconds) or ``MAX_SECONDS``; then, and whenever
+the listener goes away early (the browser stops, another preview of the same listener begins), Plex is told to end the
+session (``universal/stop``).
 
 **Who may.** ``may_listen`` says whether a request may hear a track and who listens (``Listener``): from the start an
 account signed in (a session or a device). It is a name in this module, looked up at each request, so that another way
@@ -54,6 +55,7 @@ from .. import clock
 from ..errors import error
 from ..models import CatalogTrack
 from . import plex, plex_link, settings_service
+from .sources import PlexSource
 
 logger = logging.getLogger("nexmix.preview")
 
@@ -85,10 +87,12 @@ _READ = 4096
 
 @dataclass(frozen=True)
 class Listener:
-    """Who listens: ``key`` names the listener for the limits (``account:<id>``, later ``guest:<id>``)."""
+    """Who listens: ``key`` names the listener for the limits (``account:<id>``, ``guest:<id>``); ``server``, when set,
+    the only server whose tracks it may hear (a guest: its playlist's)."""
 
     key: str
     kind: str = "account"
+    server: int | None = None
 
 
 def account_listener(request: Request, _db: Session, _track_id: int | None) -> Listener:
@@ -309,6 +313,8 @@ class Plan:
     client_id: str
     track: int
     offset: int
+    #: The track's key on its server.
+    key: str = ""
 
 
 def allowed(db: Session) -> bool:
@@ -330,16 +336,19 @@ def prepare(request: Request, track_id: int) -> Plan:
     """The checks, in the order that tells nobody more than they may know: who (401), the switch (403), the track in
     the catalogue (404)."""
     from ..db import SessionLocal
-    from . import catalog
+    from . import catalog, media
 
     with SessionLocal() as db:
         listener = may_listen(request, db, track_id)
         if not allowed(db):
             raise error("preview_off", "Listening in is switched off.", 403)
-        generation = catalog.pin(db)
-        track = db.get(CatalogTrack, (generation, track_id)) if generation else None
-        row = plex_link.current(db)
-        if track is None or row is None:
+        track = None
+        for server, generation in catalog.live(db).items():
+            if listener.server is None or server == listener.server:
+                track = db.get(CatalogTrack, (server, generation, track_id)) or track
+        row = media.get(db, track.server_id) if track is not None else None
+        keys = media.keys(db, row.id, media.TRACK, [track_id]) if row is not None else {}
+        if track is None or row is None or track_id not in keys:
             raise error("not_found", "Not found.", 404)
         try:
             token = plex_link.token_of(row)
@@ -348,7 +357,7 @@ def prepare(request: Request, track_id: int) -> Plan:
         client_id = plex_link.client_id(db)
         url = row.url
         seconds = max(0, int((track.duration or 0) / 1000))
-    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE))
+    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE), keys[track_id])
 
 
 def _status_error(status: int) -> HTTPException:
@@ -418,8 +427,8 @@ def _log_refusal(plan: Plan, refusal: Refusal, attempt: int | str, began: float)
 
 async def _stop(client: httpx.AsyncClient, plan: Plan, session: str) -> None:
     try:
-        await client.get(f"{plan.url}{plex.SOUND_STOP}", params={"session": session},
-                         headers=plex.sound_headers(plan.token, plan.client_id), timeout=5.0)
+        url, headers, params = PlexSource.sound_stop(plan.url, plan.token, plan.client_id, session)
+        await client.get(url, params=params, headers=headers, timeout=5.0)
     except httpx.HTTPError:
         logger.info("Plex did not take the end of a preview")
 
@@ -452,9 +461,9 @@ async def _ask(client: httpx.AsyncClient, plan: Plan, session: str
     refusal has closed everything and told Plex the session is over."""
     upstream: httpx.Response | None = None
     try:
-        request = client.build_request(
-            "GET", f"{plan.url}{plex.SOUND_START}", headers=plex.sound_headers(plan.token, plan.client_id),
-            params=plex.sound_params(plan.track, plan.offset, session, BITRATE))
+        url, headers, params = PlexSource.sound_start(plan.url, plan.token, plan.client_id, plan.key, plan.offset,
+                                                      session, BITRATE)
+        request = client.build_request("GET", url, headers=headers, params=params)
         upstream = await client.send(request, stream=True)
         if upstream.status_code != 200:
             said = (await _words(upstream)).decode("utf-8", "replace")

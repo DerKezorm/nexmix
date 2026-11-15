@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from ..db import SessionLocal
 from ..deps import Account, DbSession, Reader, still_speaks_for
 from ..errors import error
-from ..services import guests, playlists, plex_sync
+from ..services import guests, playlists, sync
 from ..services.events import hub, playlist_topic
 from .auth import profile_of
 
@@ -196,26 +196,26 @@ def sync_playlist(playlist_id: PlaylistId, account: Account, db: DbSession) -> d
     _playlist, level = playlists.load(db, account, playlist_id)
     if level not in playlists.CAN_EDIT:
         raise error("read_only", "This playlist is shared with you to listen to, not to change.", 403)
-    return plex_sync.request(db, playlist_id)
+    return sync.request(db, playlist_id)
 
 
 @router.post("/{playlist_id}/plex-order",
              summary="Take the order Plex had when it was sorted there and here at the same time (the note's undo)")
 def take_plex_order(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[str, Any]:
     playlists.load(db, account, playlist_id, "edit")
-    wanted = plex_sync.plex_order(db, playlist_id)
+    wanted = sync.plex_order(db, playlist_id)
     if wanted is None:
         raise error("no_note", "There is no order of Plex to take.", 409)
     change = playlists.sort_like(db, account, playlist_id, wanted)
-    plex_sync.drop_note(db, playlist_id)
+    sync.drop_note(db, playlist_id)
     return change
 
 
 @router.delete("/{playlist_id}/plex-order", summary="Keep nexmix's order: the note about Plex's goes")
 def keep_own_order(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[str, Any]:
     playlists.load(db, account, playlist_id, "edit")
-    plex_sync.drop_note(db, playlist_id)
-    return plex_sync.view(db, playlist_id)
+    sync.drop_note(db, playlist_id)
+    return sync.view(db, playlist_id)
 
 
 def _still_sees(request: Request, account_id: int, playlist_id: int) -> bool:

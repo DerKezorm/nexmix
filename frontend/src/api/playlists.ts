@@ -44,6 +44,8 @@ export type Card = Summary & {
   plex: PlexSync
   /** Hidden from this account's overview (nothing else changes). */
   hidden?: boolean
+  /** The media server the playlist takes its tracks from (its catalogue is searched); null: none connected yet. */
+  server?: number | null
 }
 
 export type Entry = {

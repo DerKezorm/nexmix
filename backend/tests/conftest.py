@@ -61,6 +61,7 @@ from app.services import (  # noqa: E402
     totp,
     updates,
 )
+from app.services import sync as server_sync  # noqa: E402
 from app.vendor.nexoidc import attempt as nexoidc_attempt  # noqa: E402
 from app.vendor.nexoidc import protocol as nexoidc_protocol  # noqa: E402
 
@@ -102,6 +103,7 @@ def clean_db(schema: None) -> Iterator[None]:
     push.forget()
     passkeys.forget()
     plex_link.forget()
+    server_sync.forget()
     catalog.forget()
     covers.forget_all()
     catalog_view.forget()

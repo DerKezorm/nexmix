@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.models import Account
-from app.services import jobs, plex_sync
+from app.services import jobs
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .plex_world import connect, entry_of, local_tracks, mirror, plex_key, sync
@@ -30,15 +31,15 @@ FIRST = int(os.environ.get("NEXMIX_SYNC_SEED", "0"))
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
 def _restart() -> None:
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
 
 
 def _fault_sync(world: FakePlex, rng: random.Random) -> str:
@@ -62,7 +63,7 @@ def _fault_sync(world: FakePlex, rng: random.Random) -> str:
 
 
 def _has_key(playlist_id: int) -> bool:
-    return mirror(playlist_id).rating_key is not None
+    return mirror(playlist_id).ext_key is not None
 
 
 @pytest.mark.parametrize("seed", range(FIRST, FIRST + RUNS))
@@ -137,7 +138,7 @@ def test_random_changes_on_both_sides_with_faults(client: TestClient, world: Fak
     jobs.stopping.clear()
     for _round in range(4):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     key = plex_key(playlist_id)

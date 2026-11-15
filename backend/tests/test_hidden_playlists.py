@@ -16,8 +16,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.db import SessionLocal
-from app.models import Account, HiddenPlaylist, PlexPlaylist
-from app.services import plex_sync
+from app.models import Account, HiddenPlaylist, ServerPlaylist
+from app.services import sync as server_sync
 
 from .conftest import make_account, new_client
 from .fakeplex import FakePlex
@@ -143,14 +143,14 @@ def test_the_rows_go_with_the_playlist_and_with_the_account(people: People) -> N
 def test_the_smart_playlists_of_plex_are_left_out_unless_the_account_wants_them(
         client: TestClient, operator: Account, fake_plex: FakePlex) -> None:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     smart = fake_plex.lists.make("Alles Neue", [3001, 3003], smart=True)
     fake_plex.tick()
     sync(fake_plex, look_at_plex=True)
     own = make_synced(client, "Gartenfest", [3005])
     sync(fake_plex)
     with SessionLocal() as db:
-        smart_id = db.scalar(select(PlexPlaylist.playlist_id).where(PlexPlaylist.rating_key == smart.key))
+        smart_id = db.scalar(select(ServerPlaylist.playlist_id).where(ServerPlaylist.ext_key == str(smart.key)))
     assert smart_id is not None
     listed = client.get("/api/v1/playlists").json()
     assert listed["show_smart_playlists"] is False, "off from the start"

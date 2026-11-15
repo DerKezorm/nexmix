@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..deps import DbSession, OperatorAccount, session_of
 from ..errors import error
-from ..services import catalog, plex_link, plex_sync
+from ..services import catalog, plex_link, sync
 from ..services.plex import PlexError, Section
 
 logger = logging.getLogger("nexmix.plex")
@@ -34,7 +34,8 @@ def _view(db: DbSession) -> dict[str, Any]:
     return {
         "connected": True,
         "via": row.via,
-        "server_name": row.server_name,
+        "server": row.id,
+        "server_name": row.name,
         "owned": row.owned,
         "library": {"key": row.section_key, "title": row.section_title} if row.section_key else None,
         "connected_at": row.connected_at.isoformat(),
@@ -119,7 +120,7 @@ def connect(body: Connect, request: Request, operator: OperatorAccount, db: DbSe
     if body.pin_id:
         plex_link.finish(body.pin_id)
     if row.section_key:
-        catalog.request_full(db, "first")
+        catalog.request_full(db, "first", row.id)
     return {**_view(db), "libraries": [{"key": one.key, "title": one.title} for one in found.sections]}
 
 
@@ -157,7 +158,7 @@ def choose_library(body: LibraryChoice, _operator: OperatorAccount, db: DbSessio
         plex_link.choose_library(db, row, match)
         db.commit()
         logger.info("Plex library chosen")
-    catalog.request_full(db, "first")
+    catalog.request_full(db, "first", row.id)
     return _view(db)
 
 
@@ -171,10 +172,10 @@ def disconnect(_operator: OperatorAccount, db: DbSession) -> Response:
 
 @router.get("/playlists", summary="How the playlists stand in Plex: synced, waiting, failed, smart ones, the last look")
 def plex_playlists(_operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
-    return plex_sync.overview(db)
+    return sync.overview(db)
 
 
 @router.post("/playlists/sync", summary="Sync every playlist with Plex now, and look for new ones there")
 def sync_playlists(_operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
-    plex_sync.request_all(db)
-    return plex_sync.overview(db)
+    sync.request_all(db)
+    return sync.overview(db)

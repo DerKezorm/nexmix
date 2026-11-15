@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app import clock
 from app.db import SessionLocal
-from app.models import Job, PlexConnection
+from app.models import Job, MediaServer
 from app.services import plex_link
 from app.services.plex import PlexError, PlexServer, check_address
 
@@ -146,7 +146,7 @@ def test_a_sign_in_belongs_to_the_session_that_began_it(client: TestClient, oper
     assert client.get(f"/api/v1/plex/pin/{pin}").json()["done"] is True
     assert client.post("/api/v1/plex/connect", json={"pin_id": pin, "server": 0}).status_code == 200
     with SessionLocal() as db:
-        assert db.query(PlexConnection).count() == 1
+        assert db.query(MediaServer).count() == 1
 
 
 def test_a_sign_in_given_up_is_forgotten_at_once(client: TestClient, operator: object, fake_plex: FakePlex) -> None:
@@ -176,7 +176,7 @@ def test_by_hand_with_address_and_token(client: TestClient, operator: object, fa
     assert body["via"] == "manual" and body["server_name"] == "Studio"
     assert fake_plex.account_token not in answer.text
     with SessionLocal() as db:
-        row = db.query(PlexConnection).one()
+        row = db.query(MediaServer).one()
         assert row.url == "http://127.0.0.1:32400"
         # Sealed, not kept as it is.
         assert fake_plex.account_token not in row.token_enc
@@ -206,7 +206,7 @@ def test_a_wrong_token_by_hand_is_refused_and_nothing_is_kept(client: TestClient
     answer = client.post("/api/v1/plex/connect", json={"url": "http://127.0.0.1:32400", "token": "not-the-token"})
     assert answer.status_code == 502 and answer.json()["detail"]["code"] == "plex_refused"
     with SessionLocal() as db:
-        assert db.query(PlexConnection).count() == 0
+        assert db.query(MediaServer).count() == 0
 
 
 def test_a_token_with_spaces_is_no_token(client: TestClient, operator: object, fake_plex: FakePlex) -> None:
@@ -236,7 +236,10 @@ def test_disconnecting_forgets_token_and_catalogue(client: TestClient, operator:
     assert status["connected"] is False and status["counts"]["tracks"] == 0
     assert client.get("/api/v1/plex").json() == {"connected": False}
     with SessionLocal() as db:
-        assert db.query(PlexConnection).count() == 0
+        # The server rests: its row stays (the numbers of its things, the copies of the playlists), its token and its
+        # address do not.
+        rows = db.query(MediaServer).all()
+        assert [(row.active, row.token_enc, row.url, row.generation) for row in rows] == [(False, "", "", 0)]
 
 
 def test_a_member_may_neither_connect_nor_look(fake_plex: FakePlex) -> None:

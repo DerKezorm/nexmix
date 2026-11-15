@@ -28,8 +28,9 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Account, Playlist, PlaylistItem, PlexPlaylist
-from app.services import jobs, plex_sync
+from app.models import Account, Playlist, PlaylistItem, ServerPlaylist
+from app.services import jobs
+from app.services import sync as server_sync
 
 from .conftest import TAB
 from .fakeplex import FakePlex
@@ -67,20 +68,20 @@ class Lost:
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
 def _restart() -> None:
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
 
 
-def _mirror(playlist_id: int) -> PlexPlaylist | None:
+def _mirror(playlist_id: int) -> ServerPlaylist | None:
     with SessionLocal() as db:
-        row = db.scalars(select(PlexPlaylist).where(PlexPlaylist.playlist_id == playlist_id)).first()
+        row = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)).first()
         if row is not None:
             db.expunge(row)
     return row
@@ -88,7 +89,7 @@ def _mirror(playlist_id: int) -> PlexPlaylist | None:
 
 def _key(playlist_id: int) -> int | None:
     row = _mirror(playlist_id)
-    return row.rating_key if row is not None else None
+    return int(row.ext_key) if row is not None and row.ext_key is not None else None
 
 
 def _row(playlist_id: int) -> Playlist | None:
@@ -412,7 +413,7 @@ class Run:
         jobs.stopping.clear()
         for _round in range(5):
             with SessionLocal() as db:
-                plex_sync.request_all(db)
+                server_sync.request_all(db)
             self.world.tick(20)
             sync(self.world, look_at_plex=True)
 
@@ -460,8 +461,8 @@ class Run:
             keys_alive[key] = pid
         # Playlists made in Plex came over, each once.
         with SessionLocal() as db:
-            mirrored = {key: pid for key, pid in db.execute(
-                select(PlexPlaylist.rating_key, PlexPlaylist.playlist_id).where(PlexPlaylist.rating_key.is_not(None)))}
+            mirrored = {int(key): pid for key, pid in db.execute(
+                select(ServerPlaylist.ext_key, ServerPlaylist.playlist_id).where(ServerPlaylist.ext_key.is_not(None)))}
             alive_ids = set(db.scalars(select(Playlist.id).where(Playlist.deleted_at.is_(None))))
         for key in self.made:
             if key in self.world.lists.lists:

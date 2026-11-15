@@ -43,7 +43,7 @@ from ..models import (
     PlaylistItem,
     PlaylistShare,
 )
-from . import merge, plex_sync
+from . import media, merge, sync
 from .events import hub, playlist_topic
 
 logger = logging.getLogger("nexmix.playlists")
@@ -102,7 +102,7 @@ def load(db: Session, account: Account, playlist_id: int, need: str = "view") ->
         raise error("not_owner", "Only the owner and the operator may do this.", 403)
     if need in ("edit", "manage-live") and playlist.deleted_at is not None:
         raise error("in_trash", "The playlist is in the trash. Bring it back first.", 409)
-    if need in ("edit", "manage") and playlist.deleted_at is None and plex_sync.is_smart(db, playlist.id):
+    if need in ("edit", "manage") and playlist.deleted_at is None and sync.is_smart(db, playlist.id):
         # Plex fills a smart playlist from its rules: it is changed there, never here.
         raise error("smart_playlist", "A smart playlist of Plex is only read here. Change it in Plex.", 409)
     return playlist, level
@@ -139,11 +139,15 @@ def person(account: Account | None) -> dict[str, Any] | None:
             "avatar": account.avatar_at.isoformat() if account.avatar_at else None}
 
 
-def _live_generation(db: Session) -> int:
-    """The live generation, with the state of the database fixed for the queries that follow (``catalog.pin``)."""
+def _live_generation(db: Session, server_id: int | None) -> int:
+    """The live generation of a server, with the state of the database fixed for the queries that follow
+    (``catalog.pin``)."""
     from . import catalog
 
-    return catalog.pin(db)
+    if server_id is None:
+        catalog.hold(db)
+        return 0
+    return catalog.pin(db, server_id)
 
 
 def _chunks(values: Sequence[int], size: int = 500) -> Iterable[Sequence[int]]:
@@ -171,30 +175,32 @@ class Known:
 _TRACKS_OF = text(
     "SELECT t.id, t.title, t.artist, t.duration, t.song_key, t.guid, t.album_id, a.title AS album, a.year, a.thumb, "
     "a.artist_id, ar.title AS album_artist FROM tracks t "
-    "LEFT JOIN albums a ON a.generation = t.generation AND a.id = t.album_id "
-    "LEFT JOIN artists ar ON ar.generation = t.generation AND ar.id = a.artist_id "
-    "WHERE t.generation = :g AND t.id IN :ids"
+    "LEFT JOIN albums a ON a.server_id = t.server_id AND a.generation = t.generation AND a.id = t.album_id "
+    "LEFT JOIN artists ar ON ar.server_id = t.server_id AND ar.generation = t.generation AND ar.id = a.artist_id "
+    "WHERE t.server_id = :s AND t.generation = :g AND t.id IN :ids"
 ).bindparams(bindparam("ids", expanding=True))
 
 #: The moods of tracks, albums or artists, one statement per table (the names are ours, never from outside).
 _MOODS_OF = {
     table: text(
-        "SELECT l.item_id, t.name FROM " + table + " l JOIN tags t ON t.generation = l.generation "  # noqa: S608
-        "AND t.id = l.tag_id WHERE l.generation = :g AND t.kind = 'mood' AND l.item_id IN :ids"
+        "SELECT l.item_id, t.name FROM " + table + " l JOIN tags t ON t.server_id = l.server_id "  # noqa: S608
+        "AND t.generation = l.generation AND t.id = l.tag_id WHERE l.server_id = :s AND l.generation = :g "
+        "AND t.kind = 'mood' AND l.item_id IN :ids"
     ).bindparams(bindparam("ids", expanding=True))
     for table in ("track_tags", "album_tags", "artist_tags")
 }
 
 
-def catalogue_of(db: Session, track_ids: Iterable[int]) -> dict[int, Known]:
-    """The tracks of the live catalogue among ``track_ids``, with the id of the version shown for their song."""
-    generation = _live_generation(db)
+def catalogue_of(db: Session, track_ids: Iterable[int], *, server_id: int | None) -> dict[int, Known]:
+    """The tracks of the live catalogue of a server (a playlist's source) among ``track_ids``, with the id of the
+    version shown for their song. A track of another server is not among them."""
+    generation = _live_generation(db, server_id)
     wanted = sorted({int(track) for track in track_ids})
     if not generation or not wanted:
         return {}
     rows: dict[int, Any] = {}
     for part in _chunks(wanted):
-        for row in db.execute(_TRACKS_OF, {"g": generation, "ids": list(part)}):
+        for row in db.execute(_TRACKS_OF, {"s": server_id, "g": generation, "ids": list(part)}):
             rows[int(row.id)] = row
     keys = sorted({row.song_key for row in rows.values()})
     shown: dict[str, int] = {}
@@ -202,7 +208,8 @@ def catalogue_of(db: Session, track_ids: Iterable[int]) -> dict[int, Known]:
         part_keys = keys[part_start:part_start + 500]
         for key, track in db.execute(
                 select(_track_table().c.song_key, _track_table().c.id)
-                .where(_track_table().c.generation == generation, _track_table().c.shown.is_(True),
+                .where(_track_table().c.server_id == server_id, _track_table().c.generation == generation,
+                       _track_table().c.shown.is_(True),
                        _track_table().c.song_key.in_(part_keys))):
             shown.setdefault(key, int(track))
     return {
@@ -264,10 +271,10 @@ def people_of(db: Session, ids: Iterable[int | None]) -> dict[int, Account]:
     return found
 
 
-def moods_of(db: Session, known: dict[int, Known], tracks: Sequence[int]) -> list[str]:
+def moods_of(db: Session, known: dict[int, Known], tracks: Sequence[int], *, server_id: int | None) -> list[str]:
     """The moods the entries have most of: each track's effective moods (its own 1, the album's 0.7, the artist's 0.4),
     summed over the entries; the strongest few, ties by name."""
-    generation = _live_generation(db)
+    generation = _live_generation(db, server_id)
     if not generation or not tracks:
         return []
 
@@ -275,7 +282,7 @@ def moods_of(db: Session, known: dict[int, Known], tracks: Sequence[int]) -> lis
         found: dict[int, list[str]] = {}
         ordered = sorted(ids)
         for part in _chunks(ordered):
-            for item, name in db.execute(_MOODS_OF[table], {"g": generation, "ids": list(part)}):
+            for item, name in db.execute(_MOODS_OF[table], {"s": server_id, "g": generation, "ids": list(part)}):
                 found.setdefault(int(item), []).append(str(name))
         return found
 
@@ -298,9 +305,11 @@ def moods_of(db: Session, known: dict[int, Known], tracks: Sequence[int]) -> lis
 
 
 def summary(db: Session, items: Sequence[PlaylistItem], known: dict[int, Known] | None = None,
-            people: dict[int, Account] | None = None, *, moods: bool = False) -> dict[str, Any]:
-    """Count, length, the covers of the first albums, who added what (the first few), and when asked the moods."""
-    known = catalogue_of(db, (item.track_id for item in items)) if known is None else known
+            people: dict[int, Account] | None = None, *, moods: bool = False,
+            server_id: int | None = None) -> dict[str, Any]:
+    """Count, length, the covers of the first albums, who added what (the first few), and when asked the moods. The
+    tracks are the ones of ``server_id``'s catalogue (the playlist's source)."""
+    known = catalogue_of(db, (item.track_id for item in items), server_id=server_id) if known is None else known
     people = people_of(db, (item.added_by_user for item in items)) if people is None else people
     covers: list[int] = []
     for item in items:
@@ -326,7 +335,7 @@ def summary(db: Session, items: Sequence[PlaylistItem], known: dict[int, Known] 
         "people": contributors[:SUMMARY_PEOPLE], "contributors": len(contributors),
     }
     if moods:
-        found["moods"] = moods_of(db, known, [item.track_id for item in items])
+        found["moods"] = moods_of(db, known, [item.track_id for item in items], server_id=server_id)
     return found
 
 
@@ -341,8 +350,8 @@ def card(db: Session, playlist: Playlist, level: str) -> dict[str, Any]:
     items = live_items(db, playlist.id)
     owner = db.get(Account, playlist.owner_id) if playlist.owner_id is not None else None
     purge_at = playlist.deleted_at + timedelta(days=TRASH_DAYS) if playlist.deleted_at else None
-    plex = plex_sync.view(db, playlist.id)
-    found = summary(db, items)
+    plex = sync.view(db, playlist.id)
+    found = summary(db, items, server_id=playlist.source_server_id)
     if plex["smart"] and plex["total"] is not None:
         # A smart playlist shows its first entries; the number is all of them.
         found["count"] = plex["total"]
@@ -365,16 +374,18 @@ def card(db: Session, playlist: Playlist, level: str) -> dict[str, Any]:
         **found,
         "smart": plex["smart"],
         "plex": plex,
+        # The server the playlist takes its tracks from (None: none connected yet).
+        "server": playlist.source_server_id,
     }
 
 
 def detail(db: Session, playlist: Playlist, level: str) -> dict[str, Any]:
     items = live_items(db, playlist.id)
-    known = catalogue_of(db, (item.track_id for item in items))
+    known = catalogue_of(db, (item.track_id for item in items), server_id=playlist.source_server_id)
     people = people_of(db, (item.added_by_user for item in items))
     view = card(db, playlist, level)
     count = view["count"]
-    view.update(summary(db, items, known, people, moods=True))
+    view.update(summary(db, items, known, people, moods=True, server_id=playlist.source_server_id))
     view["count"] = count
     view["items"] = [item_view(item, known.get(item.track_id), people) for item in items]
     return view
@@ -450,7 +461,9 @@ def create(db: Session, account: Account, name: str) -> Playlist:
     now = clock.now()
     cleaned = clean_name(name)
     db.rollback()
-    playlist = Playlist(owner_id=account.id, name=cleaned, version=1, created_at=now, updated_at=now)
+    first = media.primary(db)
+    playlist = Playlist(owner_id=account.id, name=cleaned, version=1, created_at=now, updated_at=now,
+                        source_server_id=first.id if first is not None else None)
     db.add(playlist)
     db.flush()
     held = int(db.scalar(select(func.count()).select_from(Playlist)
@@ -459,7 +472,7 @@ def create(db: Session, account: Account, name: str) -> Playlist:
         db.rollback()
         raise error("too_many_playlists", f"An account holds at most {MAX_PLAYLISTS} playlists.", 409,
                     max=MAX_PLAYLISTS)
-    plex_sync.mark(db, playlist.id)
+    sync.mark(db, playlist.id)
     db.commit()
     logger.info("Playlist made id=%s", playlist.id)
     return playlist
@@ -477,7 +490,7 @@ def rename(db: Session, account: Account, playlist_id: int, name: str) -> dict[s
         playlist, _level = load(db, account, playlist_id)
         return {"version": playlist.version, "name": playlist.name}
     playlist.name = cleaned
-    plex_sync.mark(db, playlist_id)
+    sync.mark(db, playlist_id)
     db.commit()
     payload = {"version": playlist.version, "op": "rename", "name": cleaned, "by": person(account)}
     _publish(playlist_id, "playlist", payload)
@@ -489,7 +502,7 @@ def trash(db: Session, account: Account, playlist_id: int) -> Playlist:
     if playlist.deleted_at is None:
         playlist.deleted_at = clock.now()
         # Gone from Plex at once.
-        plex_sync.mark(db, playlist_id, at_once=True)
+        sync.mark(db, playlist_id, at_once=True)
         db.commit()
         logger.info("Playlist moved to the trash id=%s", playlist.id)
         _publish(playlist_id, "playlist", {"version": playlist.version, "op": "deleted", "by": person(account)})
@@ -507,7 +520,7 @@ def restore(db: Session, account: Account, playlist_id: int) -> Playlist:
     if playlist.deleted_at is not None:
         playlist.deleted_at = None
         # Made in Plex anew.
-        plex_sync.restored(db, playlist_id)
+        sync.restored(db, playlist_id)
         db.commit()
         logger.info("Playlist brought back id=%s", playlist.id)
         _publish(playlist_id, "playlist", {"version": playlist.version, "op": "restored", "by": person(account)})
@@ -522,7 +535,7 @@ def purge_one(db: Session, account: Account, playlist_id: int) -> None:
     if playlist.deleted_at is None:
         db.rollback()
         raise error("not_in_trash", "Move the playlist to the trash first.", 409)
-    plex_sync.dropping(db, playlist_id)
+    sync.dropping(db, playlist_id)
     db.execute(delete(Playlist).where(Playlist.id == playlist_id))
     db.commit()
     logger.info("Playlist deleted for good id=%s", playlist_id)
@@ -559,9 +572,9 @@ def _changed(db: Session, account: Account | Any, playlist: Playlist, op: str, o
     """Commits the change and tells everybody who has the playlist open; the same answer goes to the one who made it.
     ``account`` is the account, or the guest (``services/guests.py``) that made the change. The change goes to Plex two
     seconds later (more changes in those seconds go along)."""
-    plex_sync.mark(db, playlist.id)
+    sync.mark(db, playlist.id)
     db.commit()
-    known = catalogue_of(db, (item.track_id for item in ordered))
+    known = catalogue_of(db, (item.track_id for item in ordered), server_id=playlist.source_server_id)
     own = isinstance(account, Account)
     people = people_of(db, [*(item.added_by_user for item in ordered), account.id if own else None])
     payload = {
@@ -571,7 +584,7 @@ def _changed(db: Session, account: Account | Any, playlist: Playlist, op: str, o
                                            "avatar": None, "guest": True},
         "entries": [item_view(item, known.get(item.track_id), people) for item in new],
         "order": [item.id for item in ordered],
-        "summary": summary(db, ordered, known, people, moods=True),
+        "summary": summary(db, ordered, known, people, moods=True, server_id=playlist.source_server_id),
         **extra,
     }
     _publish(playlist.id, "items", payload)
@@ -594,7 +607,8 @@ def add(db: Session, account: Account, playlist_id: int, tracks: Sequence[int]) 
     playlist, _level = _begin(db, account, playlist_id, "edit")
     ordered = live_items(db, playlist_id)
     there = {item.track_id for item in ordered}
-    known = catalogue_of(db, wanted)
+    # Only tracks of the playlist's own server: its search shows no other.
+    known = catalogue_of(db, wanted, server_id=playlist.source_server_id)
     fresh = [track for track in wanted if track in known and track not in there]
     skipped = [track for track in wanted if track not in fresh]
     if not fresh:

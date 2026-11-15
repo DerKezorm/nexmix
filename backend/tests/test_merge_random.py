@@ -81,7 +81,7 @@ class World:
             return
         self.ops[side].append(kind)
 
-    # --- one sync, as plex_sync does it
+    # --- one sync, as server_sync does it
     def sync(self) -> None:
         before_local = list(self.local)
         before_remote = list(self.remote)

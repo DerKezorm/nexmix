@@ -17,8 +17,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Account, Playlist, PlexPlaylist
-from app.services import backups, plex_sync
+from app.models import Account, Playlist, ServerPlaylist
+from app.services import backups, media
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .plex_world import both_equal, connect, local_tracks, make, plex_key, sync
@@ -28,7 +29,7 @@ from .plex_world import both_equal, connect, local_tracks, make, plex_key, sync
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     shutil.rmtree(backups.pending_folder(), ignore_errors=True)
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
     shutil.rmtree(backups.pending_folder(), ignore_errors=True)
 
@@ -44,15 +45,19 @@ def _trashed() -> set[int]:
 
 
 def _mirrored() -> dict[int, int]:
+    """The copies on the server connected now, by their key there (copies left on another server wait there)."""
     with SessionLocal() as db:
-        return {key: pid for key, pid in db.execute(select(PlexPlaylist.rating_key, PlexPlaylist.playlist_id)
-                                                    .where(PlexPlaylist.rating_key.is_not(None)))}
+        server = media.primary(db)
+        assert server is not None
+        return {int(key): pid for key, pid in db.execute(select(ServerPlaylist.ext_key, ServerPlaylist.playlist_id)
+                                                    .where(ServerPlaylist.ext_key.is_not(None),
+                                                           ServerPlaylist.server_id == server.id))}
 
 
 def _quiet(world: FakePlex) -> None:
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
 
@@ -92,7 +97,7 @@ def test_a_restore_over_a_plex_that_went_on(client: TestClient, world: FakePlex)
 
     backups.stage_restore(name)
     assert backups.apply_pending() is True
-    plex_sync.forget()
+    server_sync.forget()
     _quiet(world)
 
     _nothing_twice(world)
@@ -183,8 +188,7 @@ def test_back_on_the_first_server_the_look_at_its_list_takes_the_old_copy_for_no
         client: TestClient, world: FakePlex) -> None:
     """The list of Plex may be looked at before the playlist's own sync takes its old copy up again: the copy is not
     taken in as a playlist of its own meanwhile."""
-    from app.services import plex_link
-    from app.services import plex_playlists as plexlists
+    from app.services import plex_link, sources
 
     first = make(client, "Eins", [3001, 3003])["id"]
     sync(world)
@@ -202,9 +206,9 @@ def test_back_on_the_first_server_the_look_at_its_list_takes_the_old_copy_for_no
     with SessionLocal() as db:
         connection = plex_link.current(db)
         assert connection is not None
-        with plex_link.server_of(db, connection, timeout=10.0) as server:
-            listed = plexlists.listing(server)
-        plex_sync.take_in(db, connection, listed, None)
+        with sources.open_server(db, connection, timeout=10.0) as source:
+            listed = source.listing()
+        server_sync.take_in(db, connection, listed, None)
     assert _alive() == {first: "Eins"}, "the old copy came in as a playlist of its own"
     _quiet(world)
     assert _alive() == {first: "Eins"}

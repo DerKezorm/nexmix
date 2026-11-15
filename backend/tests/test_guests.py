@@ -326,7 +326,7 @@ def test_the_guest_reaches_the_catalogue_with_its_etag_and_the_covers(host: Host
     assert found["tracks"] and found["tracks"][0]["title"] == "Northern Lights"
     seen: list[int] = []
 
-    async def fake_cover(_request: Any, album_id: int, _db: Any, _size: int) -> Response:
+    async def fake_cover(_request: Any, album_id: int, _db: Any, _size: int, _server: Any = None) -> Response:
         seen.append(album_id)
         return Response(status_code=204)
 

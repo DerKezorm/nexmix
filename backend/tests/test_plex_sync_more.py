@@ -20,9 +20,10 @@ from sqlalchemy import event, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app import db as database
-from app.models import Account, PlexPlaylist
+from app.models import Account, ServerPlaylist
 from app.routers import playlists as router
-from app.services import catalog, plex, plex_events, plex_link, plex_sync
+from app.services import catalog, plex, plex_events, plex_link
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .plex_world import connect, make, plex_key, sync, tick
@@ -36,7 +37,7 @@ def world(client: TestClient, operator: Account, fake_plex: FakePlex,
     monkeypatch.setattr(router, "STREAM_SECONDS", 4.0)
     monkeypatch.setattr(router, "PING_SECONDS", 0.3)
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -118,13 +119,13 @@ def test_the_listener_opens_the_stream_again_and_stops(world: FakePlex, monkeypa
     seen: list[int] = []
     real = plex_events.listen
 
-    def counting(server: plex.PlexServer, stop: Any) -> int:
+    def counting(server: plex.PlexServer, stop: Any, server_id: int | None = None) -> int:
         seen.append(1)
         if len(seen) >= 3:
             opened.set()
         # Each stream brings an event.
         world.lists.make(f"Neu {len(seen)}")
-        return real(server, stop)
+        return real(server, stop, server_id)
 
     monkeypatch.setattr(plex_events, "listen", counting)
     listener = plex_events.Listener()
@@ -201,10 +202,12 @@ def test_playlists_of_an_older_nexmix_go_to_plex_after_the_update(scratch: Path)
     database.init_db()
     session = sessionmaker(bind=database.engine)
     with session() as db:
-        rows = db.scalars(select(PlexPlaylist)).all()
-        assert [(row.playlist_id, row.state, row.machine) for row in rows] == [(1, "pending", "")]
-        assert rows[0].due_at is not None and rows[0].due_at.tzinfo is not None
-        assert db.execute(text("SELECT from_plex FROM playlist_items")).scalar_one() == 0
+        # No Plex was connected: nothing was made anywhere, and the playlists wait for the first server connected,
+        # which takes them (``sync.moved``) and makes them there; their entries are kept as they were.
+        assert db.scalars(select(ServerPlaylist)).all() == []
+        assert db.execute(text("SELECT id, source_server_id FROM playlists ORDER BY id")).all() == [(1, None),
+                                                                                                    (2, None)]
+        assert db.execute(text("SELECT from_plex, track_id FROM playlist_items")).one() == (0, 3001)
 
 
 # --- The clocks stop cleanly -------------------------------------------------------------------------------------------
@@ -261,12 +264,12 @@ def test_stopping_the_sync_clock_in_the_middle_of_a_tick_logs_no_error(caplog: p
         db.execute(text("SELECT 1"))
         return 0
 
-    monkeypatch.setattr(plex_sync, "tick", slow_tick)
+    monkeypatch.setattr(server_sync, "tick", slow_tick)
     event.listen(database.engine, "connect", hold)
 
     async def scenario() -> None:
         stop = asyncio.Event()
-        task = asyncio.create_task(plex_sync.run_forever(stop))
+        task = asyncio.create_task(server_sync.run_forever(stop))
         assert await asyncio.to_thread(inside.wait, 5)
         stop.set()
         task.cancel()

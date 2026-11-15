@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.models import Account
-from app.services import jobs, plex_sync
+from app.services import jobs
+from app.services import sync as server_sync
 
 from .fakeplex import FakePlex
 from .plex_world import connect, local_tracks, mirror, sync
@@ -22,7 +23,7 @@ from .test_plex_sync import synced
 @pytest.fixture
 def world(client: TestClient, operator: Account, fake_plex: FakePlex) -> Iterator[FakePlex]:
     connect(client, fake_plex)
-    plex_sync.forget()
+    server_sync.forget()
     yield fake_plex
 
 
@@ -47,15 +48,15 @@ def test_a_track_taken_out_in_plex_after_a_write_that_stopped_stays_out(client: 
     assert mirror(playlist_id).writing is not None, "the write is to be open here"
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
 
     # Taken out in Plexamp before nexmix is back.
     world.lists.remove_track(key, 3003)
     world.tick()
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     assert world.lists.tracks(key) == local_tracks(playlist_id)
@@ -95,7 +96,7 @@ def test_the_first_track_of_a_write_whose_answer_was_lost_taken_out_in_plex_stay
     world.tick()
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     assert 3003 not in local_tracks(playlist_id), "the track taken out in Plex came back"
@@ -116,7 +117,7 @@ def test_a_track_added_in_plex_too_says_nothing_about_the_others_of_a_write_that
     world.tick()
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     assert 3003 in local_tracks(playlist_id), "a track added in nexmix was lost"
@@ -139,7 +140,7 @@ def test_two_tracks_added_in_plex_by_hand_do_not_pass_for_a_write_that_never_arr
     world.tick()
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     assert 3003 in local_tracks(playlist_id), "a track added in nexmix was lost"
@@ -172,13 +173,13 @@ def test_a_track_plex_took_while_it_refused_another_and_then_taken_out_there_sta
     assert mirror(playlist_id).writing is not None, "the write is to be open here"
     jobs.stopping.clear()
     with SessionLocal() as db:
-        jobs.recover(db, plex_sync.LANE)
-        plex_sync.settle(db)
+        jobs.recover(db, server_sync.LANE)
+        server_sync.settle(db)
     world.lists.remove_track(key, 3003)
     world.tick()
     for _round in range(3):
         with SessionLocal() as db:
-            plex_sync.request_all(db)
+            server_sync.request_all(db)
         world.tick(20)
         sync(world, look_at_plex=True)
     assert 3003 not in local_tracks(playlist_id), "the track taken out in Plex came back"

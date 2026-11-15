@@ -82,7 +82,8 @@ export const plexApi = {
 }
 
 export const catalogApi = {
-  status: () => api<CatalogStatus>('/api/v1/catalog/status'),
+  /** `server`: the catalogue of that media server (a playlist's); none: the first one connected. */
+  status: (server?: number | null) => api<CatalogStatus>('/api/v1/catalog/status', { query: server ? { server } : undefined }),
   sync: () => api<{ started: boolean }>('/api/v1/catalog/sync', { method: 'POST' }),
   cover: (album: number, size: 80 | 200 | 400 = 200) => `/api/v1/catalog/cover/${album}?s=${size}`,
 }

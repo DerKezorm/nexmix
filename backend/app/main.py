@@ -53,6 +53,7 @@ from .routers import logs as logs_router
 from .routers import playlists as playlists_router
 from .routers import plex as plex_router
 from .routers import preview as preview_router
+from .routers import servers as servers_router
 from .routers import settings as settings_router
 from .routers import storage as storage_router
 from .routers import suggestions as suggestions_router
@@ -71,8 +72,8 @@ from .services import (
     oidc_store,
     pictures,
     plex_events,
-    plex_sync,
     settings_service,
+    sync,
     totp,
 )
 from .services import guests as guests_service
@@ -86,8 +87,8 @@ logger = logging.getLogger("nexmix")
 ROUTERS = [
     health, about, docs, locales_router, logs_router, auth, totp_router, oidc, invites, settings_router,
     backups_router, avatars_router, emails, apikeys, devices, v1_router, push, passkeys, resets, storage_router,
-    plex_router, catalog_router, playlists_router, preview_router, suggestions_router, guest_invites_router,
-    join_router, guest_router,
+    plex_router, servers_router, catalog_router, playlists_router, preview_router, suggestions_router,
+    guest_invites_router, join_router, guest_router,
 ]
 
 
@@ -157,7 +158,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # The clock of the catalogue: a partial run every 15 minutes, the whole one at night.
         tasks.append(asyncio.create_task(catalog.run_forever(stop)))
         # The clock of the playlists' sync with Plex: due playlists, and a look at Plex every 15 seconds.
-        tasks.append(asyncio.create_task(plex_sync.run_forever(stop)))
+        tasks.append(asyncio.create_task(sync.run_forever(stop)))
         tasks.append(asyncio.create_task(plex_events.run_forever(stop)))
     logger.info("nexmix %s started", __version__)
     with SessionLocal() as db:

@@ -112,19 +112,25 @@ def leave(request: Request, who: GuestCaller, db: DbSession) -> Response:
 
 @router.get("/catalog", summary="The whole catalogue, compact and packed, for the guest's search (ETag, 304)",
             response_model=None)
-def catalog(request: Request, _who: GuestCaller, db: DbSession) -> Response:
-    return catalog_routes.catalog_compact(request, None, db)  # type: ignore[arg-type]
+def catalog(request: Request, who: GuestCaller, db: DbSession) -> Response:
+    # The catalogue of the playlist's own server, and no other.
+    return catalog_routes.catalog_compact(request, None, db, _server(who))  # type: ignore[arg-type]
+
+
+def _server(who: guests.Caller) -> int:
+    """The server whose catalogue the guest searches: its playlist's (none connected: one no catalogue has)."""
+    return who.playlist.source_server_id or 0
 
 
 @router.get("/catalog/search", summary="Search tracks on the server, for a catalogue too large for the browser")
 def catalog_search(
-    _who: GuestCaller,
+    who: GuestCaller,
     db: DbSession,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=80)] = 40,
 ) -> dict[str, Any]:
     return catalog_routes.catalog_search(None, db, q=q, kind="tracks", mood="", decade=0, genre="",  # type: ignore[arg-type]
-                                         limit=min(limit, search.TRACK_LIMIT))
+                                         limit=min(limit, search.TRACK_LIMIT), server=_server(who))
 
 
 @router.get("/suggestions", summary="Songs that fit the last tracks of the playlist, worked out on the server")
@@ -144,7 +150,7 @@ async def cover(
     s: Annotated[int, Query(description="80, 200 or 400")] = 200,
 ) -> Response:
     guests.COVER.take(f"g:{who.guest.id}")
-    return await catalog_routes.serve_cover(request, album_id, db, s)
+    return await catalog_routes.serve_cover(request, album_id, db, s, _server(who))
 
 
 def _fresh(db: DbSession, who: guests.Caller) -> dict[str, Any]:
