@@ -17,11 +17,13 @@ from pydantic import BaseModel, Field
 from ..deps import Account, DbSession, Reader
 from ..models import Account as AccountRow
 from ..services import catalog, media, playlists, suggest, suggestions
+from ..services.media import NUMBER_LIMIT
 from ..services.search import Index
 
 router = APIRouter(prefix="/api/v1/suggestions", tags=["suggestions"])
 
-TrackIds = Annotated[list[Annotated[int, Field(ge=1, le=10**12)]], Query(max_length=suggestions.SEEDS)]
+TrackId = Annotated[int, Field(ge=1, le=NUMBER_LIMIT)]
+TrackIds = Annotated[list[TrackId], Query(max_length=suggestions.SEEDS)]
 PlaylistId = Annotated[int | None, Query(ge=1, le=2**62, description="Leave out its songs; seed from its last five")]
 ServerId = Annotated[int | None, Query(ge=1, le=10**9, description="The media server (none: the first connected)")]
 
@@ -99,7 +101,7 @@ def fill_by_mood(
 
 @router.get("/together", summary="Songs that often stand in the same playlists as these songs (the ones you may see)")
 def often_together(reader: Reader, db: DbSession,
-                   songs: Annotated[list[Annotated[int, Field(ge=1, le=10**12)]], Query(min_length=1, max_length=20)],
+                   songs: Annotated[list[TrackId], Query(min_length=1, max_length=20)],
                    server: ServerId = None) -> dict[str, Any]:
     ix = suggestions.view_of(db, server).index
     return suggestions.together(db, reader, ix, songs)
@@ -107,7 +109,7 @@ def often_together(reader: Reader, db: DbSession,
 
 @router.get("/sonic", summary="Songs that sound like these tracks, by Plex's sonic analysis (empty while it is off)")
 def sounds_alike(reader: Reader, db: DbSession,
-                 track: Annotated[list[Annotated[int, Field(ge=1, le=10**12)]], Query(min_length=1, max_length=5)],
+                 track: Annotated[list[TrackId], Query(min_length=1, max_length=5)],
                  server: ServerId = None) -> dict[str, Any]:
     view = suggestions.view_of(db, server)
     return suggestions.sound(db, view.index, track, reader.id, view.server)
@@ -119,7 +121,7 @@ def hidden(reader: Reader, db: DbSession) -> dict[str, Any]:
 
 
 class HideIn(BaseModel):
-    track: int = Field(ge=1, le=10**12)
+    track: int = Field(ge=1, le=NUMBER_LIMIT)
 
 
 @router.post("/hidden", summary="Not again: the song of a track is no longer suggested to the account")
@@ -128,5 +130,5 @@ def hide(payload: HideIn, account: Account, db: DbSession) -> dict[str, Any]:
 
 
 @router.delete("/hidden/{track_id}", summary="The song of a track may be suggested again (the undo)")
-def unhide(track_id: Annotated[int, Path(ge=1, le=10**12)], account: Account, db: DbSession) -> dict[str, Any]:
+def unhide(track_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)], account: Account, db: DbSession) -> dict[str, Any]:
     return suggestions.unhide(db, account, track_id)

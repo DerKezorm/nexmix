@@ -40,6 +40,7 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any, Self
 
+from ..media import NUMBER_LIMIT
 from ..plex import (
     ALBUM,
     ARTIST,
@@ -85,7 +86,7 @@ def _int(value: Any) -> int | None:
         number = int(value)
     except (TypeError, ValueError):
         return None
-    return number if 0 < number < 10**12 else None
+    return number if 0 < number < NUMBER_LIMIT else None
 
 
 def _key(value: Any) -> int:

@@ -16,7 +16,8 @@ The steps, in this order; the first that finds something decides, and says how (
 
 Steps 1 to 4 count as sure, 5 and 6 as worth a look (``UNSURE``): measured on 52,600 tracks from Plex to Jellyfin,
 1 to 4 found 84.6 %, 5 and 6 another 12.6 %, 2.8 % nothing. No track of the other server is ever given to two entries
-(``used``).
+(``used``). Every finding names its step (``Found.how``, ``Found.sure``): the caller decides what it takes; the sync
+after a change of server takes the sure ones only, the unsure ones are for a person to confirm.
 """
 
 from __future__ import annotations

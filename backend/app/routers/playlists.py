@@ -21,6 +21,7 @@ from ..deps import Account, DbSession, Reader, still_speaks_for
 from ..errors import error
 from ..services import guests, playlists, sync
 from ..services.events import hub, playlist_topic
+from ..services.media import NUMBER_LIMIT
 from .auth import profile_of
 
 logger = logging.getLogger("nexmix.playlists")
@@ -74,7 +75,7 @@ class CreateIn(NameIn):
 
 
 class TracksIn(BaseModel):
-    tracks: list[Annotated[int, Field(ge=1, le=10**12)]] = Field(min_length=1, max_length=1000)
+    tracks: list[Annotated[int, Field(ge=1, le=NUMBER_LIMIT)]] = Field(min_length=1, max_length=1000)
 
 
 class EntriesIn(BaseModel):

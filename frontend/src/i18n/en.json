@@ -855,6 +855,7 @@
     "preview_too_often": "That is enough listening in for this hour. Please wait a little.",
     "preview_busy": "Too many people are listening in right now. Try again in a moment.",
     "smart_playlist": "Smart playlists from Plex can only be viewed here. Change them in Plex.",
+    "smart_not_here": "This smart playlist only exists on its own Plex server. It is not made here as an ordinary playlist.",
     "no_note": "There is no order from Plex left to take.",
     "library_gone": "The library is gone from Plex. Choose another one.",
     "plextv_unreachable": "plex.tv cannot be reached. Does the server have access to the internet?",

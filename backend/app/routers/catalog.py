@@ -19,6 +19,7 @@ from ..deps import DbSession, OperatorAccount, Reader
 from ..errors import error
 from ..models import SERVER_JELLYFIN, SERVER_PLEX, CatalogAlbum
 from ..services import catalog, catalog_view, covers, jellyfin, media, plex, plex_link, search, sources
+from ..services.media import NUMBER_LIMIT
 from ..services.sources.jellyfin import TAG as JELLYFIN_TAG
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
@@ -97,7 +98,7 @@ def catalog_facets(_reader: Reader, db: DbSession, server: ServerId = None) -> d
 
 
 @router.get("/albums/{album_id}", summary="An album with its tracks in order")
-def catalog_album(album_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession,
+def catalog_album(album_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)], _reader: Reader, db: DbSession,
                   server: ServerId = None) -> dict[str, Any]:
     found = search.album_detail(_view(db, server).index, album_id)
     if found is None:
@@ -106,7 +107,7 @@ def catalog_album(album_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Read
 
 
 @router.get("/artists/{artist_id}", summary="An artist: the best-known songs and the albums")
-def catalog_artist(artist_id: Annotated[int, Path(ge=1, le=10**12)], _reader: Reader, db: DbSession,
+def catalog_artist(artist_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)], _reader: Reader, db: DbSession,
                    server: ServerId = None) -> dict[str, Any]:
     found = search.artist_detail(_view(db, server).index, artist_id)
     if found is None:
@@ -236,7 +237,7 @@ async def serve_cover(request: Request, album_id: int, db: DbSession, size: int,
 @router.get("/cover/{album_id}", summary="The cover of an album, 80, 200 or 400 pixels")
 async def cover(
     request: Request,
-    album_id: Annotated[int, Path(ge=1, le=10**12)],
+    album_id: Annotated[int, Path(ge=1, le=NUMBER_LIMIT)],
     _reader: Reader,
     db: DbSession,
     s: Annotated[int, Query(description="80, 200 or 400")] = 200,

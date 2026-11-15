@@ -32,10 +32,11 @@ sixty, never taken for one taken out there; after the fifth try it stays in nexm
 **Another server.** Each copy of a playlist on a server has a row of its own (``ServerPlaylist``). When the playlists
 move to another server (``moved``: the operator connected another Plex in the place of the one before), the copies on
 the server before stay there with their common state, and the entries are found on the new server (``match.py``: by
-the recording's id, else by title, album and length, else by the song; never by the number alone): what is found
-nowhere stays in nexmix only, and its entry says so. A copy left on a server is taken up again when the playlist comes
-back there, but only when the server still lists it under its key (``resume``); else it is made anew. A playlist deleted
-for good leaves its copies' rows behind until each is gone from its server.
+the recording's id, else by title, album and length; never by the number alone, nor by the song or the title alone):
+what is found nowhere stays in nexmix only, and its entry says so. A copy left on a server is taken up again when the
+playlist comes back there, but only when the server still lists it under its key (``resume``); else it is made anew (a
+smart playlist never: it rests until it is back on its own server). A playlist deleted for good leaves its copies' rows
+behind until each is gone from its server.
 
 **One at a time.** Every sync of a copy and every look at a server's list is a job of the lane ``playlists``
 (``jobs.py``): never two at once, and a stopped server goes on where it was. A write that a stop or a fault broke off
@@ -125,6 +126,8 @@ SETTLE_ALL, SETTLE_SINCE = "all", "since"
 SYNCED, PENDING, WAITING, ERROR = "synced", "pending", "waiting", "error"
 #: The playlist lives in nexmix only: its source server takes no playlists from nexmix.
 LOCAL = "local"
+#: Why a smart playlist rests on a server it was not made on: its rules live on its own server.
+SMART_NOT_HERE = "smart_not_here"
 
 
 class Stale(Exception):
@@ -242,18 +245,23 @@ def dropping(db: Session, playlist_id: int) -> None:
 def moved(db: Session, playlist_ids: Sequence[int], server_id: int, *, settle: str = SETTLE_ALL) -> None:
     """The playlists take their tracks from ``server_id`` from now on: each gets its copy there (a copy left there
     before is taken up again only when the server still lists it, ``resume``), and its entries are found there first
-    (``settle``). In the caller's transaction."""
+    (``settle``). A smart playlist stays one: its copy there is smart too, read when it is that server's own, else it
+    rests (``Round.run``). In the caller's transaction."""
     now = clock.now()
     keeps = keeps_playlists(media.get(db, server_id))
     for playlist_id in playlist_ids:
+        before = mirror_of(db, playlist_id)
+        smart = before is not None and bool(before.smart)
         db.execute(update(Playlist).where(Playlist.id == playlist_id).values(source_server_id=server_id))
         if not keeps:
             continue
         row = copy_of(db, playlist_id, server_id)
         if row is None:
             db.add(ServerPlaylist(playlist_id=playlist_id, server_id=server_id, state=PENDING, due_at=now,
-                                  settle=settle))
+                                  settle=settle, smart=smart))
             continue
+        if smart and row.ext_key is None:
+            row.smart = True
         row.settle, row.state, row.due_at, row.tries, row.error = settle, PENDING, now, 0, ""
     db.flush()
     if playlist_ids:
@@ -699,18 +707,26 @@ class Round:
             return
         if row.smart:
             if row.ext_key is None:
-                # A smart playlist that came from another server: an ordinary one here, with its entries.
-                row.smart, row.smart_total = False, None
-                db.commit()
+                # A smart playlist the server it was made on fills from its rules; it is never made here as an ordinary
+                # one. It rests with its entries, and says why, until it is back on its own server.
+                self._rests_smart()
             else:
                 self._smart(playlist.id)
-                return
+            return
         self._sync(playlist.id)
+
+    def _rests_smart(self) -> None:
+        row = self.row
+        row.state, row.error, row.tries, row.due_at = ERROR, SMART_NOT_HERE, 0, None
+        self.db.commit()
+        logger.info("Smart playlist not on this server, not made here playlist=%s server=%s", row.playlist_id,
+                    self.server_id)
+        _publish(self.db, row.playlist_id, row)
 
     def _resume(self, row: ServerPlaylist) -> None:
         """A copy left on this server before: taken up with the state both sides last agreed on when the server still
         lists it under its key (and its ``guid``), as an ordinary playlist when it was one, and no other copy here has
-        it; else forgotten (the playlist is made anew here)."""
+        it; else forgotten (an ordinary playlist is made anew here, a smart one rests)."""
         key, guid, smart = row.ext_key, row.guid, row.smart
         base = row.base if isinstance(row.base, dict) else None
         self._forget_copy(row)
@@ -719,7 +735,7 @@ class Round:
             return
         there = next((one for one in self.source.listing() if one.key == key), None)
         if there is None or there.smart != smart or (guid and there.guid and there.guid != guid):
-            row.smart, row.smart_total = False, None
+            # A smart one stays smart: it is never made anew as an ordinary playlist (``run``).
             return
         row.ext_key, row.guid = key, there.guid or guid
         row.base = base if base is not None else {"title": there.title, "items": []}
@@ -794,8 +810,9 @@ class Round:
         came from another server holds that server's number. Checked are all entries after a change of server, else
         the ones put in before the server was connected (they may come from another server). Each keeps its track when
         this server's catalogue has it as the same track (the same ``guid``, or the same title and album); else it is
-        found (``match.py``); what is found nowhere stays in nexmix only, and its entry says so. What a server refused
-        before is offered to this one anew. The row's ``settle`` goes in the same step."""
+        found by a sure step of ``match.py`` (the recording's id, MusicBrainz, title with album or with length); what
+        is found nowhere, or only by the song or the title, stays in nexmix only, and its entry says so. What a server
+        refused before is offered to this one anew. The row's ``settle`` goes in the same step."""
         from . import playlists
 
         db = self.db
@@ -825,7 +842,9 @@ class Round:
             if item.track_id in kept:
                 continue
             found = catalogue.find(_wanted(item), used)
-            if found is not None:
+            # Only a sure step takes another track here: by the song or the title alone it may be somebody else's song
+            # of the same name, which would then go to the server unasked. Those stay with the hint.
+            if found is not None and found.sure:
                 used.add(found.track.id)
                 moving[item.id] = found.track
             else:

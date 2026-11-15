@@ -855,6 +855,7 @@
     "preview_too_often": "Genug reingehört für diese Stunde. Bitte warte etwas.",
     "preview_busy": "Gerade hören zu viele rein. Gleich noch einmal versuchen.",
     "smart_playlist": "Smart-Playlisten aus Plex lassen sich hier nur ansehen. Ändern geht in Plex.",
+    "smart_not_here": "Diese Smart-Playlist gibt es nur auf ihrem eigenen Plex-Server. Hier wird sie nicht als gewöhnliche Playlist angelegt.",
     "no_note": "Es gibt keine Reihenfolge aus Plex mehr zum Übernehmen.",
     "library_gone": "Die Mediathek gibt es in Plex nicht mehr. Wähl eine andere.",
     "plextv_unreachable": "plex.tv ist nicht erreichbar. Hat der Server Zugang zum Internet?",
