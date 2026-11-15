@@ -160,7 +160,50 @@ def _backups(db: Session) -> Point:
     return Point("backups", OK if every != "off" else WARN, {"schedule": every})
 
 
+def _internal(url: str) -> bool | None:
+    """Whether the address reaches the server inside the own network only (None: its name does not resolve)."""
+    from . import outbound, plex
+
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    try:
+        addresses = plex.resolver(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
+        ips = [outbound.ip_of(address) for address in addresses]
+    except (outbound.Unreachable, ValueError):
+        return None
+    return bool(ips) and all(any(ip.version == network.version and ip in network for network in PRIVATE_NETWORKS)
+                             for ip in ips)
+
+
+def _jellyfin(db: Session) -> Point | None:
+    """Jellyfin serves sound and pictures to whoever knows an id, without signing in: nexmix never passes one on, and
+    the server is best reached at an address inside the own network. Its token must be there and readable."""
+    from ..models import SERVER_JELLYFIN
+    from . import jellyfin_link, media
+
+    rows = [row for row in media.active(db) if row.kind == SERVER_JELLYFIN]
+    if not rows:
+        return None
+    no_token, outside = [], []
+    for row in rows:
+        try:
+            readable = bool(row.token_enc) and bool(jellyfin_link.token_of(row))
+        except jellyfin_link.Unreadable:
+            readable = False
+        if not readable:
+            no_token.append(row.name)
+        if _internal(row.url) is not True:
+            outside.append(row.name)
+    if no_token:
+        return Point("jellyfin", BAD, {"names": ", ".join(no_token), "token": False})
+    if outside:
+        return Point("jellyfin", WARN, {"names": ", ".join(outside), "token": True})
+    return Point("jellyfin", OK, {"names": ", ".join(row.name for row in rows), "token": True})
+
+
 def check(db: Session, request: Request, operator: Account, unknown_proxy: bool) -> dict[str, Any]:
+    jellyfin = _jellyfin(db)
     points = [
         _https(db, request),
         _two_factor(db),
@@ -170,5 +213,6 @@ def check(db: Session, request: Request, operator: Account, unknown_proxy: bool)
         _cookies(request),
         _proxy(request, unknown_proxy),
         _backups(db),
+        *([jellyfin] if jellyfin is not None else []),
     ]
     return {"points": [point.as_dict() for point in points], "open": sum(point.state != OK for point in points)}

@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import (
+    SERVER_JELLYFIN,
     AlbumTag,
     ArtistTag,
     Base,
@@ -50,7 +51,7 @@ from ..models import (
     SyncRun,
     TrackTag,
 )
-from . import catalog_view, jobs, media, plex_link, settings_service, songs, sources
+from . import catalog_view, jobs, media, plex_link, relink, settings_service, songs, sources
 from .plex import ALBUM, ARTIST, TRACK, PlexError
 
 logger = logging.getLogger("nexmix.catalog")
@@ -68,6 +69,9 @@ ANALYSIS_EVERY = timedelta(hours=1)
 #: How long the loop waits between two looks at the clock.
 TICK_SECONDS = 60
 TYPES = (ARTIST, ALBUM, TRACK)
+#: A server that is still starting (Jellyfin answers 503 for up to a minute when it starts), after the connector
+#: waited for it: the run stops without counting as failed.
+STARTING = frozenset({"jellyfin_starting"})
 
 #: The share of a full run each step takes, for the progress the interface shows.
 WEIGHTS = {"artists": 2, "albums": 6, "tracks": 25, "album_tags": 10, "artist_tags": 4, "track_moods": 40,
@@ -648,6 +652,12 @@ def _run(db: Session, job: Job, kind: str,
         if exc.code == "stopped":
             _fail(db, run, "stopped", state="stopped")
             raise jobs.Interrupted from exc
+        if exc.code in STARTING:
+            # Waited for long enough while the server started: no fault of the catalogue. The run
+            # stops, the live catalogue stays, and the clock asks again at the next quarter of an hour.
+            _fail(db, run, exc.code, state="stopped")
+            logger.info("Catalogue run waits for the server kind=%s server=%s", kind, run.server_id)
+            return
         # The code alone reaches the log: never an address, never the token.
         logger.warning("Catalogue run failed kind=%s step=%s error=%s server=%s", kind, run.step, exc.code,
                        run.server_id)
@@ -668,6 +678,12 @@ def _run(db: Session, job: Job, kind: str,
             db.rollback()
             logger.exception("Search index could not be made")
         catalog_view.warm(run.server_id)
+        # Entries whose track went with the run (a file renamed in Jellyfin) find it again.
+        try:
+            relink.after_run(db, run.server_id)
+        except Exception:
+            db.rollback()
+            logger.exception("Entries could not be found again after the run server=%s", run.server_id)
 
 
 def run_full(db: Session, job: Job) -> None:
@@ -752,6 +768,9 @@ def tick(db: Session, now: datetime | None = None) -> str | None:
 
 def _tick_server(db: Session, row: MediaServer, moment: datetime) -> str | None:
     if not row.section_key or _busy(db, row.id):
+        return None
+    if row.kind == SERVER_JELLYFIN and not row.user_id:
+        # The user's play counts come with the catalogue: the first run waits until the operator chose the user.
         return None
     last = db.scalars(select(SyncRun).where(SyncRun.server_id == row.id)
                       .order_by(SyncRun.started_at.desc(), SyncRun.id.desc()).limit(1)).first()
@@ -854,6 +873,15 @@ def status(db: Session, server_id: int | None = None) -> dict[str, Any]:
                       .order_by(SyncRun.id.desc()).limit(1)).first()
     queued = db.scalar(select(Job.kind).where(Job.kind.in_(KINDS), Job.ref == ident, Job.state == "queued")
                        .order_by(Job.id).limit(1))
+    if queued is None and running is None:
+        # A job the lane has taken whose run has not begun yet still waits: a page that stopped asking in that moment
+        # would wait for ever. (One whose run is done and only prepares the search is done.)
+        claimed = db.scalars(select(Job).where(Job.kind.in_(KINDS), Job.ref == ident, Job.state == "running")
+                             .order_by(Job.id).limit(1)).first()
+        if claimed is not None and claimed.started_at is not None and db.scalar(
+                select(SyncRun.id).where(SyncRun.server_id == ident, SyncRun.started_at >= claimed.started_at)
+                .limit(1)) is None:
+            queued = claimed.kind
     return {
         "server": row.id if row is not None else None,
         "connected": row is not None,

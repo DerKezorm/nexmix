@@ -26,7 +26,10 @@ export function MoodDialog({
   songs,
   onTake,
   onClose,
+  noMoods = null,
 }: {
+  /** Set when the playlist's server has no moods: the dialog says so instead of offering none. */
+  noMoods?: string | null
   source: CatalogSource | null
   facets: Facets | null
   playlistId: number
@@ -110,6 +113,21 @@ export function MoodDialog({
     onClose()
     onTake(chosen)
   }
+
+  if (noMoods)
+    return (
+      <Dialog title={t('mood.title')} onClose={onClose} className="max-w-[640px]!">
+        <p className="text-sm" data-testid="mood-none">
+          {noMoods}
+        </p>
+        <div className="dlg-foot">
+          <span className="grow" />
+          <button type="button" className="btn" onClick={onClose}>
+            {t('common.close')}
+          </button>
+        </div>
+      </Dialog>
+    )
 
   return (
     <Dialog title={t('mood.title')} sub={t('mood.text')} onClose={onClose} className="max-w-[640px]!">

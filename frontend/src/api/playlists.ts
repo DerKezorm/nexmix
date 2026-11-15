@@ -11,7 +11,8 @@ export type Summary = { count: number; duration: number; covers: number[]; peopl
 
 /** How the copy of a playlist in Plex stands. */
 export type PlexSync = {
-  state: 'synced' | 'pending' | 'waiting' | 'error' | 'off'
+  /** `local`: the playlist lives in nexmix only (its server takes no playlists from nexmix yet). */
+  state: 'synced' | 'pending' | 'waiting' | 'error' | 'off' | 'local'
   /** The code of the last failure, while it waits for Plex or failed. */
   error: string | null
   smart: boolean
@@ -93,7 +94,8 @@ const base = (id: number) => `/api/v1/playlists/${id}`
 export const playlistsApi = {
   list: (trash = false) =>
     api<{ playlists: Card[]; trash_days: number; show_smart_playlists?: boolean }>('/api/v1/playlists', { query: trash ? { trash: true } : undefined }),
-  create: (name: string) => api<Playlist>('/api/v1/playlists', { method: 'POST', body: { name } }),
+  /** `server`: the media server it takes its tracks from; none: the first one connected. */
+  create: (name: string, server?: number | null) => api<Playlist>('/api/v1/playlists', { method: 'POST', body: server ? { name, server } : { name } }),
   read: (id: number) => api<Playlist>(base(id)),
   rename: (id: number, name: string) => api<{ version: number; name: string }>(base(id), { method: 'PUT', body: { name } }),
   trash: (id: number) => api<Card>(base(id), { method: 'DELETE' }),

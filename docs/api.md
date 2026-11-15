@@ -96,10 +96,15 @@ With a session or a device token: the account, its profile and what this server 
 
 ### `GET /api/v1/servers`
 
-With a session, a device token or an API key: the media servers nexmix knows, each with `id`, `kind` (`plex`), `name`,
-`active` (connected; a server let go of rests with its numbers and the copies of the playlists on it), `library`,
-`ready` (its catalogue is there), `primary` (the one the Plex card shows, the source of new playlists) and
-`capabilities` (`moods`, `sound`, `smart_playlists`, `duplicates`, `changes`). Never an address or a token.
+With a session, a device token or an API key: the media servers nexmix knows, each with `id`, `kind` (`plex` or
+`jellyfin`), `name`, `active` (connected; a server let go of rests with its numbers and the copies of the playlists on
+it), `library`, `ready` (its catalogue is there), `primary` (the first one connected, the source of a new playlist
+unless another is named) and `capabilities` (`moods`, `sound`, `smart_playlists`, `duplicates`, `changes`, and
+`playlists`: nexmix keeps its playlists there; Jellyfin has no moods and no sonic analysis, and its playlists live in
+nexmix only for now). Never an address, a token or an id of the server.
+
+`DELETE /api/v1/servers/{id}` (the operator, in a browser) lets go of a server: its token and its catalogue go, the
+server itself stays as it is, and the playlists that take their tracks from it wait for it in nexmix.
 
 Every media server has a catalogue of its own. The routes of the catalogue take `server` (an `id` of the list) and
 answer for that one; without it, for the first one connected. Track, album and artist ids are nexmix's own numbers,
@@ -154,11 +159,13 @@ the catalogue, `from_plex` when it was put in through Plex, `plex_hint` when it 
 did not take its track, five tries over some 80 minutes; `elsewhere`: the connected server has no such track),
 `added_by`) and the playlist's `moods`. Each playlist has
 `smart` and `plex`: how its copy in Plex stands (`state`: `synced`, `pending`, `waiting` when Plex was not reached and
-it is tried again, `error` with its code in `error`, `off` without Plex), `total` of a smart playlist, `gone_in_plex`
+it is tried again, `error` with its code in `error`, `off` without Plex, `local` when the playlist's server takes no
+playlists from nexmix: a playlist on Jellyfin lives in nexmix only for now), `total` of a smart playlist, `gone_in_plex`
 for one deleted there, and `note` when it was sorted in Plex and here at the same time. These read with an API key too;
 everything else needs a session or a device token. A playlist the account may not see answers `404`.
 
-- `POST` `{"name"}` makes one; `PUT /{id}` `{"name"}` renames it; `DELETE /{id}` moves it to the trash,
+- `POST` `{"name", "server"}` makes one, taking its tracks from `server` (an `id` of `GET /api/v1/servers`; without
+  it the first one connected; `422 invalid_server` for one that is not connected); `PUT /{id}` `{"name"}` renames it; `DELETE /{id}` moves it to the trash,
   `DELETE /{id}?purge=true` deletes it from there for good; `POST /{id}/restore` brings it back. Deleting, bringing
   back and sharing: the owner and the operator only.
 - `POST /{id}/items` `{"tracks": [...]}` adds at the end; a track already in the playlist (or not in the catalogue) is
@@ -230,8 +237,9 @@ display name only (`inviter`, `by` empty without one). Bringing an entry back ne
 
 With a session or a device token, or the cookie of a guest whose invitation allows listening in (`403 preview_off`
 when it does not; a request with an account's credentials listens as the account): about 30 seconds of a track of the
-catalogue as MP3 (192 kbit/s), from 35 % of its length, converted by Plex and passed through the server (the Plex
-token never leaves it); at most about 1 MB. One preview at a time per listener (an account or a guest; a new one ends
+catalogue as MP3 (192 kbit/s), from 35 % of its length, converted by its media server (Plex's converter, Jellyfin's
+`stream.mp3`) and passed through the server (no token, no address and no id of the server ever leaves it; Jellyfin
+serves sound to whoever knows an id); at most about 1 MB. One preview at a time per listener (an account or a guest; a new one ends
 the one before), 120 an hour (`429 preview_too_often`), a few at once on the server (`503 preview_busy`).
 `403 preview_off` while the operator has switched listening in off (setting `preview_allowed`), `404` for anything
 that is not a track of the catalogue. `GET /api/v1/preview` says whether it is on (`allowed`), how long a preview
@@ -239,8 +247,9 @@ plays (`seconds`), and how many are `left` this hour (`retry_after` when none).
 
 When Plex refuses with `400` or a `5xx`, or answers without sound, the server asks once more after half a second with a
 new session (the same preview for the hour). After that, or at once for a refused token or a missing track, the
-answer is `502 plex_refused`, `502 plex_error`, `503 plex_busy`, `502 plex_unreachable`, `504 plex_timeout` or `404`;
-the server's log has one line per refusal with Plex's status and the start of its answer.
+answer is `502 plex_refused`, `502 plex_error`, `503 plex_busy`, `502 plex_unreachable`, `504 plex_timeout` or `404`
+(for a track of Jellyfin `jellyfin_refused`, `jellyfin_error`, `jellyfin_starting`, `jellyfin_unreachable`,
+`jellyfin_timeout`); the server's log has one line per refusal with the server's status and the start of its answer.
 
 Without `Range` (or with `bytes=0-`) the sound comes as Plex sends it, without a length. A request for a part
 (`Range: bytes=0-1`, as Safari sends first, or any part further in) gets `206` with `Content-Range` and
@@ -276,9 +285,10 @@ and asks only `together`, `sonic` and `hidden`; past `NEXMIX_SERVER_SEARCH_FROM`
 ### `GET /api/v1/catalog/cover/{album_id}?s=80|200|400`
 
 With a session, a device token or an API key: the cover of an album of the catalogue, JPEG or PNG, square, fetched
-through the server (the Plex token never leaves it) and kept on its disk. `ETag` and `If-None-Match` work; the answer
-may be kept for a week. A few covers are fetched from Plex at once; one that finds no place within a second, or asks
-while Plex is failing, is `503` with `Retry-After` (the rest of the server never waits for Plex's covers).
+through the server from the album's media server (no token, no address and no id of the server leaves it) and kept on
+its disk. `ETag` and `If-None-Match` work; the answer may be kept for a week. A few covers are fetched at once; one
+that finds no place within a second, or asks while its server is failing, is `503` with `Retry-After` (the rest of
+the server never waits for covers, and a server in trouble holds up no other server's).
 
 ## Routes of the operator's browser
 
@@ -287,9 +297,23 @@ plex.tv, `DELETE /pin/{id}` gives such a sign-in up; `POST /connect` with the PI
 `token`; `GET /libraries`, `PUT /library`; `DELETE` disconnects and stops a sync under way; `GET /playlists` tells
 how the playlists stand in Plex, `POST /playlists/sync` syncs them all now and looks for new ones there), and
 `POST /api/v1/catalog/sync` fetches the whole catalogue again (a run already waiting or running is not doubled:
-`{"started": false}`). Only the operator, only in a signed-in browser. A sign-in through plex.tv belongs to the
-session that began it: for every other one, even of another operator, it does not exist (`pin_expired`). No answer
-ever holds a token.
+`{"started": false}`). Another Plex server beside the first one: `POST /plex/connect` with `"alongside": true`
+(nothing moves to it; `added` names it), its library with `GET /plex/libraries?server=` and `PUT /plex/library?server=`.
+
+Jellyfin lives under `/api/v1/jellyfin`: `GET` the connected Jellyfin servers; `POST /quick` `{"url"}` starts Quick
+Connect at the server and answers the six-digit `code` to enter in Jellyfin (Quick Connect in the profile), its `id`
+and `seconds` left (ten minutes); `GET /quick/{id}` says whether it was confirmed (`done`), `DELETE /quick/{id}` gives
+it up; `POST /connect` `{"quick"}` redeems the confirmed code once, or `{"url", "key"}` connects with an API key of
+Jellyfin. The address is checked first (`/System/Info/Public`; `422 not_jellyfin`, `bad_url`, `address_refused`),
+`409 quick_off` when Quick Connect is switched off there, `404 quick_expired` after ten minutes, `503
+jellyfin_starting` while Jellyfin starts. The answer has the `server`, its music `libraries` and `users`, each named by
+a `handle` of nexmix's own (never an id of Jellyfin); a single library or user is chosen at once. `GET /{id}`, `GET
+/{id}/choices`, `PUT /{id}/library` `{"handle"}` (the catalogue is fetched anew), `PUT /{id}/user` `{"handle"}` (the
+Jellyfin user the playlists will belong to there; their play counts say how well known a track is), `DELETE /{id}`
+lets go of it. The catalogue is fetched once the library and the user are chosen. nexmix gives itself one device id
+per installation and server at Jellyfin (Jellyfin keeps one token per device id). Only the operator, only in a signed-in browser. A sign-in through plex.tv belongs to the
+session that began it: for every other one, even of another operator, it does not exist (`pin_expired`); the same
+holds for a Quick Connect of Jellyfin (`quick_expired`). No answer ever holds a token.
 
 ## The account, signing in and the setup (a browser, mostly)
 
@@ -324,7 +348,8 @@ Every route here answers `403 operator_only` to a member and `403 browser_only` 
 
 - `GET` and `PUT /api/v1/settings` (sign-in, public address, second factor for everybody, listening in
   (`preview_allowed`), the defaults of invitations for guests (`guest_preview`, `guest_max`, `guest_hours`), the
-  nightly sync (`catalog_full_at`), mail, backups, API keys); `GET /settings/readiness` ("Ready for the internet?"),
+  nightly sync (`catalog_full_at`), mail, backups, API keys); `GET /settings/readiness` ("Ready for the internet?",
+  with a point `jellyfin` while one is connected: its token readable, its address inside the own network),
   `POST /settings/mail-test` `{"to"}`, `GET` and `PUT /settings/push`, `POST /settings/push/renew`.
 - Accounts: `GET /api/v1/accounts`, `PUT /{id}/role`, `POST /{id}/block` and `/unblock`, `POST /{id}/sign-out`, `POST
   /{id}/totp/reset`, `POST /{id}/reset-link`, `DELETE /{id}`. Invitations of members: `GET`, `POST {"days", "email", "send"}` and

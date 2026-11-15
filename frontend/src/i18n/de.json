@@ -64,14 +64,19 @@
       "text": "Nur in deiner Übersicht ausgeblendet. In Plex und für alle anderen bleibt alles, wie es ist.",
       "smart": "Smart-Playlist aus Plex",
       "show": "Wieder zeigen"
-    }
+    },
+    "chooseServer": "Woher sollen die Titel kommen?",
+    "chooseServerText": "Die Playlist sucht, schlägt vor und spielt Hörproben aus dieser Mediathek.",
+    "make": "Playlist anlegen",
+    "serverOption": "{{kind}} „{{name}}“"
   },
   "sync": {
     "card": {
       "synced": "In Plex",
       "pending": "Wird gespeichert …",
       "waiting": "Wartet auf Plex",
-      "error": "Nicht in Plex"
+      "error": "Nicht in Plex",
+      "local": "Nur in nexmix"
     },
     "smartBadge": "Smart",
     "goneInPlex": "In Plex gelöscht",
@@ -109,7 +114,8 @@
       "notYet": "Noch nicht",
       "syncNow": "Playlisten jetzt abgleichen",
       "syncStarted": "Wird abgeglichen."
-    }
+    },
+    "local": "Nur in nexmix. In Jellyfin legt nexmix Playlisten noch nicht an."
   },
   "settings": {
     "title": "Einstellungen",
@@ -885,7 +891,18 @@
     "guest_no_sorting": "Diese Einladung erlaubt Gästen kein Sortieren.",
     "guest_not_yours": "Du darfst nur deine eigenen Titel entfernen.",
     "bad_name": "Ein Name hat 1 bis {{max}} Zeichen, ohne Steuerzeichen.",
-    "too_many_streams": "Du hast diese Playlist schon auf zu vielen Seiten offen."
+    "too_many_streams": "Du hast diese Playlist schon auf zu vielen Seiten offen.",
+    "jellyfin_refused": "Jellyfin hat die Anmeldung abgelehnt. Verbinde Jellyfin neu.",
+    "jellyfin_unreachable": "Jellyfin ist nicht erreichbar.",
+    "jellyfin_timeout": "Jellyfin hat nicht rechtzeitig geantwortet.",
+    "jellyfin_starting": "Jellyfin startet gerade. Versuch es in einer Minute noch einmal.",
+    "jellyfin_error": "Jellyfin hat nicht mitgespielt.",
+    "jellyfin_not_found": "Jellyfin kennt das nicht.",
+    "jellyfin_bad_request": "Jellyfin hat die Anfrage nicht angenommen.",
+    "quick_expired": "Der Code ist abgelaufen. Hol einen neuen.",
+    "quick_off": "Quick Connect ist in diesem Jellyfin abgeschaltet. Verbinde mit einem API-Schlüssel.",
+    "not_jellyfin": "Unter dieser Adresse antwortet kein Jellyfin.",
+    "invalid_server": "Diesen Medienserver gibt es hier nicht."
   },
   "ready": {
     "title": "Bereit fürs Internet?",
@@ -946,6 +963,12 @@
       "title": "Sicherung",
       "ok": "Eine automatische Sicherung ist an. Die Musik bleibt in Plex.",
       "warn": "Keine automatische Sicherung. Schalte sie unter Einstellungen, Sicherung ein."
+    },
+    "jellyfin": {
+      "title": "Jellyfin",
+      "ok": "Jellyfin ist im eigenen Netz verbunden. Ton und Bilder reicht nexmix durch, Kennungen und Adresse sieht kein Browser.",
+      "warn": "Jellyfin ({{names}}) ist über eine Adresse außerhalb des eigenen Netzes verbunden. Jellyfin gibt Ton und Bilder ohne Anmeldung heraus. nexmix gibt Kennungen nie weiter, sicherer ist trotzdem eine Adresse im eigenen Netz.",
+      "bad": "Für Jellyfin ({{names}}) fehlt ein lesbarer Schlüssel. Verbinde Jellyfin neu."
     }
   },
   "mail": {
@@ -1230,7 +1253,9 @@
     "rowLabel": "{{number}}. {{title}}",
     "missing": "Nicht mehr in der Mediathek",
     "plexRefused": "Plex nimmt diesen Titel nicht an",
-    "plexElsewhere": "Auf diesem Plex-Server nicht gefunden"
+    "plexElsewhere": "Auf diesem Plex-Server nicht gefunden",
+    "moodsNone": "Keine Stimmungen",
+    "noMoods": "{{kind}} kennt keine Stimmungen. Genre und Jahrzehnt gehen."
   },
   "share": {
     "title": "Teilen",
@@ -1279,7 +1304,8 @@
     "soundsAlike": "klingt ähnlich",
     "together": "oft zusammen",
     "similarButton": "Vorschläge zu diesem Titel",
-    "similarTrack": "Vorschläge zu „{{title}}“"
+    "similarTrack": "Vorschläge zu „{{title}}“",
+    "basisNoMoods": "aus Genre, Jahrzehnt und Beliebtheit"
   },
   "mood": {
     "open": "Mit Stimmung füllen",
@@ -1608,5 +1634,58 @@
     "Witty": "Geistreich",
     "Wry": "Trocken",
     "Yearning": "Sehnsüchtig"
+  },
+  "servers": {
+    "part": "Medienserver",
+    "addTitle": "Server hinzufügen",
+    "addText": "Weitere Mediatheken verbinden. Jede Playlist nimmt ihre Titel von einem Server, den du beim Anlegen wählst.",
+    "addPlex": "Plex",
+    "addJellyfin": "Jellyfin",
+    "plexTitle": "Plex „{{name}}“",
+    "plexText": "Weiterer Plex-Server neben dem ersten. Playlisten, die ihre Titel von hier nehmen, werden in diesem Server gespeichert.",
+    "plexAdd": "Weiteren Plex-Server verbinden",
+    "plexAddText": "Melde dich bei Plex an oder gib Adresse und Schlüssel ein. Der erste Plex-Server bleibt, wie er ist.",
+    "library": "Mediathek",
+    "disconnect": "Server trennen",
+    "disconnectTitle": "„{{name}}“ trennen?",
+    "disconnectText": "nexmix vergisst den Schlüssel und den Katalog mit {{tracks}} Titeln. Playlisten, die ihre Titel von diesem Server nehmen, bleiben in nexmix, aber Suche, Vorschläge und Reinhören gehen erst wieder, wenn du ihn neu verbindest. Zurückholen lässt sich das nur durch neues Verbinden. Auf dem Server selbst ändert sich nichts."
+  },
+  "jellyfin": {
+    "title": "Jellyfin",
+    "textNew": "Verbinde einen Jellyfin-Server. Du bestätigst nexmix in Jellyfin mit einem Code, ein Passwort gibst du hier nicht ein.",
+    "textConnected": "Mit Jellyfin „{{name}}“ verbunden.",
+    "address": "Adresse",
+    "addressHint": "Zum Beispiel http://jellyfin:8096. Am besten eine Adresse im eigenen Netz.",
+    "quick": "Mit Quick Connect verbinden",
+    "byKey": "API-Schlüssel von Hand",
+    "byKeyText": "Einen API-Schlüssel legst du in Jellyfin unter Dashboard › API-Schlüssel an.",
+    "key": "API-Schlüssel",
+    "connectByKey": "Verbinden",
+    "codeText": "Öffne Jellyfin, geh in deinem Profil auf Quick Connect und gib diesen Code ein. nexmix wartet darauf.",
+    "codeLeft": "Noch {{minutes}} Min. gültig",
+    "codeLabel": "Code für Quick Connect",
+    "newCode": "Neuen Code holen",
+    "stepQuick": "Quick Connect",
+    "stepKey": "API-Schlüssel",
+    "stepLibrary": "Mediathek",
+    "stepLibraryNamed": "Mediathek „{{name}}“",
+    "stepUser": "Benutzer",
+    "stepUserNamed": "Benutzer „{{name}}“",
+    "chooseLibrary": "Wähl die Musikmediathek.",
+    "chooseUser": "Wähl den Jellyfin-Benutzer, dem die Playlisten später in Jellyfin gehören. Seine Wiedergaben zeigen, welche Titel bekannt sind.",
+    "admin": "Volle Rechte in Jellyfin",
+    "moodsValue": "gibt es bei Jellyfin nicht, Genre und Jahrzehnt gehen",
+    "playlists": "Playlisten",
+    "playlistsValue": "leben vorerst nur in nexmix. In Jellyfin legt nexmix noch keine an.",
+    "user": "Benutzer",
+    "otherLibrary": "Andere Mediathek wählen",
+    "otherUser": "Anderen Benutzer wählen",
+    "disconnect": "Jellyfin trennen",
+    "disconnectTitle": "Jellyfin trennen?",
+    "disconnectText": "nexmix vergisst den Schlüssel und den Katalog mit {{tracks}} Titeln. Playlisten mit Titeln aus Jellyfin bleiben in nexmix, aber Suche, Vorschläge und Reinhören gehen erst wieder, wenn du Jellyfin neu verbindest. Zurückholen lässt sich das nur durch neues Verbinden. In Jellyfin selbst ändert sich nichts.",
+    "libraryTitle": "Andere Mediathek wählen?",
+    "libraryText": "Der Katalog von „{{old}}“ wird gelöscht und der von „{{new}}“ neu geholt. Bis dahin gibt es keine Suche. Zurückholen lässt er sich nur, indem du wieder „{{old}}“ wählst und er neu geholt wird.",
+    "libraryConfirm": "Mediathek wechseln",
+    "searchValue": "lokal in nexmix, Jellyfin wird beim Tippen nie gefragt"
   }
 }

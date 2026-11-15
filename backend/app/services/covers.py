@@ -1,8 +1,9 @@
-"""Covers kept on disk (``<data_dir>/covers``): a cover is fetched from Plex once per size and then served from here.
+"""Covers kept on disk (``<data_dir>/covers``): a cover is fetched from its media server once per size and then served
+from here.
 
 The name of a file is a hash of the server, the cover's path at Plex (which carries a time stamp that changes with
-the picture) and the size; so a changed cover is a new file, and the ETag is that name. When the folder grows past
-``NEXMIX_COVER_CACHE_MB`` the files used least recently go first.
+the picture; at Jellyfin the album's id and its picture's tag) and the size; so a changed cover is a new file, and the
+ETag is that name. When the folder grows past ``NEXMIX_COVER_CACHE_MB`` the files used least recently go first.
 """
 
 from __future__ import annotations
@@ -33,21 +34,23 @@ WAIT_SECONDS = 1.0
 #: After Plex failed to deliver a cover (busy, unreachable, too slow, an error), no cover asks it again for this long:
 #: a Plex in trouble gets no more requests from every open page, and the log one line per outage, not one per cover.
 QUIET_SECONDS = 30
-#: What says that Plex itself is in trouble (and not that one cover is missing).
-OUTAGE = frozenset({"plex_busy", "plex_unreachable", "plex_timeout", "plex_error", "plex_refused"})
+#: What says that the server itself is in trouble (and not that one cover is missing).
+OUTAGE = frozenset({"plex_busy", "plex_unreachable", "plex_timeout", "plex_error", "plex_refused",
+                    "jellyfin_starting", "jellyfin_unreachable", "jellyfin_timeout", "jellyfin_error",
+                    "jellyfin_refused"})
 
 _places = threading.BoundedSemaphore(PLACES)
 #: The threads the fetches run in: their own few, never the server's shared pool (one per event loop; a test client
 #: starts a loop of its own).
 _limiters: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, anyio.CapacityLimiter] = weakref.WeakKeyDictionary()
 _state_lock = threading.Lock()
-#: Until when (``clock.monotonic``) Plex is left alone, and the code that said why; 0.0 while all is well.
-_quiet_until = 0.0
-_outage: str | None = None
+#: Per media server (None: every one), until when (``clock.monotonic``) it is left alone and the code that said why. A
+#: server in trouble keeps the covers of another one from nobody.
+_quiet: dict[int | None, tuple[float, str]] = {}
 
 
 class Unavailable(Exception):
-    """No cover now: Plex is in trouble or all places are taken. ``retry`` is the number of seconds to wait."""
+    """No cover now: the server is in trouble or all places are taken. ``retry`` is the number of seconds to wait."""
 
     def __init__(self, code: str, retry: int) -> None:
         super().__init__(code)
@@ -55,41 +58,42 @@ class Unavailable(Exception):
         self.retry = retry
 
 
-def quiet_for() -> int:
-    """Seconds left in which no cover asks Plex; 0 when covers may ask."""
-    left = _quiet_until - clock.monotonic()
+def _left(server: int | None) -> tuple[float, str]:
+    moment = clock.monotonic()
+    found = [(until - moment, code) for key, (until, code) in _quiet.items() if key is None or key == server]
+    return max(found, default=(0.0, ""))
+
+
+def quiet_for(server: int | None = None) -> int:
+    """Seconds left in which no cover asks the server; 0 when covers may ask."""
+    left, _code = _left(server)
     return int(left) + 1 if left > 0 else 0
 
 
-def plex_failed(code: str) -> None:
-    """Plex did not deliver a cover for a reason of its own: leave it alone for a while. One line in the log for the
-    outage, however many covers it touches."""
-    global _quiet_until, _outage
+def plex_failed(code: str, server: int | None = None, name: str = "Plex") -> None:
+    """The server (None: every one) did not deliver a cover for a reason of its own: leave it alone for a while. One
+    line in the log for the outage, however many covers it touches."""
     with _state_lock:
-        first = _outage is None
-        _quiet_until = clock.monotonic() + QUIET_SECONDS
-        _outage = code
+        first = server not in _quiet
+        _quiet[server] = (clock.monotonic() + QUIET_SECONDS, code)
     if first:
-        logger.warning("Plex does not deliver covers (%s); covers wait %d s before asking it again", code,
-                       QUIET_SECONDS)
+        logger.warning("%s does not deliver covers (%s); covers wait %d s before asking it again server=%s", name, code,
+                       QUIET_SECONDS, server if server is not None else "-")
 
 
-def plex_delivered() -> None:
-    global _quiet_until, _outage
+def plex_delivered(server: int | None = None, name: str = "Plex") -> None:
     with _state_lock:
-        was = _outage
-        _quiet_until = 0.0
-        _outage = None
+        was = _quiet.pop(server, None)
+        if server is not None:
+            _quiet.pop(None, None)
     if was is not None:
-        logger.info("Plex delivers covers again")
+        logger.info("%s delivers covers again", name)
 
 
 def reset() -> None:
-    """Forget an outage (a new Plex connection, the tests)."""
-    global _quiet_until, _outage
+    """Forget every outage (a new connection, the tests)."""
     with _state_lock:
-        _quiet_until = 0.0
-        _outage = None
+        _quiet.clear()
 
 
 def _limiter() -> anyio.CapacityLimiter:
@@ -100,13 +104,13 @@ def _limiter() -> anyio.CapacityLimiter:
     return found
 
 
-async def fetch[T](work: Callable[[], T]) -> T:
-    """Run ``work`` (a request to Plex for a cover) in one of the few places for covers. Waiting for a place happens
-    on the event loop and ends after ``WAIT_SECONDS``; while Plex is left alone nothing waits at all. Raises
-    ``Unavailable`` instead of waiting longer."""
-    left = quiet_for()
+async def fetch[T](work: Callable[[], T], server: int | None = None) -> T:
+    """Run ``work`` (a request to a media server for a cover) in one of the few places for covers. Waiting for a place
+    happens on the event loop and ends after ``WAIT_SECONDS``; while the server is left alone nothing waits at all.
+    Raises ``Unavailable`` instead of waiting longer."""
+    left = quiet_for(server)
     if left:
-        raise Unavailable(_outage or "plex_busy", left)
+        raise Unavailable(_left(server)[1] or "plex_busy", left)
     waited = 0.0
     while not _places.acquire(blocking=False):
         if waited >= WAIT_SECONDS:
@@ -115,9 +119,9 @@ async def fetch[T](work: Callable[[], T]) -> T:
         waited += 0.05
     try:
         # Asked again: an outage may have begun while this one waited.
-        left = quiet_for()
+        left = quiet_for(server)
         if left:
-            raise Unavailable(_outage or "plex_busy", left)
+            raise Unavailable(_left(server)[1] or "plex_busy", left)
         return await anyio.to_thread.run_sync(work, limiter=_limiter())
     finally:
         _places.release()

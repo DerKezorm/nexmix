@@ -275,3 +275,45 @@ describe('the editor', () => {
     expect(searchInput()!.placeholder).toBe('Title, artist, album …')
   })
 })
+
+describe('a playlist on a server without moods (Jellyfin)', () => {
+  const caps = { moods: false, sound: false, smart_playlists: false, duplicates: true, changes: 'poll', playlists: false }
+  beforeEach(() => {
+    const status = server.answers['GET /api/v1/catalog/status']
+    const local = { state: 'local', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } as const
+    server.answers = {
+      'GET /api/v1/catalog/status?server=2': status,
+      'GET /api/v1/catalog?server=2': CATALOG,
+      'GET /api/v1/playlists/7': playlist({ server: 2, plex: local }),
+      'GET /api/v1/servers': { servers: [{ id: 2, kind: 'jellyfin', name: 'Probe', active: true, library: 'Musik', ready: true, capabilities: caps, primary: true }] },
+    }
+  })
+
+  it('says there are no moods instead of an empty filter, and so does "fill by mood"', async () => {
+    await open()
+    await until(() => document.querySelector('[data-testid="no-moods"]'), 'the word instead of the filter')
+    expect(page.select('Stimmung')).toBeNull()
+    expect(page.select('Jahrzehnt')).toBeTruthy()
+    expect(plain(document.querySelector('[data-testid="no-moods"]')!.textContent)).toContain('Keine Stimmungen')
+    await page.click(page.button('Mit Stimmung füllen'))
+    expect(plain(document.querySelector('[data-testid="mood-none"]')!.textContent)).toBe('Jellyfin kennt keine Stimmungen. Genre und Jahrzehnt gehen.')
+    expect(document.querySelector('[data-testid="mood-groups"]')).toBeNull()
+    expect(server.changes()).toEqual([])
+  })
+
+  it('names what the suggestions come from without moods', async () => {
+    await open()
+    await until(() => document.querySelector('[data-testid="suggestions"] .suggest-timing'), 'the foot of the suggestions')
+    expect(plain(document.querySelector('[data-testid="suggestions"] .suggest-timing')!.textContent)).toContain('aus Genre, Jahrzehnt und Beliebtheit')
+  })
+
+  it('says it lives in nexmix only, and deleting does not speak of Plex', async () => {
+    await open()
+    expect(plain(document.querySelector('[data-testid="sync-state"]')!.textContent)).toBe('Nur in nexmix. In Jellyfin legt nexmix Playlisten noch nicht an.')
+    await page.click(page.button('Löschen'))
+    expect(plain(page.dialog!.textContent)).not.toContain('Plex')
+    expect(plain(page.dialog!.textContent)).toContain('liegt dann 30 Tage im Papierkorb')
+    await page.inDialog('Abbrechen')
+    expect(server.changes()).toEqual([])
+  })
+})

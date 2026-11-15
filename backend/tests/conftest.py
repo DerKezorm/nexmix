@@ -47,6 +47,8 @@ from app.services import (  # noqa: E402
     catalog_view,
     covers,
     guests,
+    jellyfin,
+    jellyfin_link,
     jobs,
     notices,
     oidc_store,
@@ -103,6 +105,7 @@ def clean_db(schema: None) -> Iterator[None]:
     push.forget()
     passkeys.forget()
     plex_link.forget()
+    jellyfin_link.forget()
     server_sync.forget()
     catalog.forget()
     covers.forget_all()
@@ -215,6 +218,25 @@ def fake_plex(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setattr(plex, "ASYNC_TRANSPORT", transport)
     monkeypatch.setattr(plextv, "TRANSPORT", transport)
     monkeypatch.setattr(plex, "resolver", fake_resolver)
+    return fake
+
+
+@pytest.fixture
+def fake_jellyfin(monkeypatch: pytest.MonkeyPatch) -> object:
+    """The stand-in Jellyfin (``fakejellyfin``) under the real client: every request of nexmix to Jellyfin goes to it,
+    nothing to the network. Waiting for a server that starts is counted, not waited (``fake.waits``)."""
+    import httpx
+
+    from .fakejellyfin import FakeJellyfin
+
+    fake = FakeJellyfin()
+    transport = httpx.MockTransport(fake.handle)
+    monkeypatch.setattr(jellyfin, "TRANSPORT", transport)
+    monkeypatch.setattr(jellyfin, "ASYNC_TRANSPORT", transport)
+    monkeypatch.setattr(plex, "resolver", fake_resolver)
+    waits: list[float] = []
+    monkeypatch.setattr(jellyfin, "pause", waits.append)
+    fake.waits = waits  # type: ignore[attr-defined]
     return fake
 
 

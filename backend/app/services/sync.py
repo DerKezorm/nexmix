@@ -123,6 +123,8 @@ VIA_NAMES = {"plex": PLEX_NAME}
 SETTLE_ALL, SETTLE_SINCE = "all", "since"
 
 SYNCED, PENDING, WAITING, ERROR = "synced", "pending", "waiting", "error"
+#: The playlist lives in nexmix only: its source server takes no playlists from nexmix.
+LOCAL = "local"
 
 
 class Stale(Exception):
@@ -198,7 +200,7 @@ def mark(db: Session, playlist_id: int, *, at_once: bool = False) -> None:
     now = clock.now()
     moment = now if at_once else now + GATHER
     source = media.source_of(db, playlist_id)
-    if source is None:
+    if source is None or not keeps_playlists(media.get(db, source)):
         return
     row = copy_of(db, playlist_id, source)
     if row is None:
@@ -242,8 +244,11 @@ def moved(db: Session, playlist_ids: Sequence[int], server_id: int, *, settle: s
     before is taken up again only when the server still lists it, ``resume``), and its entries are found there first
     (``settle``). In the caller's transaction."""
     now = clock.now()
+    keeps = keeps_playlists(media.get(db, server_id))
     for playlist_id in playlist_ids:
         db.execute(update(Playlist).where(Playlist.id == playlist_id).values(source_server_id=server_id))
+        if not keeps:
+            continue
         row = copy_of(db, playlist_id, server_id)
         if row is None:
             db.add(ServerPlaylist(playlist_id=playlist_id, server_id=server_id, state=PENDING, due_at=now,
@@ -264,15 +269,25 @@ def _usable(server: MediaServer | None) -> bool:
     return server is not None and bool(server.active) and bool(server.section_key)
 
 
+def keeps_playlists(server: MediaServer | None) -> bool:
+    """Whether nexmix keeps its playlists on the server (not yet on Jellyfin: there they live in nexmix only)."""
+    return server is not None and sources.capabilities(server.kind).playlists
+
+
 def view(db: Session, playlist_id: int, row: ServerPlaylist | None = None) -> dict[str, Any]:
-    """How the copy on the source server stands, for the interface: ``off`` without a server, else ``synced``,
+    """How the copy on the source server stands, for the interface: ``off`` without a server, ``local`` when the
+    server takes no playlists from nexmix (the playlist lives in nexmix only), else ``synced``,
     ``pending``, ``waiting`` (server not reached) or ``error`` with its code; whether it is a smart playlist and how
     many entries it has; the note of an order sorted on the server and in nexmix at the same time."""
     source = media.source_of(db, playlist_id)
     row = copy_of(db, playlist_id, source) if row is None else row
     state = row.state if row is not None else PENDING
-    if not _usable(media.get(db, source)):
+    server = media.get(db, source)
+    if not _usable(server):
         state = "off"
+    elif not keeps_playlists(server):
+        # The playlist lives in nexmix only: its server takes no playlists from nexmix (yet).
+        state, row = LOCAL, None
     note = row.note if row is not None and isinstance(row.note, dict) else None
     return {
         "state": state,
@@ -411,7 +426,7 @@ def tick(db: Session, now: datetime | None = None) -> int:
         homeless = list(db.scalars(select(Playlist.id).where(Playlist.source_server_id.is_(None))))
         if homeless:
             moved(db, homeless, first.id, settle=SETTLE_SINCE)
-    ready = media.ready(db)
+    ready = [row for row in media.ready(db) if keeps_playlists(row)]
     if not ready:
         db.commit()
         return 0

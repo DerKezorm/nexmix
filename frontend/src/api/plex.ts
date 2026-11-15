@@ -8,7 +8,7 @@ export type PlexLibrary = { key: string; title: string }
 
 export type PlexState =
   | { connected: false }
-  | { connected: true; via: 'plextv' | 'manual'; server_name: string; owned: boolean; library: PlexLibrary | null; connected_at: string }
+  | { connected: true; via: 'plextv' | 'manual'; server?: number; server_name: string; owned: boolean; library: PlexLibrary | null; connected_at: string }
 
 export type PlexServerChoice = { index: number; name: string; owned: boolean; libraries: PlexLibrary[] }
 
@@ -72,10 +72,14 @@ export const plexApi = {
   begin: () => api<PinStart>('/api/v1/plex/pin', { method: 'POST' }),
   poll: (id: string) => api<PinState>(`/api/v1/plex/pin/${encodeURIComponent(id)}`),
   cancel: (id: string) => api<void>(`/api/v1/plex/pin/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  connectChosen: (pinId: string, server: number) => api<PlexState & { libraries: PlexLibrary[] }>('/api/v1/plex/connect', { method: 'POST', body: { pin_id: pinId, server } }),
-  connectByHand: (url: string, token: string) => api<PlexState & { libraries: PlexLibrary[] }>('/api/v1/plex/connect', { method: 'POST', body: { url, token } }),
-  libraries: () => api<{ libraries: PlexLibrary[] }>('/api/v1/plex/libraries'),
-  chooseLibrary: (key: string) => api<PlexState>('/api/v1/plex/library', { method: 'PUT', body: { key } }),
+  /** `alongside`: a server more beside the ones connected ("add a server"); its number comes back as `added`. */
+  connectChosen: (pinId: string, server: number, alongside = false) =>
+    api<PlexState & { libraries: PlexLibrary[]; added?: number }>('/api/v1/plex/connect', { method: 'POST', body: alongside ? { pin_id: pinId, server, alongside } : { pin_id: pinId, server } }),
+  connectByHand: (url: string, token: string, alongside = false) =>
+    api<PlexState & { libraries: PlexLibrary[]; added?: number }>('/api/v1/plex/connect', { method: 'POST', body: alongside ? { url, token, alongside } : { url, token } }),
+  /** `server`: a Plex server connected beside the one of the Plex card. */
+  libraries: (server?: number) => api<{ libraries: PlexLibrary[] }>('/api/v1/plex/libraries', { query: server ? { server } : undefined }),
+  chooseLibrary: (key: string, server?: number) => api<PlexState>('/api/v1/plex/library', { method: 'PUT', body: { key }, query: server ? { server } : undefined }),
   disconnect: () => api<void>('/api/v1/plex', { method: 'DELETE' }),
   playlists: () => api<PlaylistSync>('/api/v1/plex/playlists'),
   syncPlaylists: () => api<PlaylistSync>('/api/v1/plex/playlists/sync', { method: 'POST' }),
@@ -84,7 +88,7 @@ export const plexApi = {
 export const catalogApi = {
   /** `server`: the catalogue of that media server (a playlist's); none: the first one connected. */
   status: (server?: number | null) => api<CatalogStatus>('/api/v1/catalog/status', { query: server ? { server } : undefined }),
-  sync: () => api<{ started: boolean }>('/api/v1/catalog/sync', { method: 'POST' }),
+  sync: (server?: number | null) => api<{ started: boolean }>('/api/v1/catalog/sync', { method: 'POST', query: server ? { server } : undefined }),
   cover: (album: number, size: 80 | 200 | 400 = 200) => `/api/v1/catalog/cover/${album}?s=${size}`,
 }
 

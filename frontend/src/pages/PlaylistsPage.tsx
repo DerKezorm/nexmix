@@ -14,6 +14,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { authApi } from '../api/client'
 import { playlistsApi, type Card } from '../api/playlists'
+import { Dialog } from '../components/Dialog'
 import { Mosaic } from '../components/Mosaic'
 import { PageHead } from '../components/PageHead'
 import { People } from '../components/People'
@@ -24,6 +25,7 @@ import { shortDate } from '../lib/dates'
 import { errorText } from '../lib/errors'
 import { length } from '../lib/music'
 import { iso } from '../lib/say'
+import { kindName, useServers } from '../lib/servers'
 import { useAuth } from '../state/auth'
 
 /** How often the open page of the playlists looks for changes of others. */
@@ -224,6 +226,10 @@ export function PlaylistsPage() {
   const [showSmart, setShowSmart] = useState<boolean>(Boolean(me?.profile?.show_smart_playlists))
   const making = useRef(false)
   const [busy, setBusy] = useState(false)
+  // With more than one server ready, a new playlist asks where its tracks come from (the first connected first).
+  const servers = useServers()
+  const choices = (servers ?? []).filter((one) => one.active && one.ready)
+  const [choosing, setChoosing] = useState<number | null>(null)
   const operator = me?.role === 'operator'
   const ready = Boolean(status?.ready)
   const reload = useCallback(async () => {
@@ -255,12 +261,16 @@ export function PlaylistsPage() {
     }
   }, [ready, reload])
   // One click, one playlist: a second click while the first is on its way does nothing.
-  const make = async () => {
+  const make = async (server?: number) => {
     if (making.current) return
+    if (server === undefined && choices.length > 1) {
+      setChoosing((choices.find((one) => one.primary) ?? choices[0]).id)
+      return
+    }
     making.current = true
     setBusy(true)
     try {
-      const made = await playlistsApi.create(t('playlists.newName'))
+      const made = await playlistsApi.create(t('playlists.newName'), server)
       navigate(`/playlists/${made.id}`, { state: { fresh: true } })
     } catch (error) {
       setProblem(errorText(codeOf(error)))
@@ -385,6 +395,39 @@ export function PlaylistsPage() {
         )}
       </PageHead>
       {body}
+      {choosing !== null && (
+        <Dialog title={t('playlists.chooseServer')} sub={t('playlists.chooseServerText')} onClose={() => setChoosing(null)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const chosen = choosing
+              setChoosing(null)
+              void make(chosen)
+            }}
+          >
+            <div className="space-y-2" role="radiogroup" aria-label={t('playlists.chooseServer')} data-testid="server-choice">
+              {choices.map((one) => (
+                <label key={one.id} className="pick cursor-pointer">
+                  <input type="radio" name="server" value={one.id} checked={choosing === one.id} onChange={() => setChoosing(one.id)} />
+                  <span className="grow">
+                    <b>{t('playlists.serverOption', { kind: kindName(one.kind), name: iso(one.name) })}</b>
+                    {one.library && <small>{iso(one.library)}</small>}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="dlg-foot">
+              <span className="grow" />
+              <button type="button" className="btn" onClick={() => setChoosing(null)}>
+                {t('common.cancel')}
+              </button>
+              <button type="submit" className="btn primary" data-primary disabled={busy}>
+                {t('playlists.make')}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
     </div>
   )
 }

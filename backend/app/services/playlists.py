@@ -455,15 +455,21 @@ def clean_name(name: Any) -> str:
     return cleaned
 
 
-def create(db: Session, account: Account, name: str) -> Playlist:
-    """A new playlist of the account. It goes in as the first write of its transaction (SQLite's write lock), and
-    only then are the account's playlists counted: two at once never pass ``MAX_PLAYLISTS`` together."""
+def create(db: Session, account: Account, name: str, server: int | None = None) -> Playlist:
+    """A new playlist of the account, taking its tracks from ``server`` (a connected media server; None: the first one
+    connected). It goes in as the first write of its transaction (SQLite's write lock), and only then are the
+    account's playlists counted: two at once never pass ``MAX_PLAYLISTS`` together."""
     now = clock.now()
     cleaned = clean_name(name)
     db.rollback()
-    first = media.primary(db)
+    if server is not None:
+        chosen = media.get(db, server)
+        if chosen is None or not chosen.active:
+            raise error("invalid_server", "No such media server is connected.", 422, fields=["server"])
+    else:
+        chosen = media.primary(db)
     playlist = Playlist(owner_id=account.id, name=cleaned, version=1, created_at=now, updated_at=now,
-                        source_server_id=first.id if first is not None else None)
+                        source_server_id=chosen.id if chosen is not None else None)
     db.add(playlist)
     db.flush()
     held = int(db.scalar(select(func.count()).select_from(Playlist)

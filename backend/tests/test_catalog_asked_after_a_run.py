@@ -45,3 +45,21 @@ def test_asked_while_a_run_reads_plex_starts_nothing(client: TestClient, operato
     assert client.post("/api/v1/catalog/sync").json() == {"started": False}
     with SessionLocal() as db:
         assert db.scalar(select(Job.id).where(Job.kind == catalog.FULL, Job.state == "queued")) is None
+
+
+def test_a_job_taken_whose_run_has_not_begun_still_says_it_waits(client: TestClient, operator: Account,
+                                                                 fake_plex: FakePlex) -> None:
+    """The lane took the job, the run has no row yet: a page that asked in that moment keeps asking."""
+    connect(client, fake_plex)
+    server = client.get("/api/v1/catalog/status").json()["server"]
+    with SessionLocal() as db:
+        db.add(Job(kind=catalog.FULL, ref=server, payload={}, state="running", created_at=clock.now(),
+                   started_at=clock.now()))
+        db.commit()
+    assert client.get("/api/v1/catalog/status").json()["queued"] == "full"
+    # Its run began (and ended): done, while it only prepares the search.
+    with SessionLocal() as db:
+        db.add(SyncRun(kind="full", reason="manual", state="done", serial=1, generation=2, started_at=clock.now(),
+                       server_id=server))
+        db.commit()
+    assert client.get("/api/v1/catalog/status").json()["queued"] is None

@@ -35,7 +35,8 @@ type Flow =
 
 type Step = { label: string; state: 'done' | 'now' | 'todo' }
 
-function Steps({ steps }: { steps: Step[] }) {
+/** The steps of connecting a server, each with its tick (the Plex card and the Jellyfin card). */
+export function Steps({ steps }: { steps: Step[] }) {
   return (
     <div className="steps" data-testid="plex-steps">
       {steps.map((step, index) => (
@@ -76,11 +77,17 @@ function when(moment: string | null, language: string): string {
   }
 }
 
-export function PlexCard() {
+/** `alongside`: connecting another Plex server beside the first one ("add a server"); `onDone` when it is there (or
+ * given up). Without it, the card of the first Plex server. */
+export function PlexCard({ alongside = false, onDone }: { alongside?: boolean; onDone?: () => void } = {}) {
   const { t, i18n } = useTranslation()
-  const [plex, setPlex] = useState<PlexState | null>(null)
-  const { status, refresh } = useCatalogStatus()
+  const [plex, setPlex] = useState<PlexState | null>(alongside ? { connected: false } : null)
+  // The catalogue of this card's own server (another one may be the first connected). Asked at once, for the first
+  // one connected (mostly the same), and again for its own as soon as the card knows it.
+  const { status, refresh } = useCatalogStatus(plex?.connected ? (plex.server ?? null) : null)
   const [flow, setFlow] = useState<Flow>({ stage: 'idle' })
+  /** The server connected beside the first one, while its library is chosen. */
+  const [added, setAdded] = useState<number | null>(null)
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const action = useAction()
@@ -88,12 +95,13 @@ export function PlexCard() {
   const opened = useRef<Window | null>(null)
 
   const load = useCallback(async () => {
+    if (alongside) return
     try {
       setPlex(await plexApi.state())
     } catch {
       setPlex({ connected: false })
     }
-  }, [])
+  }, [alongside])
   useEffect(() => {
     void load()
   }, [load])
@@ -137,7 +145,15 @@ export function PlexCard() {
       }
     })
 
-  const afterConnect = async (answer: PlexState & { libraries: PlexLibrary[] }) => {
+  const afterConnect = async (answer: PlexState & { libraries: PlexLibrary[]; added?: number }) => {
+    if (alongside) {
+      // More than one library: chosen here; else it is there already.
+      if (answer.libraries.length > 1 && answer.added) {
+        setAdded(answer.added)
+        setFlow({ stage: 'libraries', libraries: answer.libraries })
+      } else onDone?.()
+      return
+    }
     setPlex(answer)
     if (answer.connected && !answer.library) setFlow({ stage: 'libraries', libraries: answer.libraries })
     else setFlow({ stage: 'idle' })
@@ -147,12 +163,12 @@ export function PlexCard() {
   const chooseServer = (index: number) =>
     void action.run(async () => {
       if (flow.stage !== 'servers') return
-      await afterConnect(await plexApi.connectChosen(flow.pinId, index))
+      await afterConnect(await plexApi.connectChosen(flow.pinId, index, alongside))
     })
 
   const connectByHand = () =>
     void action.run(async () => {
-      await afterConnect(await plexApi.connectByHand(url.trim(), token.trim()))
+      await afterConnect(await plexApi.connectByHand(url.trim(), token.trim(), alongside))
       setToken('')
     })
 
@@ -166,6 +182,13 @@ export function PlexCard() {
   const tracks = status?.counts.tracks ?? 0
 
   const chooseLibrary = (choice: PlexLibrary) => {
+    if (alongside) {
+      void action.run(async () => {
+        await plexApi.chooseLibrary(choice.key, added ?? undefined)
+        onDone?.()
+      })
+      return
+    }
     const go = async () => {
       setPlex(await plexApi.chooseLibrary(choice.key))
       setFlow({ stage: 'idle' })
@@ -198,7 +221,7 @@ export function PlexCard() {
 
   const syncNow = () =>
     void action.run(async () => {
-      await catalogApi.sync()
+      await catalogApi.sync(plex?.connected ? plex.server : undefined)
       await refresh()
     }, t('plex.syncStarted'))
 
@@ -217,10 +240,10 @@ export function PlexCard() {
       state: library ? 'done' : flow.stage === 'libraries' ? 'now' : 'todo',
     },
   ]
-  const text = connected ? (plex.via === 'manual' ? t('plex.textByHand') : t('plex.textConnected')) : t('plex.textNew')
+  const text = alongside ? t('servers.plexAddText') : connected ? (plex.via === 'manual' ? t('plex.textByHand') : t('plex.textConnected')) : t('plex.textNew')
 
   return (
-    <Card id="plex" title={t('plex.title')} text={text}>
+    <Card id={alongside ? 'plex-new' : 'plex'} title={alongside ? t('servers.plexAdd') : t('plex.title')} text={text}>
       <Steps steps={steps} />
       {!connected && flow.stage === 'idle' && (
         <div className="flex flex-wrap gap-2 pt-1">
@@ -230,6 +253,11 @@ export function PlexCard() {
           <Button ghost onClick={() => setFlow({ stage: 'byHand' })}>
             {t('plex.byHand')}
           </Button>
+          {alongside && (
+            <Button ghost onClick={() => onDone?.()}>
+              {t('common.cancel')}
+            </Button>
+          )}
         </div>
       )}
       {flow.stage === 'pin' && (

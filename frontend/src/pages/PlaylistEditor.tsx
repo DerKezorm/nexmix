@@ -23,6 +23,7 @@ import { useConfirm } from '../components/useConfirm'
 import type { TrackHit } from '../lib/catalogSearch'
 import { useCatalogSource } from '../lib/catalogSource'
 import { useCatalogStatus } from '../lib/catalogStatus'
+import { kindName, useServers } from '../lib/servers'
 import { errorText } from '../lib/errors'
 import { length, moodName } from '../lib/music'
 import { editorTiming as timing } from '../lib/editorTiming'
@@ -53,6 +54,10 @@ export function PlaylistEditor() {
   // The catalogue of the playlist's own server: asked once the playlist says which.
   const { status } = useCatalogStatus(playlist?.server, playlist === null)
   const catalog = useCatalogSource(status?.ready ? (status.search ?? 'browser') : null, playlist?.server)
+  // What the playlist's server can do: a server without moods gets a word instead of an empty filter.
+  const servers = useServers()
+  const source = servers?.find((one) => one.id === playlist?.server) ?? null
+  const noMoods = source && !source.capabilities.moods ? t('editor.noMoods', { kind: kindName(source.kind) }) : null
   const [missing, setMissing] = useState<string | null>(null)
   const [fresh, setFresh] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<Toast | null>(null)
@@ -126,7 +131,7 @@ export function PlaylistEditor() {
   /** A change made here or by somebody else goes to Plex in a moment: the head says so until the sync answers. */
   const pending = useCallback(() => {
     const now = current.current
-    if (!now?.plex || now.plex.state === 'off' || now.plex.smart) return
+    if (!now?.plex || now.plex.state === 'off' || now.plex.state === 'local' || now.plex.smart) return
     show({ ...now, plex: { ...now.plex, state: 'pending', error: null } })
   }, [show])
 
@@ -388,7 +393,7 @@ export function PlaylistEditor() {
 
   return (
     <div className="editor" data-testid="editor">
-      <SearchColumn source={catalog.source} facets={catalog.facets} version={catalog.version} failed={catalog.failed} inList={inList} canEdit={canEdit} onAdd={(hits) => void add(hits)} onAddAll={addAll} />
+      <SearchColumn noMoods={noMoods} source={catalog.source} facets={catalog.facets} version={catalog.version} failed={catalog.failed} inList={inList} canEdit={canEdit} onAdd={(hits) => void add(hits)} onAddAll={addAll} />
       <section className="col list" aria-label={t('editor.listArea')}>
         <div className="plhead" data-testid="playlist-head">
           <Mosaic covers={playlist.covers} size={80} />
@@ -479,7 +484,7 @@ export function PlaylistEditor() {
                     onClick={() =>
                       ask({
                         title: t('editor.deleteTitle'),
-                        text: playlist.plex && playlist.plex.state !== 'off' ? t('sync.deleteText', { name: iso(playlist.name), days: 30 }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 }),
+                        text: playlist.plex && playlist.plex.state !== 'off' && playlist.plex.state !== 'local' ? t('sync.deleteText', { name: iso(playlist.name), days: 30 }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 }),
                         confirm: t('editor.deleteConfirm'),
                         danger: false,
                         run: async () => {
@@ -555,8 +560,9 @@ export function PlaylistEditor() {
         onAdd={(hits) => void add(hits)}
         onMood={() => setFilling(true)}
         onToast={setToast}
+        noMoods={noMoods !== null}
       />
-      {filling && <MoodDialog source={catalog.source} facets={catalog.facets} playlistId={playlistId} songs={inList.songs} onTake={(hits) => void add(hits)} onClose={() => setFilling(false)} />}
+      {filling && <MoodDialog noMoods={noMoods} source={catalog.source} facets={catalog.facets} playlistId={playlistId} songs={inList.songs} onTake={(hits) => void add(hits)} onClose={() => setFilling(false)} />}
       {inviting && (
         <InviteDialog
           playlistId={playlistId}

@@ -68,6 +68,11 @@ class NameIn(BaseModel):
     name: str = Field(min_length=1, max_length=400)
 
 
+class CreateIn(NameIn):
+    #: The media server it takes its tracks from (``GET /api/v1/servers``); none: the first one connected.
+    server: Annotated[int, Field(ge=1, le=10**9)] | None = None
+
+
 class TracksIn(BaseModel):
     tracks: list[Annotated[int, Field(ge=1, le=10**12)]] = Field(min_length=1, max_length=1000)
 
@@ -103,9 +108,10 @@ def list_playlists(reader: Reader, db: DbSession, trash: bool = Query(False)) ->
             "show_smart_playlists": profile_of(reader.profile)["show_smart_playlists"]}
 
 
-@router.post("", status_code=201, summary="Make a playlist (empty, owned by the account)")
-def create_playlist(payload: NameIn, account: Account, db: DbSession) -> dict[str, Any]:
-    playlist = playlists.create(db, account, payload.name)
+@router.post("", status_code=201,
+             summary="Make a playlist (empty, owned by the account), taking its tracks from a media server")
+def create_playlist(payload: CreateIn, account: Account, db: DbSession) -> dict[str, Any]:
+    playlist = playlists.create(db, account, payload.name, payload.server)
     return playlists.detail(db, playlist, playlists.OWNER)
 
 

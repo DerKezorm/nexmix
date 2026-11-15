@@ -41,7 +41,10 @@ export function SuggestColumn({
   onAdd,
   onMood,
   onToast,
+  noMoods = false,
 }: {
+  /** The playlist's server has no moods and no styles: the foot names what the suggestions come from. */
+  noMoods?: boolean
   source: CatalogSource | null
   /** The catalogue's filters are there (and so the catalogue). */
   ready: boolean
@@ -221,7 +224,7 @@ export function SuggestColumn({
           </div>
         ))}
         <div className="timing suggest-timing">
-          <span>{voices.sound.length ? t('suggest.basisSound') : t('suggest.basis')}</span>
+          <span>{voices.sound.length ? t('suggest.basisSound') : noMoods ? t('suggest.basisNoMoods') : t('suggest.basis')}</span>
           <span>
             {t('suggest.took')} <b>{Math.round(found.ms)} ms</b>
           </span>

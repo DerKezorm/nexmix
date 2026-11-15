@@ -1,11 +1,14 @@
-"""Listening in: about thirty seconds of a track, from a good third of it, converted by Plex and passed through nexmix.
+"""Listening in: about thirty seconds of a track, from a good third of it, converted by its media server and passed
+through nexmix.
 
-**The way to Plex.** Only a track of a live catalogue, by its number; the track's server builds the request itself
-(its connector, ``sources.PlexSource.sound_start``: Plex's converter, ``universal/start.mp3`` from 35 % of the track at
-192 kbit/s) with the token in a header. Nothing the browser sends reaches Plex but the server's key of that track. The
-answer is passed on as it comes and cut at ``MAX_BYTES`` (about forty seconds) or ``MAX_SECONDS``; then, and whenever
-the listener goes away early (the browser stops, another preview of the same listener begins), Plex is told to end the
-session (``universal/stop``).
+**The way to the server.** Only a track of a live catalogue, by its number; the request is built for the track's
+server (Plex: its converter, ``universal/start.mp3`` from 35 % of the track at 192 kbit/s; Jellyfin: ``stream.mp3``
+from 35 % at 192 kbit/s, which always converts, ``jellyfin.sound_request``) with the token in a header. Jellyfin
+serves sound to whoever knows a track's id: neither the id nor the address ever goes to a browser. Nothing the
+browser sends reaches the server but the server's key of that track. The answer is passed on as it comes and cut at
+``MAX_BYTES`` (about forty seconds) or ``MAX_SECONDS``; then, and whenever the listener goes away early (the browser
+stops, another preview of the same listener begins), Plex is told to end the session (``universal/stop``); Jellyfin's
+converter ends with the connection.
 
 **Who may.** ``may_listen`` says whether a request may hear a track and who listens (``Listener``): from the start an
 account signed in (a session or a device). It is a name in this module, looked up at each request, so that another way
@@ -53,8 +56,8 @@ from starlette.types import Receive, Scope, Send
 
 from .. import clock
 from ..errors import error
-from ..models import CatalogTrack
-from . import plex, plex_link, settings_service
+from ..models import SERVER_JELLYFIN, SERVER_PLEX, CatalogTrack
+from . import jellyfin, plex, plex_link, settings_service, sources
 from .sources import PlexSource
 
 logger = logging.getLogger("nexmix.preview")
@@ -315,6 +318,8 @@ class Plan:
     offset: int
     #: The track's key on its server.
     key: str = ""
+    #: The kind of its server (``plex``, ``jellyfin``).
+    kind: str = SERVER_PLEX
 
 
 def allowed(db: Session) -> bool:
@@ -351,33 +356,40 @@ def prepare(request: Request, track_id: int) -> Plan:
         if track is None or row is None or track_id not in keys:
             raise error("not_found", "Not found.", 404)
         try:
-            token = plex_link.token_of(row)
+            token, client_id = sources.secret_of(db, row)
         except plex_link.Unreadable as exc:
-            raise error("token_unreadable", "Connect Plex again.", 409) from exc
-        client_id = plex_link.client_id(db)
-        url = row.url
+            raise error("token_unreadable", "Connect the media server again.", 409) from exc
+        url, kind = row.url, row.kind
         seconds = max(0, int((track.duration or 0) / 1000))
-    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE), keys[track_id])
+    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE), keys[track_id], kind)
 
 
-def _status_error(status: int) -> HTTPException:
+def _named(kind: str, code: str) -> str:
+    """A code of Plex as the server of the kind says it (``plex_refused`` is ``jellyfin_refused`` for Jellyfin)."""
+    if kind == SERVER_JELLYFIN and code.startswith("plex_"):
+        found = "jellyfin_" + code[len("plex_"):]
+        return jellyfin.STARTING if found == "jellyfin_busy" else found
+    return code
+
+
+def _status_error(status: int, kind: str = SERVER_PLEX) -> HTTPException:
     if status in (401, 403):
-        return error("plex_refused", "Plex did not play along.", 502)
+        return error(_named(kind, "plex_refused"), "The media server did not play along.", 502)
     if status == 404:
         return error("not_found", "Not found.", 404)
     if status == 503:
-        return error("plex_busy", "Plex is busy. Try again in a moment.", 503)
-    return error("plex_error", "Plex did not play along.", 502)
+        return error(_named(kind, "plex_busy"), "The media server is busy. Try again in a moment.", 503)
+    return error(_named(kind, "plex_error"), "The media server did not play along.", 502)
 
 
-def _status_kind(status: int) -> str:
+def _status_kind(status: int, kind: str = SERVER_PLEX) -> str:
     if status in (401, 403):
-        return "plex_refused"
+        return _named(kind, "plex_refused")
     if status == 404:
-        return "plex_not_found"
+        return _named(kind, "plex_not_found")
     if status == 503:
-        return "plex_busy"
-    return "plex_error"
+        return _named(kind, "plex_busy")
+    return _named(kind, "plex_error")
 
 
 def _passes_by_itself(status: int) -> bool:
@@ -421,11 +433,15 @@ class Refusal:
 def _log_refusal(plan: Plan, refusal: Refusal, attempt: int | str, began: float) -> None:
     """``attempt`` 1 or 2 before the sound, ``-`` once it was flowing."""
     took = max(0, int((clock.monotonic() - began) * 1000))
-    logger.warning("Plex refused a preview track=%s attempt=%s status=%s kind=%s ms=%s detail=%r", plan.track, attempt,
+    logger.warning("%s refused a preview track=%s attempt=%s status=%s kind=%s ms=%s detail=%r",
+                   "Jellyfin" if plan.kind == SERVER_JELLYFIN else "Plex", plan.track, attempt,
                    refusal.status if refusal.status is not None else "-", refusal.kind, took, refusal.detail)
 
 
 async def _stop(client: httpx.AsyncClient, plan: Plan, session: str) -> None:
+    if plan.kind == SERVER_JELLYFIN:
+        # Jellyfin's converter ends when the connection does (measured: no ffmpeg left 1.5 s later).
+        return
     try:
         url, headers, params = PlexSource.sound_stop(plan.url, plan.token, plan.client_id, session)
         await client.get(url, params=params, headers=headers, timeout=5.0)
@@ -461,14 +477,19 @@ async def _ask(client: httpx.AsyncClient, plan: Plan, session: str
     refusal has closed everything and told Plex the session is over."""
     upstream: httpx.Response | None = None
     try:
-        url, headers, params = PlexSource.sound_start(plan.url, plan.token, plan.client_id, plan.key, plan.offset,
-                                                      session, BITRATE)
+        if plan.kind == SERVER_JELLYFIN:
+            url, headers, params = jellyfin.sound_request(plan.url, plan.token, plan.client_id, plan.key,
+                                                          plan.offset, session, BITRATE)
+        else:
+            url, headers, params = PlexSource.sound_start(plan.url, plan.token, plan.client_id, plan.key,
+                                                          plan.offset, session, BITRATE)
         request = client.build_request("GET", url, headers=headers, params=params)
         upstream = await client.send(request, stream=True)
         if upstream.status_code != 200:
             said = (await _words(upstream)).decode("utf-8", "replace")
-            refusal = Refusal(_status_kind(upstream.status_code), upstream.status_code, clean_detail(said, plan.token),
-                              _passes_by_itself(upstream.status_code), _status_error(upstream.status_code))
+            refusal = Refusal(_status_kind(upstream.status_code, plan.kind), upstream.status_code,
+                              clean_detail(said, plan.token), _passes_by_itself(upstream.status_code),
+                              _status_error(upstream.status_code, plan.kind))
             await _close(client, plan, session, upstream)
             return refusal
         # The first piece of sound before the listener hears a 200: an answer without sound is a refusal too.
@@ -480,16 +501,16 @@ async def _ask(client: httpx.AsyncClient, plan: Plan, session: str
                 break
         if not first:
             await _close(client, plan, session, upstream)
-            return Refusal("plex_empty", 200, "", True, error("plex_error", "Plex did not play along.", 502))
+            return Refusal(_named(plan.kind, "plex_empty"), 200, "", True, _status_error(502, plan.kind))
         return upstream, stream, first
     except BaseException as exc:
         await _close(client, plan, session, upstream)
         if isinstance(exc, httpx.TimeoutException):
-            return Refusal("plex_timeout", None, type(exc).__name__, False,
-                           error("plex_timeout", "Plex did not answer in time.", 504))
+            return Refusal(_named(plan.kind, "plex_timeout"), None, type(exc).__name__, False,
+                           error(_named(plan.kind, "plex_timeout"), "The media server did not answer in time.", 504))
         if isinstance(exc, httpx.HTTPError):
-            return Refusal("plex_unreachable", None, type(exc).__name__, False,
-                           error("plex_unreachable", "Plex could not be reached.", 502))
+            return Refusal(_named(plan.kind, "plex_unreachable"), None, type(exc).__name__, False,
+                           error(_named(plan.kind, "plex_unreachable"), "The media server could not be reached.", 502))
         raise
 
 
@@ -518,7 +539,7 @@ async def start(plan: Plan, range_header: str | None = None,
         while True:
             attempt += 1
             session = secrets.token_hex(12)
-            client = plex.async_client(15.0)
+            client = jellyfin.async_client(15.0) if plan.kind == SERVER_JELLYFIN else plex.async_client(15.0)
             began = clock.monotonic()
             asked = await _ask(client, plan, session)
             if not isinstance(asked, Refusal):
@@ -623,8 +644,8 @@ class PreviewResponse(Response):
                     self.ended = self.ended or "left"
                 except httpx.HTTPError as exc:
                     self.ended = self.ended or "plex"
-                    _log_refusal(self.plan, Refusal("plex_broke", 200, type(exc).__name__, False,
-                                                    _status_error(502)), "-", self.started)
+                    _log_refusal(self.plan, Refusal(_named(self.plan.kind, "plex_broke"), 200, type(exc).__name__,
+                                                    False, _status_error(502, self.plan.kind)), "-", self.started)
                 self.ended = self.ended or "done"
                 group.cancel_scope.cancel()
             if self.ended in _WHOLE:
@@ -635,7 +656,8 @@ class PreviewResponse(Response):
                 if whole:
                     answer = part_response(bytes(whole), self.part)
                 else:
-                    empty = Refusal("plex_empty", 200, "", False, _status_error(502))
+                    empty = Refusal(_named(self.plan.kind, "plex_empty"), 200, "", False,
+                                    _status_error(502, self.plan.kind))
                     _log_refusal(self.plan, empty, "-", self.started)
                     answer = Response(b"", status_code=502, headers={"Cache-Control": "no-store"})
                 await answer(scope, receive, send)

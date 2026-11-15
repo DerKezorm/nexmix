@@ -318,3 +318,51 @@ describe('what the overview leaves out', () => {
     expect(document.querySelector('.view')!.textContent).not.toMatch(/[–—]/)
   })
 })
+
+describe('a new playlist with more than one media server', () => {
+  const caps = { moods: true, sound: true, smart_playlists: true, duplicates: false, changes: 'both', playlists: true }
+  const servers = [
+    { id: 1, kind: 'plex', name: 'Studio', active: true, library: 'Music', ready: true, capabilities: caps, primary: true },
+    { id: 2, kind: 'jellyfin', name: 'Probe', active: true, library: 'Musik', ready: true, capabilities: { ...caps, moods: false, playlists: false }, primary: false },
+  ]
+
+  beforeEach(() => {
+    server.answers['GET /api/v1/catalog/status'] = { ...BASE, ready: true, counts: { artists: 5, albums: 11, tracks: 52518, songs: 45457, moods: 288 } }
+    server.answers['GET /api/v1/servers'] = { servers }
+    server.answers['POST /api/v1/playlists'] = { id: 12 }
+  })
+
+  it('asks where the tracks come from, the first connected chosen, and makes nothing on cancel', async () => {
+    await page.show(<PlaylistsPage />)
+    await page.click(page.button('Neue Playlist'))
+    expect(page.dialog).toBeTruthy()
+    expect(plain(page.dialog!.textContent)).toContain('Woher sollen die Titel kommen?')
+    const options = [...page.dialog!.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+    expect(options.map((one) => [plain(one.parentElement!.textContent), one.checked])).toEqual([['Plex „Studio“Music', true], ['Jellyfin „Probe“Musik', false]])
+    await page.inDialog('Abbrechen')
+    expect(server.changes()).toEqual([])
+  })
+
+  it('makes the playlist on the server chosen', async () => {
+    await page.show(<PlaylistsPage />)
+    await page.click(page.button('Neue Playlist'))
+    await page.check(page.dialog!.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1])
+    await page.inDialog('Playlist anlegen')
+    await until(() => server.called('POST', '/api/v1/playlists'), 'the playlist made')
+    expect(server.called('POST', '/api/v1/playlists')!.body).toEqual({ name: 'Neue Playlist', server: 2 })
+  })
+
+  it('asks nothing with one server ready', async () => {
+    server.answers['GET /api/v1/servers'] = { servers: [servers[0], { ...servers[1], ready: false }] }
+    await page.show(<PlaylistsPage />)
+    await page.click(page.button('Neue Playlist'))
+    expect(page.dialog).toBeNull()
+    expect(server.called('POST', '/api/v1/playlists')!.body).toEqual({ name: 'Neue Playlist' })
+  })
+
+  it('marks a playlist that lives in nexmix only', async () => {
+    server.answers['GET /api/v1/playlists'] = { playlists: [card({ id: 7, name: 'Auf Jellyfin', server: 2, plex: { state: 'local', error: null, smart: false, total: null, synced_at: null, gone_in_plex: false, note: null } })], trash_days: 30 }
+    await page.show(<PlaylistsPage />)
+    expect(plain(document.querySelector('[data-testid="sync-mark"]')!.textContent)).toBe('Nur in nexmix')
+  })
+})

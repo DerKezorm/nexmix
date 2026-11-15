@@ -67,6 +67,21 @@
         "title": "AddIn",
         "type": "object"
       },
+      "Address": {
+        "properties": {
+          "url": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "Address",
+        "type": "object"
+      },
       "AddressIn": {
         "properties": {
           "confirm": {
@@ -173,6 +188,20 @@
         "title": "AnyKeyOut",
         "type": "object"
       },
+      "Choice": {
+        "properties": {
+          "handle": {
+            "pattern": "^[0-9a-f]{16}$",
+            "title": "Handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "Choice",
+        "type": "object"
+      },
       "CodeIn": {
         "properties": {
           "code": {
@@ -196,73 +225,6 @@
           "code"
         ],
         "title": "CodeIn",
-        "type": "object"
-      },
-      "Connect": {
-        "properties": {
-          "pin_id": {
-            "anyOf": [
-              {
-                "maxLength": 20,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pin Id"
-          },
-          "server": {
-            "anyOf": [
-              {
-                "maximum": 200.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Server"
-          },
-          "token": {
-            "anyOf": [
-              {
-                "maxLength": 300,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "maxLength": 300,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Url"
-          }
-        },
-        "title": "Connect",
-        "type": "object"
-      },
-      "CreateIn": {
-        "properties": {
-          "note": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Note",
-            "type": "string"
-          }
-        },
-        "title": "CreateIn",
         "type": "object"
       },
       "DeviceOut": {
@@ -1485,6 +1447,18 @@
         "title": "SetupIn",
         "type": "object"
       },
+      "app__routers__backups__CreateIn": {
+        "properties": {
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "title": "CreateIn",
+        "type": "object"
+      },
       "app__routers__backups__PasswordIn": {
         "properties": {
           "password": {
@@ -1694,6 +1668,48 @@
         "title": "InviteIn",
         "type": "object"
       },
+      "app__routers__jellyfin__Connect": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "quick": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quick"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "Connect",
+        "type": "object"
+      },
       "app__routers__oidc__PasswordIn": {
         "properties": {
           "password": {
@@ -1751,6 +1767,34 @@
           }
         },
         "title": "PasswordIn",
+        "type": "object"
+      },
+      "app__routers__playlists__CreateIn": {
+        "properties": {
+          "name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "server": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateIn",
         "type": "object"
       },
       "app__routers__playlists__EntriesIn": {
@@ -1839,6 +1883,66 @@
           "tracks"
         ],
         "title": "TracksIn",
+        "type": "object"
+      },
+      "app__routers__plex__Connect": {
+        "properties": {
+          "alongside": {
+            "default": false,
+            "title": "Alongside",
+            "type": "boolean"
+          },
+          "pin_id": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Id"
+          },
+          "server": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "Connect",
         "type": "object"
       },
       "app__routers__push__ConfirmIn": {
@@ -3601,7 +3705,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateIn"
+                "$ref": "#/components/schemas/app__routers__backups__CreateIn"
               }
             }
           },
@@ -5299,6 +5403,481 @@
         "summary": "Withdraw an invitation (operator)",
         "tags": [
           "invitations"
+        ]
+      }
+    },
+    "/api/v1/jellyfin": {
+      "get": {
+        "operationId": "jellyfin_servers_api_v1_jellyfin_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Jellyfin Servers Api V1 Jellyfin Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The connected Jellyfin servers",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/connect": {
+      "post": {
+        "operationId": "connect_api_v1_jellyfin_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__routers__jellyfin__Connect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Connect Api V1 Jellyfin Connect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Connect the Jellyfin server: after Quick Connect, or by address and API key",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/quick": {
+      "post": {
+        "operationId": "quick_begin_api_v1_jellyfin_quick_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Address"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Quick Begin Api V1 Jellyfin Quick Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Quick Connect at a Jellyfin server: a code to confirm in Jellyfin",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/quick/{quick_id}": {
+      "delete": {
+        "operationId": "quick_cancel_api_v1_jellyfin_quick__quick_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quick_id",
+            "required": true,
+            "schema": {
+              "title": "Quick Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Give up a Quick Connect: its secret is forgotten at once",
+        "tags": [
+          "jellyfin"
+        ]
+      },
+      "get": {
+        "operationId": "quick_state_api_v1_jellyfin_quick__quick_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quick_id",
+            "required": true,
+            "schema": {
+              "title": "Quick Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Quick State Api V1 Jellyfin Quick  Quick Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Has the code been confirmed in Jellyfin yet",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/{server_id}": {
+      "delete": {
+        "operationId": "disconnect_api_v1_jellyfin__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disconnect a Jellyfin server: its token and its catalogue go; Jellyfin itself stays as it is",
+        "tags": [
+          "jellyfin"
+        ]
+      },
+      "get": {
+        "operationId": "jellyfin_server_api_v1_jellyfin__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Jellyfin Server Api V1 Jellyfin  Server Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One connected Jellyfin server",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/{server_id}/choices": {
+      "get": {
+        "operationId": "choices_api_v1_jellyfin__server_id__choices_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choices Api V1 Jellyfin  Server Id  Choices Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The music libraries and the users that may be chosen",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/{server_id}/library": {
+      "put": {
+        "operationId": "choose_library_api_v1_jellyfin__server_id__library_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Choice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choose Library Api V1 Jellyfin  Server Id  Library Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pick the music library; its catalogue is fetched",
+        "tags": [
+          "jellyfin"
+        ]
+      }
+    },
+    "/api/v1/jellyfin/{server_id}/user": {
+      "put": {
+        "operationId": "choose_user_api_v1_jellyfin__server_id__user_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Choice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choose User Api V1 Jellyfin  Server Id  User Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pick the Jellyfin user the playlists will belong to",
+        "tags": [
+          "jellyfin"
         ]
       }
     },
@@ -7036,7 +7615,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__routers__playlists__NameIn"
+                "$ref": "#/components/schemas/app__routers__playlists__CreateIn"
               }
             }
           },
@@ -7071,7 +7650,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Make a playlist (empty, owned by the account)",
+        "summary": "Make a playlist (empty, owned by the account), taking its tracks from a media server",
         "tags": [
           "playlists"
         ]
@@ -8326,7 +8905,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Connect"
+                "$ref": "#/components/schemas/app__routers__plex__Connect"
               }
             }
           },
@@ -8370,6 +8949,28 @@
     "/api/v1/plex/libraries": {
       "get": {
         "operationId": "libraries_api_v1_plex_libraries_get",
+        "parameters": [
+          {
+            "description": "A Plex server connected beside the first one",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A Plex server connected beside the first one",
+              "title": "Server"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -8382,6 +8983,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -8398,6 +9009,28 @@
     "/api/v1/plex/library": {
       "put": {
         "operationId": "choose_library_api_v1_plex_library_put",
+        "parameters": [
+          {
+            "description": "A Plex server connected beside the first one",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A Plex server connected beside the first one",
+              "title": "Server"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -9063,6 +9696,48 @@
           }
         ],
         "summary": "The media servers: name, kind, connected or resting, ready, and what each can do",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server_id}": {
+      "delete": {
+        "operationId": "disconnect_api_v1_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disconnect a media server: its token and its catalogue go; the server itself stays as it is, and the playlists that take their tracks from it wait for it in nexmix",
         "tags": [
           "servers"
         ]

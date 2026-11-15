@@ -5,14 +5,15 @@ operator did not choose."""
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from ..deps import DbSession, OperatorAccount, session_of
 from ..errors import error
-from ..services import catalog, plex_link, sync
+from ..models import SERVER_PLEX, MediaServer
+from ..services import catalog, media, plex_link, sync
 from ..services.plex import PlexError, Section
 
 logger = logging.getLogger("nexmix.plex")
@@ -98,6 +99,9 @@ class Connect(BaseModel):
     #: By hand: the address and the token.
     url: str | None = Field(default=None, max_length=300)
     token: str | None = Field(default=None, max_length=300)
+    #: A server more, beside the ones connected ("add a server"): nothing moves to it. Else it takes the place of the
+    #: Plex server connected before, and the playlists move there.
+    alongside: bool = False
 
 
 @router.post("/connect", summary="Connect the server chosen after the sign-in, or one given by address and token")
@@ -115,31 +119,42 @@ def connect(body: Connect, request: Request, operator: OperatorAccount, db: DbSe
         raise failed(exc) from exc
     if not found.sections:
         raise error("no_music_library", "This server has no music library.", 409)
-    row = plex_link.store(db, found, via)
+    row = plex_link.store(db, found, via, alongside=body.alongside)
     db.commit()
     if body.pin_id:
         plex_link.finish(body.pin_id)
     if row.section_key:
         catalog.request_full(db, "first", row.id)
-    return {**_view(db), "libraries": [{"key": one.key, "title": one.title} for one in found.sections]}
+    return {**_view(db), "added": row.id, "libraries": [{"key": one.key, "title": one.title} for one in found.sections]}
 
 
-def _sections(db: DbSession) -> list[Section]:
-    row = plex_link.current(db)
+def _row(db: DbSession, server: int | None) -> MediaServer | None:
+    """The Plex server asked for: the one of the Plex card, or (``server``) one connected beside it."""
+    if server is None:
+        return plex_link.current(db)
+    row = media.get(db, server)
+    return row if row is not None and row.kind == SERVER_PLEX and row.active else None
+
+
+def _sections(db: DbSession, server: int | None = None) -> list[Section]:
+    row = _row(db, server)
     if row is None:
         raise error("no_plex", "Connect Plex first.", 409)
     try:
-        with plex_link.server_of(db, row, timeout=15.0) as server:
-            return server.music_sections()
+        with plex_link.server_of(db, row, timeout=15.0) as found:
+            return found.music_sections()
     except plex_link.Unreadable as exc:
         raise error("token_unreadable", "Connect Plex again.", 409) from exc
     except PlexError as exc:
         raise failed(exc) from exc
 
 
+ServerId = Annotated[int | None, Query(ge=1, le=10**9, description="A Plex server connected beside the first one")]
+
+
 @router.get("/libraries", summary="The music libraries of the connected server")
-def libraries(_operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
-    return {"libraries": [{"key": one.key, "title": one.title} for one in _sections(db)]}
+def libraries(_operator: OperatorAccount, db: DbSession, server: ServerId = None) -> dict[str, Any]:
+    return {"libraries": [{"key": one.key, "title": one.title} for one in _sections(db, server)]}
 
 
 class LibraryChoice(BaseModel):
@@ -147,11 +162,12 @@ class LibraryChoice(BaseModel):
 
 
 @router.put("/library", summary="Pick the music library; its catalogue is fetched")
-def choose_library(body: LibraryChoice, _operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
-    match = next((one for one in _sections(db) if one.key == body.key), None)
+def choose_library(body: LibraryChoice, _operator: OperatorAccount, db: DbSession,
+                   server: ServerId = None) -> dict[str, Any]:
+    match = next((one for one in _sections(db, server) if one.key == body.key), None)
     if match is None:
         raise error("not_found", "Not found.", 404)
-    row = plex_link.current(db)
+    row = _row(db, server)
     if row is None:
         raise error("no_plex", "Connect Plex first.", 409)
     if row.section_key != match.key:
@@ -172,10 +188,12 @@ def disconnect(_operator: OperatorAccount, db: DbSession) -> Response:
 
 @router.get("/playlists", summary="How the playlists stand in Plex: synced, waiting, failed, smart ones, the last look")
 def plex_playlists(_operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
-    return sync.overview(db)
+    row = plex_link.current(db)
+    return sync.overview(db, row.id if row is not None else -1)
 
 
 @router.post("/playlists/sync", summary="Sync every playlist with Plex now, and look for new ones there")
 def sync_playlists(_operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
     sync.request_all(db)
-    return sync.overview(db)
+    row = plex_link.current(db)
+    return sync.overview(db, row.id if row is not None else -1)

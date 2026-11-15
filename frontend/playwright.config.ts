@@ -1,8 +1,8 @@
 /**
- * End to end, headless: the sign-in through a provider (the sign-in tests of the shared module), Plex and its
- * catalogue. The built interface is served by the real backend, as in the container. Own data folder and own ports (the
- * backend on 28620, the stand-in sign-in provider on 28621, the stand-in Plex on 28622), so that a running development
- * server (8620, 5622) is never measured.
+ * End to end, headless: the sign-in through a provider (the sign-in tests of the shared module), Plex, Jellyfin and
+ * their catalogues. The built interface is served by the real backend, as in the container. Own data folder and own
+ * ports (the backend on 28620, the stand-in sign-in provider on 28621, the stand-in Plex on 28622, the stand-in Jellyfin
+ * on 28623), so that a running development server (8620, 5622) is never measured.
  *
  *   npx playwright install chromium     once
  *   npm run e2e                         build, start the backend and the stand-in, test
@@ -15,6 +15,7 @@ import path from 'node:path'
 const PORT = Number(process.env.E2E_PORT ?? 28620)
 const PROVIDER_PORT = Number(process.env.E2E_PROVIDER_PORT ?? 28621)
 const PLEX_PORT = Number(process.env.E2E_PLEX_PORT ?? 28622)
+const JELLYFIN_PORT = Number(process.env.E2E_JELLYFIN_PORT ?? 28623)
 
 /** A fresh data folder per run. Made here and not in a global set-up: the server starts first. The workers load this
  * file again and inherit the folder through the environment. */
@@ -31,6 +32,7 @@ export const SIGNED_IN = path.join(DATA_DIR, 'e2e-operator.json')
 process.env.E2E_STATE = SIGNED_IN
 process.env.E2E_PROVIDER = `http://127.0.0.1:${PROVIDER_PORT}`
 process.env.E2E_PLEX = `http://127.0.0.1:${PLEX_PORT}`
+process.env.E2E_JELLYFIN = `http://127.0.0.1:${JELLYFIN_PORT}`
 // The project's venv on the development machines, the system Python elsewhere.
 const venv = path.join('.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 const python = fs.existsSync(path.join('..', 'backend', venv)) ? venv : 'python'
@@ -42,11 +44,11 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: 'list',
-  // Every test in Chromium; the playlists, the suggestions and the guests also in Firefox and WebKit.
+  // Every test in Chromium; the playlists, the suggestions, the guests and Jellyfin also in Firefox and WebKit.
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
-    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests).spec.ts/ },
-    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests).spec.ts/ },
+    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests|jellyfin).spec.ts/ },
+    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests|jellyfin).spec.ts/ },
   ],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
@@ -84,6 +86,14 @@ export default defineConfig({
       command: `${python} -m tests.fakeplex.serve --port ${PLEX_PORT}`,
       cwd: path.join('..', 'backend'),
       url: `http://127.0.0.1:${PLEX_PORT}/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    // A stand-in Jellyfin with a made-up library (backend/tests/fakejellyfin): Quick Connect, catalogue, covers, sound.
+    {
+      command: `${python} -m tests.fakejellyfin.serve --port ${JELLYFIN_PORT}`,
+      cwd: path.join('..', 'backend'),
+      url: `http://127.0.0.1:${JELLYFIN_PORT}/health`,
       reuseExistingServer: false,
       timeout: 30_000,
     },

@@ -70,7 +70,10 @@ export function SearchColumn({
   canEdit,
   onAdd,
   onAddAll,
+  noMoods = null,
 }: {
+  /** Set when the playlist's server has no moods: this word stands where the filter would be. */
+  noMoods?: string | null
   source: CatalogSource | null
   facets: Facets | null
   version: number
@@ -360,6 +363,12 @@ export function SearchColumn({
           <kbd>/</kbd>
         </div>
         <div className="filters">
+          {noMoods ? (
+            <span className="chip static" data-testid="no-moods" title={noMoods}>
+              {t('editor.moodsNone')}
+              <span className="sr-only"> {noMoods}</span>
+            </span>
+          ) : (
           <select className={`chip${mood ? ' on' : ''}`} aria-label={t('editor.mood')} value={mood} onChange={filter(setMood)}>
             <option value="">{t('editor.mood')}</option>
             {(facets?.groups ?? []).map((group) => (
@@ -374,6 +383,7 @@ export function SearchColumn({
               </option>
             ))}
           </select>
+          )}
           <select className={`chip${decade ? ' on' : ''}`} aria-label={t('editor.decade')} value={decade} onChange={filter(setDecade)}>
             <option value="">{t('editor.decade')}</option>
             {(facets?.decades ?? []).map((one) => (

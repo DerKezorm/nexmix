@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
     "push_hosts": [],
     #: The identifier nexmix gives itself at Plex, made at the first sign-in (``services/plex_link.py``).
     "plex_client_id": "",
+    #: The part of nexmix's device id at Jellyfin that is this installation's own (``services/jellyfin_link.py``).
+    "jellyfin_device": "",
     #: When the whole catalogue is fetched again each night, on the server's clock (``HH:MM``); empty: never.
     "catalog_full_at": "03:30",
     #: Listening in: a short piece of a track, played through nexmix (``services/preview.py``). On from the start.

@@ -367,7 +367,8 @@ class Job(Base):
 
 #: The kinds of media server nexmix speaks with (``services/sources``).
 SERVER_PLEX = "plex"
-SERVER_KINDS = (SERVER_PLEX,)
+SERVER_JELLYFIN = "jellyfin"
+SERVER_KINDS = (SERVER_PLEX, SERVER_JELLYFIN)
 
 
 class MediaServer(Base):
@@ -386,7 +387,7 @@ class MediaServer(Base):
     __tablename__ = "media_servers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    #: ``plex`` (``SERVER_KINDS``).
+    #: ``plex`` or ``jellyfin`` (``SERVER_KINDS``).
     kind: Mapped[str] = mapped_column(String(16), default=SERVER_PLEX)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     serial: Mapped[int] = mapped_column(Integer, default=1)
@@ -412,6 +413,9 @@ class MediaServer(Base):
     analysis_sampled: Mapped[int] = mapped_column(Integer, default=0)
     analysis_found: Mapped[int] = mapped_column(Integer, default=0)
     analysis_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    #: Jellyfin: the user the playlists will belong to there (its id and its name as it was chosen).
+    user_id: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    user_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
 
 
 class ServerItem(Base):
@@ -535,6 +539,10 @@ class CatalogTrack(Base):
     #: The server's ``guid`` of the track: one of Plex's agents (``plex://track/..``) names the same recording on every
     #: server of Plex.
     guid: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    #: The MusicBrainz ids the server knows for it: of the release's track (what Plex's ``mbid://`` names) and of the
+    #: recording. Empty: none.
+    mbid_track: Mapped[str] = mapped_column(String(36), default="", server_default="")
+    mbid_recording: Mapped[str] = mapped_column(String(36), default="", server_default="")
 
 
 class CatalogTag(Base):
@@ -828,6 +836,7 @@ __all__ = [
     "MEMBER",
     "OPERATOR",
     "ROLES",
+    "SERVER_JELLYFIN",
     "SERVER_KINDS",
     "SERVER_PLEX",
     "SIGN_IN_OIDC",

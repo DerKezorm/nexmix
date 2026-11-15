@@ -64,14 +64,19 @@
       "text": "Hidden from your overview only. In Plex and for everybody else, everything stays as it is.",
       "smart": "Smart playlist from Plex",
       "show": "Show again"
-    }
+    },
+    "chooseServer": "Where should the tracks come from?",
+    "chooseServerText": "The playlist searches, suggests and plays previews from this library.",
+    "make": "Make playlist",
+    "serverOption": "{{kind}} \"{{name}}\""
   },
   "sync": {
     "card": {
       "synced": "In Plex",
       "pending": "Saving …",
       "waiting": "Waiting for Plex",
-      "error": "Not in Plex"
+      "error": "Not in Plex",
+      "local": "Only in nexmix"
     },
     "smartBadge": "Smart",
     "goneInPlex": "Deleted in Plex",
@@ -109,7 +114,8 @@
       "notYet": "Not yet",
       "syncNow": "Sync playlists now",
       "syncStarted": "Syncing."
-    }
+    },
+    "local": "Only in nexmix. nexmix does not make playlists in Jellyfin yet."
   },
   "settings": {
     "title": "Settings",
@@ -885,7 +891,18 @@
     "guest_no_sorting": "This invitation does not let guests sort.",
     "guest_not_yours": "You may remove only your own tracks.",
     "bad_name": "A name has 1 to {{max}} characters, without control characters.",
-    "too_many_streams": "You have this playlist open on too many pages already."
+    "too_many_streams": "You have this playlist open on too many pages already.",
+    "jellyfin_refused": "Jellyfin refused the sign-in. Connect Jellyfin again.",
+    "jellyfin_unreachable": "Jellyfin cannot be reached.",
+    "jellyfin_timeout": "Jellyfin did not answer in time.",
+    "jellyfin_starting": "Jellyfin is starting. Try again in a minute.",
+    "jellyfin_error": "Jellyfin did not play along.",
+    "jellyfin_not_found": "Jellyfin does not know this.",
+    "jellyfin_bad_request": "Jellyfin did not take the request.",
+    "quick_expired": "The code has run out. Get a new one.",
+    "quick_off": "Quick Connect is switched off in this Jellyfin. Connect with an API key.",
+    "not_jellyfin": "No Jellyfin answers at this address.",
+    "invalid_server": "There is no such media server here."
   },
   "ready": {
     "title": "Ready for the internet?",
@@ -946,6 +963,12 @@
       "title": "Backup",
       "ok": "An automatic backup is on. The music stays in Plex.",
       "warn": "No automatic backup. Turn it on under Settings, Backup."
+    },
+    "jellyfin": {
+      "title": "Jellyfin",
+      "ok": "Jellyfin is connected inside the own network. nexmix passes sound and pictures through; no browser sees ids or the address.",
+      "warn": "Jellyfin ({{names}}) is connected at an address outside the own network. Jellyfin hands out sound and pictures without a sign-in. nexmix never passes ids on, but an address inside the own network is safer.",
+      "bad": "There is no readable key for Jellyfin ({{names}}). Connect Jellyfin again."
     }
   },
   "mail": {
@@ -1230,7 +1253,9 @@
     "rowLabel": "{{number}}. {{title}}",
     "missing": "No longer in the library",
     "plexRefused": "Plex does not take this track",
-    "plexElsewhere": "Not found on this Plex server"
+    "plexElsewhere": "Not found on this Plex server",
+    "moodsNone": "No moods",
+    "noMoods": "{{kind}} has no moods. Genre and decade work."
   },
   "share": {
     "title": "Share",
@@ -1279,7 +1304,8 @@
     "soundsAlike": "sounds alike",
     "together": "often together",
     "similarButton": "Suggestions for this track",
-    "similarTrack": "Suggestions for “{{title}}”"
+    "similarTrack": "Suggestions for “{{title}}”",
+    "basisNoMoods": "from genre, decade and how well known"
   },
   "mood": {
     "open": "Fill by mood",
@@ -1608,5 +1634,58 @@
     "Witty": "Witty",
     "Wry": "Wry",
     "Yearning": "Yearning"
+  },
+  "servers": {
+    "part": "Media servers",
+    "addTitle": "Add a server",
+    "addText": "Connect more libraries. Every playlist takes its tracks from one server, chosen when it is made.",
+    "addPlex": "Plex",
+    "addJellyfin": "Jellyfin",
+    "plexTitle": "Plex \"{{name}}\"",
+    "plexText": "Another Plex server beside the first one. Playlists that take their tracks from here are saved in this server.",
+    "plexAdd": "Connect another Plex server",
+    "plexAddText": "Sign in with Plex or give the address and the token. The first Plex server stays as it is.",
+    "library": "Library",
+    "disconnect": "Disconnect server",
+    "disconnectTitle": "Disconnect \"{{name}}\"?",
+    "disconnectText": "nexmix forgets the token and the catalogue with {{tracks}} tracks. Playlists that take their tracks from this server stay in nexmix, but search, suggestions and listening in only work again once you connect it again. Only connecting again brings this back. Nothing changes on the server itself."
+  },
+  "jellyfin": {
+    "title": "Jellyfin",
+    "textNew": "Connect a Jellyfin server. You confirm nexmix in Jellyfin with a code; no password is typed here.",
+    "textConnected": "Connected to Jellyfin \"{{name}}\".",
+    "address": "Address",
+    "addressHint": "For example http://jellyfin:8096. Best an address inside the own network.",
+    "quick": "Connect with Quick Connect",
+    "byKey": "API key by hand",
+    "byKeyText": "Make an API key in Jellyfin under Dashboard › API Keys.",
+    "key": "API key",
+    "connectByKey": "Connect",
+    "codeText": "Open Jellyfin, go to Quick Connect in your profile and enter this code. nexmix waits for it.",
+    "codeLeft": "Valid for {{minutes}} more min.",
+    "codeLabel": "Code for Quick Connect",
+    "newCode": "Get a new code",
+    "stepQuick": "Quick Connect",
+    "stepKey": "API key",
+    "stepLibrary": "Library",
+    "stepLibraryNamed": "Library \"{{name}}\"",
+    "stepUser": "User",
+    "stepUserNamed": "User \"{{name}}\"",
+    "chooseLibrary": "Choose the music library.",
+    "chooseUser": "Choose the Jellyfin user the playlists will belong to in Jellyfin. Their plays show which tracks are well known.",
+    "admin": "Full rights in Jellyfin",
+    "moodsValue": "Jellyfin has none; genre and decade work",
+    "playlists": "Playlists",
+    "playlistsValue": "live in nexmix only for now. nexmix does not make any in Jellyfin yet.",
+    "user": "User",
+    "otherLibrary": "Choose another library",
+    "otherUser": "Choose another user",
+    "disconnect": "Disconnect Jellyfin",
+    "disconnectTitle": "Disconnect Jellyfin?",
+    "disconnectText": "nexmix forgets the token and the catalogue with {{tracks}} tracks. Playlists with tracks from Jellyfin stay in nexmix, but search, suggestions and listening in only work again once you connect Jellyfin again. Only connecting again brings this back. Nothing changes in Jellyfin itself.",
+    "libraryTitle": "Choose another library?",
+    "libraryText": "The catalogue of \"{{old}}\" is deleted and the one of \"{{new}}\" fetched. Until then there is no search. It only comes back if you choose \"{{old}}\" again and it is fetched anew.",
+    "libraryConfirm": "Change library",
+    "searchValue": "inside nexmix, Jellyfin is never asked while you type"
   }
 }

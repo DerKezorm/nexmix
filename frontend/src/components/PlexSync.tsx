@@ -1,8 +1,9 @@
 /**
  * How a playlist stands in Plex: the cloud on the card of the overview (`SyncMark`), and the line in the head of the
- * playlist with "sync now" and, after a failure, "try again" (`SyncLine`). Nothing while Plex is not connected.
+ * playlist with "sync now" and, after a failure, "try again" (`SyncLine`). Nothing while Plex is not connected. A
+ * playlist whose server takes no playlists from nexmix (Jellyfin, for now) says that it lives in nexmix only.
  */
-import { CloudAlert, CloudCheck, CloudOff } from 'lucide-react'
+import { CloudAlert, CloudCheck, CloudOff, HardDrive } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { PlexSync } from '../api/playlists'
@@ -11,6 +12,13 @@ import { errorText } from '../lib/errors'
 export function SyncMark({ plex }: { plex: PlexSync }) {
   const { t } = useTranslation()
   if (plex.state === 'off') return null
+  if (plex.state === 'local')
+    return (
+      <span className="sync" data-testid="sync-mark">
+        <HardDrive aria-hidden />
+        {t('sync.card.local')}
+      </span>
+    )
   if (plex.state === 'synced')
     return (
       <span className="sync" data-testid="sync-mark">
@@ -56,6 +64,13 @@ export function SyncLine({
 }) {
   const { t } = useTranslation()
   if (plex.state === 'off') return null
+  if (plex.state === 'local')
+    return (
+      <span className="sync" data-testid="sync-state">
+        <HardDrive aria-hidden />
+        {t('sync.local')}
+      </span>
+    )
   if (plex.state === 'pending')
     return (
       <span className="sync busy" data-testid="sync-state">

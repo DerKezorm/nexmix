@@ -1,4 +1,5 @@
-"""What every connector to a media server offers (``plex.py`` today): the shapes it answers in and what it can do.
+"""What every connector to a media server offers (``plex.py``, ``jellyfin.py``): the shapes it answers in and what
+it can do.
 
 A connector speaks the server's own keys (text: Plex's ``ratingKey`` as digits, another server's ids as they are);
 nexmix's numbers (``services/media.py``) are given by whoever calls it. It never holds a database session: what it
@@ -25,10 +26,12 @@ class Capabilities:
     #: How changes of playlists made on the server reach nexmix: ``poll`` (by looking), ``events`` (told at once) or
     #: ``both`` (told of some, the rest by looking).
     changes: str
+    #: nexmix keeps its playlists there (else a playlist with that source lives in nexmix only).
+    playlists: bool = True
 
     def view(self) -> dict[str, object]:
         return {"moods": self.moods, "sound": self.sound, "smart_playlists": self.smart_playlists,
-                "duplicates": self.duplicates, "changes": self.changes}
+                "duplicates": self.duplicates, "changes": self.changes, "playlists": self.playlists}
 
 
 @dataclass(frozen=True)
