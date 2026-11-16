@@ -12,8 +12,10 @@ What the calls below rely on (Music Assistant 2.10.9, schema 65, measured on a t
   with 23: both mean "connect again". Commands go as ``{"message_id", "command", "args"}``; the answer carries the same
   ``message_id``, a long one comes in several messages with ``"partial": true`` and is put together here. An error is
   ``{"message_id", "error_code", "details"}``; only the code counts (2: not found, 3: not valid, 999: anything else),
-  the words never reach the log. Events (``{"event", "object_id", "data"}``) come to every signed-in client and are
-  handed to whoever listens (``events_of``).
+  the words never reach the log. The role of the token's user comes with the answer to ``auth``; when a command only
+  an admin may give is refused later, it is read again over a second, short websocket (``recheck``). Events
+  (``{"event", "object_id", "data"}``) come to every signed-in client and are handed to whoever listens
+  (``events_of``).
 * The websocket breaks when Music Assistant restarts (about 13 seconds until it answers again). It is opened again at
   the next command, but not sooner than ``REOPEN`` after the last try failed: a server that is away is not asked again
   and again.
@@ -493,19 +495,32 @@ class Connection:
             except Closed as exc:
                 raise MaError("ma_unreachable") from exc
             if not waiting.done.wait(timeout):
-                raise MaError("ma_timeout", 504)
+                raise _sent(MaError("ma_timeout", 504))
             if waiting.error is not None:
-                raise MaError(waiting.error, 404 if waiting.error == "ma_not_found" else 502)
+                raise _sent(MaError(waiting.error, 404 if waiting.error == "ma_not_found" else 502))
             return waiting.result
         finally:
             with self._waiting_lock:
                 self._waiting.pop(ident, None)
 
 
+def _sent(exc: MaError) -> MaError:
+    """A command that went out and got no answer, or an error: ``exc.sent`` (Music Assistant may have done it all the
+    same when the answer was lost)."""
+    exc.sent = True  # type: ignore[attr-defined]
+    return exc
+
+
+def sent(exc: BaseException) -> bool:
+    """Whether a failed command had gone out to Music Assistant before it failed (``_sent``)."""
+    return getattr(exc, "sent", False) is True
+
+
 def _parse(raw: str) -> dict[str, Any] | None:
     try:
         found = json.loads(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
+        # Not JSON, or nested deeper than Python reads: passed over, the websocket stays.
         return None
     return found if isinstance(found, dict) else None
 
@@ -583,9 +598,40 @@ def connection(server_id: int, url: str, token: str) -> Connection:
 
 
 def may_manage(server_id: int) -> bool | None:
-    """Whether the server's token was an admin's when the websocket last opened (None: not opened yet)."""
+    """Whether the server's token was an admin's when the websocket last opened, or when a refusal made nexmix look
+    again (``recheck``). None: not opened yet."""
     with _kept_lock:
         return _admin.get(server_id)
+
+
+def recheck(server_id: int) -> bool | None:
+    """The role of the server's token read anew, while its websocket stays open: Music Assistant refused a command only
+    an admin may give (``tasks/run``, ``tasks/cancel``), so the token's user may have lost the right since the websocket
+    opened. A second, short websocket signs in with the same token and is closed again; the open one takes its role.
+    None when nothing could be read (no websocket, the server away, the token refused)."""
+    with _kept_lock:
+        kept = _kept.get(server_id)
+    found = kept.connection if kept is not None else None
+    if found is None or not found.alive:
+        return None
+    probe = Connection(found.url, found._token)
+    try:
+        probe.open()
+    except MaError as exc:
+        logger.debug("Music Assistant role not read again error=%s", exc.code)
+        return None
+    except Exception as exc:  # noqa: BLE001 - the open websocket goes on as it was
+        logger.debug("Music Assistant role not read again error=%s", type(exc).__name__)
+        return None
+    finally:
+        probe.close()
+    found.role = probe.role
+    with _kept_lock:
+        if _kept.get(server_id) is kept:
+            _admin[server_id] = found.admin
+    if not found.admin:
+        logger.warning("Music Assistant token is no admin's any more, nothing is written by place server=%s", server_id)
+    return found.admin
 
 
 def current(server_id: int) -> Connection | None:

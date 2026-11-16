@@ -893,6 +893,7 @@ def status(db: Session, server_id: int | None = None) -> dict[str, Any]:
             queued = claimed.kind
     return {
         "server": row.id if row is not None else None,
+        "kind": row.kind if row is not None else None,
         "connected": row is not None,
         "library": bool(row and row.section_key),
         "library_title": row.section_title if row else "",

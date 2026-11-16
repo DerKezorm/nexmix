@@ -26,10 +26,12 @@
   },
   "playlists": {
     "title": "Playlisten",
-    "text": "Gemeinsam gebaut aus deiner Plex-Musikmediathek.",
-    "emptyOperator": "Noch nicht mit Plex verbunden. Verbinde unter <settings>Einstellungen</settings> dein Plex-Konto.",
+    "text": "Gemeinsam gebaut aus deiner Musikmediathek.",
+    "emptyOperator": "Noch kein Medienserver verbunden. Verbinde unter <settings>Einstellungen</settings> Plex, Jellyfin oder Music Assistant.",
     "textReady": "{{tracks}} Titel aus deiner Plex-Mediathek „{{library}}“ · alles landet als Playlist in Plex und ist damit auch in Plexamp und Music Assistant.",
-    "notConnectedMember": "Der Betreiber hat Plex noch nicht verbunden. Sobald die Mediathek da ist, geht es hier los.",
+    "textReadyJellyfin": "{{tracks}} Titel aus deiner Jellyfin-Mediathek „{{library}}“ · alles landet als Playlist in Jellyfin.",
+    "textReadyMa": "{{tracks}} Titel aus Music Assistant ({{library}}) · alles landet als Playlist in Music Assistant.",
+    "notConnectedMember": "Der Betreiber hat noch keinen Medienserver verbunden. Sobald die Mediathek da ist, geht es hier los.",
     "loading": "Katalog wird geholt …",
     "loadingText": "Einmal die ganze Mediathek, danach kommt nur Neues dazu. Bei großen Mediatheken dauert das ein paar Minuten.",
     "none": "Noch keine Playlist",
@@ -261,7 +263,7 @@
   },
   "about": {
     "menu": "Über nexmix",
-    "subtitle": "Playlisten gemeinsam bauen, aus deiner Plex-Musikmediathek.",
+    "subtitle": "Playlisten gemeinsam bauen, aus deiner Musikmediathek in Plex, Jellyfin oder Music Assistant.",
     "version": "Version",
     "whatsNew": "Was ist neu",
     "newer": "Version {{version}} ist erschienen",
@@ -1174,10 +1176,10 @@
     "partial": "(Zählung unvollständig)",
     "free": "Freier Platz",
     "freeOf": "{{free}} von {{total}}",
-    "musicNote": "Die Musik zählt nexmix nicht mit: Sie liegt in Plex."
+    "musicNote": "Die Musik zählt nexmix nicht mit: Sie liegt auf deinen Medienservern."
   },
   "manifest": {
-    "description": "Playlisten gemeinsam bauen, aus deiner Plex-Musikmediathek.",
+    "description": "Playlisten gemeinsam bauen, aus deiner Musikmediathek in Plex, Jellyfin oder Music Assistant.",
     "playlists": "Playlisten",
     "playlistsShort": "Playlisten"
   },

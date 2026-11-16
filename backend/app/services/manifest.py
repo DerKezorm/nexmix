@@ -23,9 +23,10 @@ logger = logging.getLogger("nexmix.manifest")
 FALLBACK = "en"
 KEYS = ("description", "playlists", "playlistsShort")
 SHIPPED: dict[str, dict[str, str]] = {
-    "de": {"description": "Playlisten gemeinsam bauen, aus deiner Plex-Musikmediathek.",
+    "de": {"description": "Playlisten gemeinsam bauen, aus deiner Musikmediathek in Plex, Jellyfin oder Music "
+                          "Assistant.",
            "playlists": "Playlisten", "playlistsShort": "Playlisten"},
-    "en": {"description": "Build playlists together from your Plex music library.",
+    "en": {"description": "Build playlists together from your music library in Plex, Jellyfin or Music Assistant.",
            "playlists": "Playlists", "playlistsShort": "Playlists"},
 }
 #: The shortcuts by their address: which words name them.

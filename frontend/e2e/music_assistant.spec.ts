@@ -102,6 +102,73 @@ test('Music Assistant is connected by its token, a playlist takes its tracks fro
   await ma.dispose()
 })
 
+test('a token of a user without full rights in Music Assistant is refused, and nothing is kept', async ({ page }) => {
+  test.setTimeout(60_000)
+  await letGo(page.request)
+  const ma = await request.newContext({ baseURL: process.env.E2E_MA })
+  const weak = (await (await ma.get('/fake/token?role=user')).json()).token as string
+  await ma.dispose()
+  await page.goto('/settings')
+  await page.getByTestId('servers-add').getByRole('button', { name: 'Music Assistant', exact: true }).click()
+  const box = page.locator('#ma-new')
+  await box.getByLabel('Address').fill(process.env.E2E_MA!)
+  await box.getByLabel('Token').fill(weak)
+  await box.getByRole('button', { name: 'Connect' }).click()
+  await expect(box).toContainText('without full rights', { timeout: 15_000 })
+  await expect(page.getByTestId('ma-connected')).toHaveCount(0)
+  // The token stays in the field to be corrected; the refusal itself never repeats it, and nothing is kept.
+  expect((await box.textContent()) ?? '').not.toContain(weak)
+  expect(await (await page.request.get('/api/v1/music-assistant')).text()).not.toContain(weak)
+  const servers = (await (await page.request.get('/api/v1/servers')).json()).servers as { kind: string; active: boolean }[]
+  expect(servers.filter((one) => one.kind === 'music_assistant' && one.active)).toEqual([])
+})
+
+test('a track replaced in Music Assistant while nexmix takes one out there is told at the playlist, until seen', async ({ page, browserName }) => {
+  test.setTimeout(120_000)
+  const api = page.request
+  await letGo(api)
+  const connected = await (await api.post('/api/v1/music-assistant/connect', { data: { url: process.env.E2E_MA, token: await token() }, headers: TAB })).json()
+  const assistant = connected.server.id as number
+  if (!connected.server.library) {
+    const musik = (connected.providers as { handle: string; name: string }[]).find((one) => one.name === 'Musik')!
+    expect((await api.put(`/api/v1/music-assistant/${assistant}/providers`, { data: { handles: [musik.handle] }, headers: TAB })).ok()).toBe(true)
+  }
+  await expect(async () => expect((await (await api.get(`/api/v1/catalog/status?server=${assistant}`)).json()).ready).toBe(true)).toPass({ timeout: 60_000 })
+  const search = async (title: string) => {
+    const found = await (await api.get('/api/v1/catalog/search', { params: { q: title, kind: 'tracks', server: assistant } })).json()
+    return (found.tracks as { id: number; title: string }[]).find((one) => one.title === title)!.id
+  }
+  const titles = ['Fever Glass', 'Op. 3 (No. 2)', 'Night Drive (Part 2)', 'Small Hours']
+  const tracks = []
+  for (const title of titles) tracks.push(await search(title))
+  const name = `MA Rennen ${browserName}`
+  const made = await (await api.post('/api/v1/playlists', { data: { name, server: assistant }, headers: TAB })).json()
+  expect((await api.post(`/api/v1/playlists/${made.id}/items`, { data: { tracks }, headers: TAB })).ok()).toBe(true)
+  await page.goto(`/playlists/${made.id}`)
+  await expect(page.getByTestId('sync-state')).toHaveText('Saved in Music Assistant', { timeout: 20_000 })
+  const ma = await request.newContext({ baseURL: process.env.E2E_MA })
+  await expect.poll(async () => (await (await ma.get(`/fake/list?name=${encodeURIComponent(name)}`)).json()).tracks, { timeout: 20_000 }).toEqual(titles)
+
+  // Somebody replaces the first track in Music Assistant right when nexmix's taking out of the last one runs there.
+  expect((await ma.get(`/fake/race-next?playlist=${encodeURIComponent(name)}&take=Fever%20Glass&add=Untitled`)).ok()).toBe(true)
+  const entries = (await (await api.get(`/api/v1/playlists/${made.id}`)).json()).items as { id: number; title: string }[]
+  expect((await api.post(`/api/v1/playlists/${made.id}/items/remove`, { data: { entries: [entries[3].id] }, headers: TAB })).ok()).toBe(true)
+  await expect.poll(async () => (await (await api.get(`/api/v1/playlists/${made.id}`)).json()).plex.concurrent?.count ?? 0, { timeout: 40_000 }).toBe(1)
+
+  // The playlist says so; "Seen" takes the note away for good.
+  await page.reload()
+  const note = page.getByTestId('concurrent-note')
+  await expect(note).toContainText('Changed in Music Assistant at the same time, please check')
+  await expect(note).toContainText('a track was added in Music Assistant')
+  await note.getByRole('button', { name: 'Seen' }).click()
+  await expect(note).toHaveCount(0)
+  expect((await (await api.get(`/api/v1/playlists/${made.id}`)).json()).plex.concurrent ?? null).toBeNull()
+  await page.reload()
+  await expect(page.getByTestId('track-row').first()).toBeVisible()
+  await expect(page.getByTestId('concurrent-note')).toHaveCount(0)
+  await ma.dispose()
+})
+
 test('a playlist of Plex is copied to Music Assistant', async ({ page, browserName }) => {
   test.setTimeout(150_000)
   const api = page.request

@@ -5,7 +5,7 @@
 * where the data folder lies (a local disk or a network share, ``services/mounts.py``): SQLite on a network share loses
   data when two processes meet there, so the card says it.
 
-The music is not counted: it lies in Plex, which nexmix only asks.
+The music is not counted: it lies on the media servers, which nexmix only asks.
 """
 
 from __future__ import annotations

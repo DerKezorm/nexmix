@@ -324,6 +324,51 @@ def test_every_route_of_the_interface_is_in_its_description() -> None:
     assert ("GET", "/api/v1/logs/download") in described
 
 
+#: The written description of the interface for people (``docs/api.md``) and its list of every route.
+API_MD = Path(__file__).parents[2] / "docs" / "api.md"
+EVERY_ROUTE = "## Every route"
+
+
+def _written() -> tuple[str, set[tuple[str, str]]]:
+    """``docs/api.md``: the text before its list of every route, and the routes that list names."""
+    text = API_MD.read_text(encoding="utf-8")
+    assert EVERY_ROUTE in text, f"docs/api.md has no section {EVERY_ROUTE!r}"
+    prose, listed = text.split(EVERY_ROUTE, 1)
+    return prose, set(re.findall(r"`(GET|POST|PUT|DELETE|PATCH) (/api/v1/[^`\s]*)`", listed))
+
+
+def test_docs_api_md_lists_every_route_of_the_interface_and_no_other() -> None:
+    """``docs/api.md`` keeps up with the interface: its list names every route the server has, and none it lacks
+    (one renamed or taken away)."""
+    _prose, listed = _written()
+    routes = set(api_routes())
+    assert sorted(routes - listed) == [], "Routes missing from the list in docs/api.md"
+    assert sorted(listed - routes) == [], "Routes in docs/api.md the server does not have"
+
+
+def test_every_route_of_docs_api_md_is_described_in_its_text() -> None:
+    """Above the list, the text says what each route is for: the last fixed part of every path (``remake``,
+    ``concurrent``, ``transfer``) stands in it as a path, and every route group of the interface has its own words."""
+    prose, _listed = _written()
+    missing = []
+    for method, path in api_routes():
+        fixed = [part for part in path.split("/") if part and not part.startswith("{")]
+        last = fixed[-1]
+        if f"/{last}" not in prose and f"`{last}`" not in prose:
+            missing.append((method, path))
+    assert missing == [], "Routes whose name docs/api.md does not describe"
+
+
+def test_the_list_in_docs_api_md_misses_a_route_it_should_have() -> None:
+    """The check above catches a gap: a route taken out of the list is found missing."""
+    prose, listed = _written()
+    assert ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake") in listed
+    assert ("DELETE", "/api/v1/playlists/{playlist_id}/concurrent") in listed
+    shorter = listed - {("DELETE", "/api/v1/playlists/{playlist_id}/concurrent")}
+    assert sorted(set(api_routes()) - shorter) == [("DELETE", "/api/v1/playlists/{playlist_id}/concurrent")]
+    assert "/concurrent" in prose
+
+
 def test_the_description_and_its_page_are_off_unless_the_operator_turns_them_on() -> None:
     """An instance reached from the internet does not hand out the list of its routes unasked (``NEXMIX_API_DOCS``)."""
     for path in ("/api/v1/openapi.json", "/api/v1/docs", "/api/docs", "/api/openapi.json", "/docs", "/redoc"):

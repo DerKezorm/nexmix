@@ -148,3 +148,34 @@ def test_a_look_at_a_servers_list_lets_go_of_a_catalogue_nobody_uses(
     server_sync.look_now()
     sync(fake_plex, look_at_plex=True)
     assert jelly not in server_sync._whole
+
+
+def test_a_preview_over_many_playlists_looks_at_a_few_at_a_time_and_counts_them_all(
+        client: TestClient, world: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Over many playlists the preview never holds the entries of all of them at once (with 100 playlists of 500 entries
+    that was some 140 MB): it looks at ``PREVIEW_PART`` together, and its result is the same as over all at once."""
+    fake_plex, _fake, jelly = world
+    for number in range(3, 25):
+        make(client, f"Liste {number}", plex_numbers(PLAYLIST[number % 4:number % 4 + 3]))
+    sync(fake_plex)
+    looked: list[int] = []
+    real = mirrors.describe
+
+    def counted(db: Any, server_id: int, tracks: Any) -> Any:
+        tracks = list(tracks)
+        looked.append(len(tracks))
+        return real(db, server_id, tracks)
+
+    with SessionLocal() as db:
+        chosen, _smart = mirrors.candidates(db, jelly, "mirror", None)
+        whole = [mirrors.preview(db, [one], jelly, {}, preselect=False) for one in chosen]
+    assert len(chosen) == 25
+    monkeypatch.setattr(mirrors, "describe", counted)
+    with SessionLocal() as db:
+        found = mirrors.preview(db, chosen, jelly, {}, preselect=False)
+    # 25 playlists of three entries: three looks, none at more than ten playlists' entries.
+    assert len(looked) == 3 and max(looked) <= mirrors.PREVIEW_PART * 3, looked
+    for field in ("entries", "found", "unsure", "missing"):
+        assert found[field] == sum(one[field] for one in whole), field
+    missing = {row["track"]: row["count"] for row in found["rows"]}
+    assert missing and sum(missing.values()) == sum(row["count"] for one in whole for row in one["rows"])

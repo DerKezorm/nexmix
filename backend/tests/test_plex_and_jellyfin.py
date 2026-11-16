@@ -89,6 +89,9 @@ def test_two_kinds_of_server_keep_their_catalogues_and_their_playlists_apart(
     assert not client.get("/api/v1/catalog/search", params={"q": "Glasfluss", "server": plex_server}).json()["tracks"]
     assert not client.get("/api/v1/catalog/search", params={"q": "Northern Lights", "server": jelly}).json()["tracks"]
     assert client.get(f"/api/v1/catalog/facets?server={jelly}").json()["moods"] == []
+    # The state of each catalogue names the kind of its server (the overview says where the playlists end up).
+    assert client.get(f"/api/v1/catalog/status?server={jelly}").json()["kind"] == "jellyfin"
+    assert client.get("/api/v1/catalog/status").json()["kind"] == "plex"
     assert client.get(f"/api/v1/catalog?server={jelly}").status_code == 200
     # A playlist of each; without a server named, the first connected (Plex).
     on_plex = client.post("/api/v1/playlists", json={"name": "Auf Plex"}).json()

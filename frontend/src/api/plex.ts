@@ -36,6 +36,8 @@ export type CatalogRun = {
 export type Analysis = { state: 'unknown' | 'off' | 'running' | 'on'; percent: number | null }
 
 export type CatalogStatus = {
+  /** The kind of the server whose catalogue this is (null: none connected). */
+  kind?: 'plex' | 'jellyfin' | 'music_assistant' | null
   connected: boolean
   library: boolean
   library_title: string

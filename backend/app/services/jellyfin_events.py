@@ -89,7 +89,8 @@ def read(socket_: Any, on_changes: Callable[[], None], stop: Callable[[], bool],
             heard = now
             try:
                 message = json.loads(raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, RecursionError):
+                # Not JSON, or nested deeper than Python reads: passed over, the websocket stays.
                 message = None
             asked = keep_alive_every(message)
             if asked is not None:

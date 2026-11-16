@@ -64,8 +64,9 @@ def test_taken_out_in_music_assistant_after_nexmix_took_out(client: TestClient, 
     key = list_key(playlist)
     original = connector.MusicAssistantSource._take_out
 
-    def then_somebody(self: connector.MusicAssistantSource, list_key_: str, places: list[int], length: int) -> str:
-        status = original(self, list_key_, places, length)
+    def then_somebody(self: connector.MusicAssistantSource, list_key_: str, places: list[int], length: int,
+                      watch: dict[str, tuple[str, str, int]] | None = None) -> str:
+        status = original(self, list_key_, places, length, watch)
         fake_ma.ui_remove(key, chosen[7])
         return status
 

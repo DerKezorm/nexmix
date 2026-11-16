@@ -17,6 +17,6 @@ router = APIRouter(prefix="/api/v1/storage", tags=["storage"])
 @router.get("", summary="What the data folder holds and where it lies")
 async def overview(_operator: OperatorAccount) -> dict[str, Any]:
     """Sizes of the database and the backups, the free room, and whether the data folder lies on a network share. The
-    music is not counted: it lies in Plex. Counting a large folder may take a moment, so a count is kept for five
-    minutes."""
+    music is not counted: it lies on the media servers. Counting a large folder may take a moment, so a count is kept
+    for five minutes."""
     return await anyio.to_thread.run_sync(space.overview)

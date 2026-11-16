@@ -4,7 +4,9 @@ the plain requests on it, as Music Assistant has them.
     python -m tests.fakema.serve --port 28624
 
 nexmix is pointed at it by its address (``http://127.0.0.1:<port>``), as an operator would type it. ``GET /fake/token``
-gives a made-up long-lived token (made at the start, never written down); ``GET /fake/list?name=`` lists a playlist's
+gives a made-up long-lived token (made at the start, never written down; ``?role=user`` a new one of a user without the
+admin's role); ``GET /fake/race-next?playlist=&take=&add=`` has somebody replace a track of a playlist in Music
+Assistant's own interface right before the next task runs; ``GET /fake/list?name=`` lists a playlist's
 titles; ``GET /fake/ui-add?playlist=&track=`` adds a track to a playlist (by their names) as Music Assistant's own
 interface would, with its event (the websocket server reads no body, so everything here is a ``GET``). Everything else
 goes to ``FakeMA``.
@@ -27,7 +29,10 @@ from . import FakeMA
 
 
 def _answer(status: int, body: bytes, kind: str, extra: dict[str, str] | None = None) -> Response:
-    headers = Headers({"Content-Type": kind, "Content-Length": str(len(body)), **(extra or {})})
+    # The websocket server closes the connection after a plain answer: said so, a client never sends the next
+    # request on it (it would hang up).
+    headers = Headers({"Content-Type": kind, "Content-Length": str(len(body)), "Connection": "close",
+                       **(extra or {})})
     return Response(status, "OK" if status < 400 else "Error", headers, body)
 
 
@@ -40,7 +45,25 @@ def make_server(fake: FakeMA, port: int):  # type: ignore[no-untyped-def]
         if parts.path == "/health":
             return _answer(200, b"ok", "text/plain")
         if parts.path == "/fake/token":
-            return _answer(200, json.dumps({"token": fake.token}).encode(), "application/json")
+            # ``role=user``: a new token of a user without the admin's role.
+            token = fake.make_token(role="user") if params.get("role") == "user" else fake.token
+            return _answer(200, json.dumps({"token": token}).encode(), "application/json")
+        if parts.path == "/fake/race-next":
+            # Right before the next task runs, somebody replaces a track of the playlist in Music Assistant's own
+            # interface: ``take`` out, ``add`` in (by their names).
+            wanted = {key: unquote(params.get(key, "")) for key in ("playlist", "take", "add")}
+            with fake.lock:
+                found = next((one for one in fake.playlists.values() if one.name == wanted["playlist"]), None)
+                taken = next((one for one in fake.tracks.values() if fake.title(one) == wanted["take"]), None)
+                added = next((one for one in fake.tracks.values() if fake.title(one) == wanted["add"]), None)
+                ready = found is not None and taken is not None and added is not None
+                if ready:
+                    def meanwhile() -> None:
+                        fake.ui_remove(found.id, taken.id)
+                        fake.ui_add(found.id, added.id)
+
+                    fake.before_task = meanwhile
+            return _answer(200 if ready else 404, json.dumps({"set": ready}).encode(), "application/json")
         if parts.path == "/fake/list":
             name = unquote(params.get("name", ""))
             with fake.lock:

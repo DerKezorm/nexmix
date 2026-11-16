@@ -1,5 +1,5 @@
 """Backups of nexmix: the database, the settings in it, the languages the operator added and the server's secrets, in
-one ZIP. **Not the music**: it lies in Plex, which nexmix only asks.
+one ZIP. **Not the music**: it lies on the media servers, which nexmix only asks.
 
 * **The database is copied with SQLite's backup API**, never as a file: it runs in WAL mode, and a file copy misses
   what still sits in the ``-wal`` side file.

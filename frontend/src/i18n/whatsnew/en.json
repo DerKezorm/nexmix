@@ -1,4 +1,45 @@
 {
+  "0.2.0": {
+    "lead": "This is nexmix 0.2: beside Plex you now connect Jellyfin and Music Assistant too, and playlists move between the servers. What 0.1 had stays as it was.",
+    "sections": [
+      {
+        "title": "Jellyfin and Music Assistant",
+        "body": "Beside Plex, Jellyfin and Music Assistant join as media servers, several of one kind as well. Jellyfin is connected by Quick Connect or an API key, and you choose the user the playlists belong to there. For Music Assistant you enter a long-lived token of a user with full rights and choose the providers whose tracks count.",
+        "where": "Settings › Server › Add a server"
+      },
+      {
+        "title": "One source per playlist",
+        "body": "When you make a playlist, you choose the server it takes its tracks from. Search, suggestions and listening in use that server's library, and the playlist lives there too, kept in step both ways as with Plex before. Guests only notice that the search uses that server.",
+        "where": "Playlists, New playlist"
+      },
+      {
+        "title": "Copy and move",
+        "body": "“Copy to …” puts a playlist on another server as well. With “Keep in step” it stays a mirror there that follows its source; “Copy once” makes a new playlist of its own instead. “Move to …” makes the other server the source, and the old playlist stays as a mirror or is deleted there. A preview says first how many tracks were found. What is missing or unsure you match by hand or leave out.",
+        "where": "A playlist, Copy to … and Move to …"
+      },
+      {
+        "title": "Take everything over at once",
+        "body": "For a change of server, “Take all over …” brings every playlist of the other servers along, as mirrors or moved, with the same preview. It runs in the background and can let go of the old server afterwards without losing a playlist.",
+        "where": "Settings › Server, the card of the new server"
+      },
+      {
+        "title": "In step while you watch",
+        "body": "What changes in a playlist in Jellyfin or Music Assistant arrives in nexmix, from Music Assistant at once. A track added only in a mirror that has no sure match in the source is listed at the playlist as “only on …” until you decide.",
+        "where": "A playlist, its mirrors"
+      },
+      {
+        "title": "What Jellyfin and Music Assistant lack",
+        "body": "Neither knows moods or a sonic analysis. The mood filter and “Fill by mood” say so; genre and decade work. Music Assistant cannot move entries and takes them out by their place only. When somebody changes a playlist there right while nexmix writes it, a track may go missing, and the playlist says “Changed in Music Assistant at the same time”. Listening in on a track of Music Assistant plays the preview of another server with the same track, else its first 30 seconds.",
+        "where": "A playlist"
+      }
+    ],
+    "smallTitle": "Also",
+    "small": [
+      "Music Assistant needs a token of a user with full rights there, because nexmix must be able to cancel its own changes. The token lasts a year, and nexmix says so 30 days before.",
+      "“Ready for the internet?” checks Jellyfin and Music Assistant too.",
+      "The interface under /api/v1 knows the servers, their mirrors, copying and moving."
+    ]
+  },
   "0.1.0": {
     "lead": "This is nexmix 0.1: build playlists together from your Plex library, with accounts of your own for the household and guests by a link. Every playlist is a playlist in Plex as well, and so in Plexamp. It is the first release, and it is still young.",
     "sections": [

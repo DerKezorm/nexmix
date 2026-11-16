@@ -85,6 +85,49 @@ async function trackOf(api: APIRequestContext, title: string, album: string): Pr
   return (found.tracks as { id: number; title: string; album: string }[]).find((one) => one.title === title && one.album === album)!.id
 }
 
+test('a playlist is copied to Jellyfin only once: a new playlist of its own there, the track Jellyfin lacks left out', async ({ page, browserName }) => {
+  test.setTimeout(180_000)
+  const api = page.request
+  await letGo(api)
+  await plexReady(api)
+  const jelly = await jellyfinReady(api)
+  const name = `Spiegel einmal ${browserName}`
+  const tracks = [
+    await trackOf(api, 'Northern Lights', 'Paper Lanterns'),
+    await trackOf(api, 'Paper Planes', 'Lamps'),
+    await trackOf(api, 'Op. 3 (No. 2)', 'Northern Lights'),
+  ]
+  const made = await (await api.post('/api/v1/playlists', { data: { name, server: 1 }, headers: TAB })).json()
+  expect((await api.post(`/api/v1/playlists/${made.id}/items`, { data: { tracks }, headers: TAB })).ok()).toBe(true)
+
+  await page.goto(`/playlists/${made.id}`)
+  await page.getByTestId('copy-open').click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByTestId('mirror-count')).toContainText('2 of 3 found')
+  await dialog.getByTestId('mirror-once').click()
+  await expect(dialog.getByTestId('mirror-go')).toHaveText('Copy once')
+  await dialog.getByRole('button', { name: /^Leave out .*Op\. 3 \(No\. 2\)/ }).click()
+  await dialog.getByTestId('mirror-go').click()
+  await expect(page.getByTestId('toast')).toContainText(/Copied to ⁨?Probe⁩? as a new playlist\./)
+
+  // A playlist of its own with Jellyfin as its source, the two tracks found, nothing tying it to the first one.
+  let copy = 0
+  await expect(async () => {
+    const all = (await (await api.get('/api/v1/playlists')).json()).playlists as { id: number; name: string; server: number }[]
+    const found = all.find((one) => one.id !== made.id && one.server === jelly && one.name.startsWith(name))
+    expect(found).toBeTruthy()
+    copy = found!.id
+  }).toPass({ timeout: 15_000 })
+  const now = await (await api.get(`/api/v1/playlists/${copy}`)).json()
+  expect((now.items as { title: string }[]).map((one) => one.title)).toEqual(['Northern Lights', 'Paper Planes'])
+  expect((await (await api.get(`/api/v1/playlists/${made.id}/mirrors`)).json()).mirrors).toEqual([])
+  const jellyfin = await request.newContext({ baseURL: process.env.E2E_JELLYFIN })
+  await expect.poll(async () => (await (await jellyfin.get(`/fake/list?name=${encodeURIComponent(now.name)}`)).json()).tracks, { timeout: 30_000 }).toEqual(['Northern Lights', 'Paper Planes'])
+  await jellyfin.dispose()
+  // The first one stays on Plex alone, with all three.
+  expect((await (await api.get(`/api/v1/playlists/${made.id}`)).json()).count).toBe(3)
+})
+
 test('a playlist is copied from Plex to Jellyfin with its preview and a track matched by hand, then moved there', async ({ page, browserName }) => {
   test.setTimeout(180_000)
   const api = page.request

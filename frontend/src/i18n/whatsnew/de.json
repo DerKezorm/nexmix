@@ -1,4 +1,45 @@
 {
+  "0.2.0": {
+    "lead": "Das ist nexmix 0.2: Neben Plex verbindest du jetzt auch Jellyfin und Music Assistant, und Playlisten ziehen zwischen den Servern um. Was es in 0.1 gab, bleibt, wie es war.",
+    "sections": [
+      {
+        "title": "Jellyfin und Music Assistant",
+        "body": "Neben Plex kommen Jellyfin und Music Assistant als Medienserver dazu, auch mehrere vom selben Typ. Jellyfin verbindest du mit Quick Connect oder einem API-Schlüssel und wählst den Benutzer, dem die Playlisten dort gehören. Für Music Assistant gibst du einen langlebigen Admin-Token ein und wählst die Anbieter, deren Titel zählen.",
+        "where": "Einstellungen › Server › Server hinzufügen"
+      },
+      {
+        "title": "Eine Quelle je Playlist",
+        "body": "Beim Anlegen wählst du, von welchem Server eine Playlist ihre Titel nimmt. Aus seiner Mediathek wird gesucht, vorgeschlagen und reingehört, und dort liegt die Playlist auch, in beide Richtungen abgeglichen wie bisher mit Plex. Gäste merken davon nur, dass die Suche diesen Server nimmt.",
+        "where": "Playlisten, Neue Playlist"
+      },
+      {
+        "title": "Kopieren und verschieben",
+        "body": "„Kopieren nach …“ legt eine Playlist auf einem weiteren Server an. Mit „Verbunden halten“ bleibt sie dort ein Spiegel und gleicht sich mit der Quelle ab, „Nur einmal kopieren“ macht daraus eine eigenständige neue Playlist. „Verschieben nach …“ macht den anderen Server zur Quelle, die alte Playlist bleibt als Spiegel oder wird dort gelöscht. Vorher sagt eine Vorschau, wie viele Titel gefunden sind. Was fehlt oder unsicher ist, ordnest du von Hand zu oder lässt es weg.",
+        "where": "Playlist, Kopieren nach … und Verschieben nach …"
+      },
+      {
+        "title": "Alle auf einmal übernehmen",
+        "body": "Für den Umstieg nimmt „Alle übernehmen …“ alle Playlisten der anderen Server mit, als Spiegel oder verschoben, mit derselben Vorschau. Es läuft im Hintergrund und kann den alten Server danach trennen, ohne dass eine Playlist verloren geht.",
+        "where": "Einstellungen › Server, Karte des neuen Servers"
+      },
+      {
+        "title": "Abgleich, während du zusiehst",
+        "body": "Was in Jellyfin oder Music Assistant an einer Playlist geändert wird, kommt in nexmix an, bei Music Assistant sofort. Ein Titel, der nur in einem Spiegel dazukam und in der Quelle keinen sicheren Treffer hat, steht als „nur in …“ an der Playlist, bis du entscheidest.",
+        "where": "Playlist, Spiegel"
+      },
+      {
+        "title": "Was Jellyfin und Music Assistant fehlt",
+        "body": "Beide kennen keine Stimmungen und keine Klanganalyse. Der Filter Stimmung und „Mit Stimmung füllen“ sagen das, Genre und Jahrzehnt gehen. Music Assistant kann Einträge nicht verschieben und nimmt sie nur nach ihrer Stelle heraus. Ändert dort jemand eine Playlist genau, während nexmix sie schreibt, kann ein Titel fehlen, und die Playlist sagt „In Music Assistant gleichzeitig geändert“. Reinhören nimmt bei Music Assistant die Probe eines anderen Servers mit demselben Titel, sonst die ersten 30 Sekunden.",
+        "where": "Playlist"
+      }
+    ],
+    "smallTitle": "Außerdem",
+    "small": [
+      "Music Assistant braucht den Token eines Admins, weil nexmix eigene Änderungen dort abbrechen können muss. Der Token gilt ein Jahr, nexmix sagt 30 Tage vorher Bescheid.",
+      "„Bereit fürs Internet?“ prüft auch Jellyfin und Music Assistant.",
+      "Die Schnittstelle unter /api/v1 kennt die Server, ihre Spiegel, Kopieren und Verschieben."
+    ]
+  },
   "0.1.0": {
     "lead": "Das ist nexmix 0.1: Playlisten gemeinsam bauen, aus deiner Plex-Mediathek, mit eigenen Konten für den Haushalt und Gästen per Link. Jede Playlist ist zugleich eine Playlist in Plex und damit auch in Plexamp. Es ist der erste Stand, und er ist noch jung.",
     "sections": [

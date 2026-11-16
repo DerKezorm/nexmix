@@ -27,6 +27,63 @@ test.afterEach(async ({ baseURL }) => {
   await operator.dispose()
 })
 
+/** Jellyfin connected by Quick Connect through the interface, the user Erika, its catalogue there. Returns its id. */
+async function jellyfinReady(api: APIRequestContext): Promise<number> {
+  const jellyfin = await request.newContext({ baseURL: process.env.E2E_JELLYFIN })
+  const started = await (await api.post('/api/v1/jellyfin/quick', { data: { url: process.env.E2E_JELLYFIN }, headers: TAB })).json()
+  expect((await jellyfin.post('/fake/confirm')).ok()).toBe(true)
+  await jellyfin.dispose()
+  await expect(async () => expect((await (await api.get(`/api/v1/jellyfin/quick/${started.id}`)).json()).done).toBe(true)).toPass({ timeout: 15_000 })
+  const connected = await (await api.post('/api/v1/jellyfin/connect', { data: { quick: started.id }, headers: TAB })).json()
+  const id = connected.server.id as number
+  if (!connected.server.user) {
+    const erika = (connected.users as { handle: string; name: string }[]).find((one) => one.name === 'Erika')!
+    expect((await api.put(`/api/v1/jellyfin/${id}/user`, { data: { handle: erika.handle }, headers: TAB })).ok()).toBe(true)
+  }
+  await expect(async () => expect((await (await api.get(`/api/v1/catalog/status?server=${id}`)).json()).ready).toBe(true)).toPass({ timeout: 60_000 })
+  return id
+}
+
+test('a guest joins a playlist of Jellyfin by its link, searches Jellyfin and adds a track that lands in Jellyfin', async ({ page, browser, browserName }) => {
+  test.setTimeout(120_000)
+  const api = page.request
+  await letGo(api)
+  const jelly = await jellyfinReady(api)
+  const name = `Jellyfin Gäste ${browserName}`
+  const made = await (await api.post('/api/v1/playlists', { data: { name, server: jelly }, headers: TAB })).json()
+  const found = await (await api.get('/api/v1/catalog/search', { params: { q: 'teerseile', kind: 'tracks', server: jelly } })).json()
+  const first = (found.tracks as { id: number; title: string }[]).find((one) => one.title === 'Teerseile')!.id
+  expect((await api.post(`/api/v1/playlists/${made.id}/items`, { data: { tracks: [first] }, headers: TAB })).ok()).toBe(true)
+  expect((await api.post(`/api/v1/playlists/${made.id}/invite`, { headers: TAB })).ok()).toBe(true)
+  expect((await api.put(`/api/v1/playlists/${made.id}/invite`, { data: { start: true, may_add: true, max: 3, hours: 2 }, headers: TAB })).ok()).toBe(true)
+  const link = new URL((await (await api.get(`/api/v1/playlists/${made.id}/invite`)).json()).invite.link).pathname
+  await page.goto(`/playlists/${made.id}`)
+
+  // A guest on a phone, no account: the search is Jellyfin's library.
+  const phone = await browser.newContext({ storageState: { cookies: [], origins: [] }, locale: 'en-US', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const guest = await phone.newPage()
+  await guest.goto(link)
+  await guest.getByPlaceholder("What's your name?").fill('Mila')
+  await guest.getByRole('button', { name: 'Join' }).click()
+  await expect(guest.getByTestId('guest-title')).toHaveText(name)
+  await guest.getByRole('button', { name: 'Search', exact: true }).click()
+  await guest.getByRole('searchbox', { name: 'Title or artist' }).fill('möwenruf')
+  const hit = guest.getByTestId('guest-hits').locator('.row').filter({ hasText: 'Möwenruf' }).first()
+  await expect(hit).toBeVisible()
+  await hit.getByRole('button', { name: /^Add/ }).click()
+  await expect(guest.getByTestId('toast')).toContainText('is in')
+
+  // The host sees it with the guest's name at once, and it is saved in Jellyfin.
+  await expect(page.getByTestId('track-row').filter({ hasText: 'Möwenruf' })).toContainText('Mila')
+  const jellyfin = await request.newContext({ baseURL: process.env.E2E_JELLYFIN })
+  await expect.poll(async () => (await (await jellyfin.get(`/fake/list?name=${encodeURIComponent(name)}`)).json()).tracks, { timeout: 30_000 }).toEqual(['Teerseile', 'Möwenruf'])
+  // Nothing of Jellyfin's ids or address reaches the guest.
+  const html = await guest.content()
+  expect(html).not.toContain(process.env.E2E_JELLYFIN!)
+  await jellyfin.dispose()
+  await phone.close()
+})
+
 /** A track of its own per browser: a preview heard a moment ago is kept for the account and not asked for again. */
 const TRACK: Record<string, string> = { chromium: 'Glasfluss', firefox: 'Funkenregen', webkit: 'Sandkreise' }
 

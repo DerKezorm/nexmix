@@ -38,8 +38,9 @@ so that a step broken off half way (a fault, a stop) is put right at the next sy
 out in Music Assistant. A step by place goes only from the reading the sync merged, while nobody else's task at the
 playlist is under way (``_window``); somebody else's task that added there while it ran is told (``_unseen``: the entry
 may be gone, Music Assistant names none), and then everything missing that was not meant goes back. A task nobody saw
-end is ``TaskOpen`` (kept by the sync until ``task_ended``). Only an admin's token may run and cancel tasks: without one
-nothing goes by place.
+end is ``TaskOpen`` (kept by the sync until ``task_ended``), and so is a taking out whose answer was lost: it has no id
+then and is looked for among the playlist's tasks (``lost``). Only an admin's token may run, cancel and list tasks:
+without one nothing goes by place, and a refusal of those commands reads the token's role again at once (``recheck``).
 """
 
 from __future__ import annotations
@@ -91,6 +92,17 @@ SUCCESS, PARTIAL, FAILED, CANCELLED = "success", "partial_success", "failed", "c
 ENDED = (SUCCESS, PARTIAL, FAILED)
 #: The ``task_domain`` of a task that takes entries out of a playlist (every other one at a playlist may add).
 REMOVE_DOMAIN = "playlist_remove_tracks"
+#: Commands only an admin's token may give (the scope ``system.manage``).
+MANAGE = frozenset({"tasks/run", "tasks/cancel", "tasks/list"})
+#: How a task is named whose answer was lost when it was given (``lost(key, known)``): no id, found later by the
+#: playlist's tasks (``tasks/list``) that were not there before.
+LOST = "lost:"
+
+
+def lost(key: str, known: Iterable[str]) -> str:
+    """The name a taking out by place is kept under when the answer to it was lost: the playlist, and the tasks it had
+    before (``task_ended`` looks for a new one among the playlist's tasks)."""
+    return f"{LOST}{key}:{','.join(sorted(known))}"
 
 
 def _text(value: Any, limit: int = 500) -> str:
@@ -269,7 +281,14 @@ class MusicAssistantSource:
         except MaError as exc:
             if exc.code in client.AWAY:
                 raise TaskOpen(ident) from exc
+            self._refused(command, exc)
             raise
+
+    def _refused(self, command: str, exc: MaError) -> None:
+        """A command only an admin may give was refused: the token's user may have lost the right while the websocket
+        was open, so the role is read again (``recheck``), and nothing goes by place from then on."""
+        if command in MANAGE and exc.code == "ma_refused" and client.recheck(self.server_id) is False:
+            self._connection = None
 
     def _task(self, started: Any) -> str:
         """Waits for a task of Music Assistant to end; its status (``success``, ``partial_success``, ``failed``).
@@ -329,7 +348,10 @@ class MusicAssistantSource:
     def task_ended(self, ident: str) -> bool:
         """Whether a task nexmix lost sight of has ended for sure: it ended, it was cancelled, or Music Assistant no
         longer knows it (it started anew: a task never outlives that). A task still waiting is asked to be cancelled
-        once more (it may be refused again); a fault of the question is raised."""
+        once more (it may be refused again); a fault of the question is raised. A task whose answer was lost (``lost``)
+        is looked for among the playlist's tasks first."""
+        if ident.startswith(LOST):
+            return self._lost_ended(ident)
         try:
             found = self.call("tasks/get", {"task_id": ident}, timeout=15.0)
         except MaError as exc:
@@ -344,9 +366,24 @@ class MusicAssistantSource:
         except MaError as exc:
             if exc.code in client.AWAY:
                 raise
+            self._refused("tasks/cancel", exc)
             return False
         again = self.call("tasks/get", {"task_id": ident}, timeout=15.0)
         return isinstance(again, dict) and str(again.get("status") or "") in (*ENDED, CANCELLED)
+
+    def _lost_ended(self, ident: str) -> bool:
+        """A taking out whose answer was lost: whether every task at the playlist that may be it (one that takes out,
+        was not there before, is nobody's known to this connector) has ended. One still waiting is asked to end
+        (``task_ended``). None of them there: it was never made, or Music Assistant started anew."""
+        key, _sep, before = ident[len(LOST):].partition(":")
+        known = {one for one in before.split(",") if one}
+        tasks = self._playlist_tasks(number(key))
+        if tasks is None:
+            # Music Assistant would not tell: kept, never guessed.
+            return False
+        maybe = [one for one, (_status, domain, _count) in tasks.items()
+                 if one not in known and one not in self._own and domain == REMOVE_DOMAIN]
+        return all(self.task_ended(one) for one in maybe)
 
     def empty(self, key: str) -> bool:
         """Whether the playlist holds no entry at all, read now (the list's count is always 0 with Music Assistant)."""
@@ -571,17 +608,28 @@ class MusicAssistantSource:
                 answered(part, None)
         return len(chosen)
 
-    def _take_out(self, key: str, places: list[int], length: int) -> str:
+    def _take_out(self, key: str, places: list[int], length: int,
+                  watch: dict[str, tuple[str, str, int]] | None = None) -> str:
         """Entries out by place, checked: 1 to ``length``, each once. Never 0 or below (Music Assistant counts those
-        from the end), never past the end (the whole task would fail)."""
+        from the end), never past the end (the whole task would fail). When the answer to the command is lost (the
+        websocket broke, no answer in time), Music Assistant may have made the task all the same and run it later:
+        ``TaskOpen`` under the name ``lost`` (the playlist's tasks before, ``watch``), and the sync waits until no such
+        task can run any more (``task_ended``)."""
         chosen = sorted(set(places))
         if not chosen:
             return SUCCESS
         if chosen[0] < 1 or chosen[-1] > length:
             raise MaError("ma_bad_place")
+        try:
+            started = self.call("music/playlists/remove_playlist_tracks", {
+                "db_playlist_id": int(number(key)), "positions_to_remove": chosen})
+        except MaError as exc:
+            if exc.code in client.AWAY and client.sent(exc):
+                logger.warning("Music Assistant answer to a taking out lost, kept until no such task can run")
+                raise TaskOpen(lost(key, (watch or {}).keys())) from exc
+            raise
         # A failed task took nothing out (a place past the end fails it whole): the caller reads again.
-        return self._task(self.call("music/playlists/remove_playlist_tracks", {
-            "db_playlist_id": int(number(key)), "positions_to_remove": chosen}))
+        return self._task(started)
 
     @staticmethod
     def _places_ok(raws: list[Raw]) -> bool:
@@ -609,6 +657,7 @@ class MusicAssistantSource:
             if exc.code in client.AWAY:
                 raise
             logger.info("Music Assistant tasks not listed code=%s", exc.code)
+            self._refused("tasks/list", exc)
             return None
         tasks: dict[str, tuple[str, str, int]] = {}
         for one in found if isinstance(found, list) else []:
@@ -694,7 +743,7 @@ class MusicAssistantSource:
         if guard is not None:
             guard([one.kept for one in staying])
         try:
-            status = self._take_out(key, places, len(before))
+            status = self._take_out(key, places, len(before), watch)
         except TaskOpen as exc:
             # It may run later: what it meant to take out is never put back for it.
             exc.meant = [one.ident for one in before if one.place in set(places)]
@@ -753,7 +802,7 @@ class MusicAssistantSource:
         watch = self._window(key, before, expected)
         if guard is not None:
             guard([one.kept for one in before])
-        if self._take_out(key, list(range(first + 1, len(before) + 1)), len(before)) in (FAILED, CANCELLED):
+        if self._take_out(key, list(range(first + 1, len(before) + 1)), len(before), watch) in (FAILED, CANCELLED):
             if guard is not None:
                 guard(None)
             raise Raced

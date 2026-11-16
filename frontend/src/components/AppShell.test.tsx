@@ -133,9 +133,9 @@ describe('the playlists', () => {
   it('say what is not there yet, and the operator is shown where to connect Plex', async () => {
     await page.show(app(), '/')
     expect(document.querySelector('h1')!.textContent).toBe('Playlisten')
-    expect(document.querySelector('.lead p')!.textContent).toBe('Gemeinsam gebaut aus deiner Plex-Musikmediathek.')
+    expect(document.querySelector('.lead p')!.textContent).toBe('Gemeinsam gebaut aus deiner Musikmediathek.')
     const empty = document.querySelector('[data-testid="playlists-empty"]')!
-    expect(empty.textContent).toBe('Noch nicht mit Plex verbunden. Verbinde unter Einstellungen dein Plex-Konto.')
+    expect(empty.textContent).toBe('Noch kein Medienserver verbunden. Verbinde unter Einstellungen Plex, Jellyfin oder Music Assistant.')
     expect(empty.querySelector('a')!.getAttribute('href')).toBe('/settings?tab=plex')
     expect(empty.className).toBe('empty')
   })
@@ -144,15 +144,38 @@ describe('the playlists', () => {
     auth.me = { ...me, role: 'member' } as Me
     await page.show(app(), '/')
     const empty = document.querySelector('[data-testid="playlists-empty"]')!
-    expect(empty.textContent).toBe('Der Betreiber hat Plex noch nicht verbunden. Sobald die Mediathek da ist, geht es hier los.')
+    expect(empty.textContent).toBe('Der Betreiber hat noch keinen Medienserver verbunden. Sobald die Mediathek da ist, geht es hier los.')
     expect(empty.querySelector('a')).toBeNull()
   })
 
   it('come in English with the same sentences', async () => {
     await changeLanguage('en', false)
     await page.show(app(), '/')
-    expect(document.querySelector('[data-testid="playlists-empty"]')!.textContent).toBe('Not connected to Plex yet. Connect your Plex account under Settings.')
-    expect(document.querySelector('.lead p')!.textContent).toBe('Built together from your Plex music library.')
+    expect(document.querySelector('[data-testid="playlists-empty"]')!.textContent).toBe('No media server connected yet. Connect Plex, Jellyfin or Music Assistant under Settings.')
+    expect(document.querySelector('.lead p')!.textContent).toBe('Built together from your music library.')
+  })
+
+  it('name the kind of the first server, where the playlists end up, once its catalogue is there', async () => {
+    await changeLanguage('en', false)
+    const ready = (kind: string, title: string) => ({
+      kind, connected: true, library: true, library_title: title, ready: true,
+      counts: { artists: 3, albums: 4, tracks: 1234, songs: 1200, moods: 0 }, synced_at: null, full_at: null, running: null,
+      queued: null, last: null, analysis: { state: 'off', percent: null }, nightly: '03:30',
+    })
+    server.answers['GET /api/v1/playlists'] = { playlists: [], trash_days: 30, show_smart_playlists: false }
+    server.answers['GET /api/v1/playlists?trash=true'] = { playlists: [], trash_days: 30 }
+    const seen: string[] = []
+    for (const [kind, title] of [['plex', 'Music'], ['jellyfin', 'Musik'], ['music_assistant', 'Files']]) {
+      server.answers['GET /api/v1/catalog/status'] = ready(kind, title)
+      await page.show(app(), '/')
+      seen.push((document.querySelector('.lead p')!.textContent ?? '').replace(/[⁨⁩]/g, ''))
+      page.close()
+    }
+    expect(seen).toEqual([
+      '1,234 tracks from your Plex library “Music” · everything ends up as a playlist in Plex, and so in Plexamp and Music Assistant too.',
+      '1,234 tracks from your Jellyfin library “Musik” · everything ends up as a playlist in Jellyfin.',
+      '1,234 tracks from Music Assistant (Files) · everything ends up as a playlist in Music Assistant.',
+    ])
   })
 
   it('have no button without an effect: the new playlist comes with the playlists', async () => {

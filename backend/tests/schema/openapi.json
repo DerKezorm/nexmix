@@ -2384,7 +2384,7 @@
   "info": {
     "summary": "The interface the web app speaks, and the one native apps and scripts use.",
     "title": "nexmix",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11955,7 +11955,7 @@
     },
     "/api/v1/storage": {
       "get": {
-        "description": "Sizes of the database and the backups, the free room, and whether the data folder lies on a network share. The\nmusic is not counted: it lies in Plex. Counting a large folder may take a moment, so a count is kept for five\nminutes.",
+        "description": "Sizes of the database and the backups, the free room, and whether the data folder lies on a network share. The\nmusic is not counted: it lies on the media servers. Counting a large folder may take a moment, so a count is kept\nfor five minutes.",
         "operationId": "overview_api_v1_storage_get",
         "responses": {
           "200": {

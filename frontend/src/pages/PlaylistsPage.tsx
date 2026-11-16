@@ -308,7 +308,9 @@ export function PlaylistsPage() {
   const settings = <Link to="/settings?tab=plex" />
   const tracks = (status?.counts.tracks ?? 0).toLocaleString(i18n.language)
   const library = iso(status?.library_title ?? '')
-  const head = ready ? t('playlists.textReady', { tracks, library }) : t('playlists.text')
+  // The catalogue is the first server's: its kind names where the playlists end up.
+  const readyKey = status?.kind === 'jellyfin' ? 'playlists.textReadyJellyfin' : status?.kind === 'music_assistant' ? 'playlists.textReadyMa' : 'playlists.textReady'
+  const head = ready ? t(readyKey, { tracks, library }) : t('playlists.text')
   let body
   if (!status) body = null
   else if (!status.connected || !status.library)

@@ -26,10 +26,12 @@
   },
   "playlists": {
     "title": "Playlists",
-    "text": "Built together from your Plex music library.",
-    "emptyOperator": "Not connected to Plex yet. Connect your Plex account under <settings>Settings</settings>.",
+    "text": "Built together from your music library.",
+    "emptyOperator": "No media server connected yet. Connect Plex, Jellyfin or Music Assistant under <settings>Settings</settings>.",
     "textReady": "{{tracks}} tracks from your Plex library “{{library}}” · everything ends up as a playlist in Plex, and so in Plexamp and Music Assistant too.",
-    "notConnectedMember": "The operator has not connected Plex yet. As soon as the library is in, you can start here.",
+    "textReadyJellyfin": "{{tracks}} tracks from your Jellyfin library “{{library}}” · everything ends up as a playlist in Jellyfin.",
+    "textReadyMa": "{{tracks}} tracks from Music Assistant ({{library}}) · everything ends up as a playlist in Music Assistant.",
+    "notConnectedMember": "The operator has not connected a media server yet. As soon as the library is in, you can start here.",
     "loading": "Fetching the catalogue …",
     "loadingText": "The whole library once, after that only what is new. With a large library this takes a few minutes.",
     "none": "No playlist yet",
@@ -261,7 +263,7 @@
   },
   "about": {
     "menu": "About nexmix",
-    "subtitle": "Build playlists together from your Plex music library.",
+    "subtitle": "Build playlists together from your music library in Plex, Jellyfin or Music Assistant.",
     "version": "Version",
     "whatsNew": "What's new",
     "newer": "Version {{version}} is out",
@@ -1174,10 +1176,10 @@
     "partial": "(count not complete)",
     "free": "Free room",
     "freeOf": "{{free}} of {{total}}",
-    "musicNote": "nexmix does not count the music: it lies in Plex."
+    "musicNote": "nexmix does not count the music: it lies on your media servers."
   },
   "manifest": {
-    "description": "Build playlists together from your Plex music library.",
+    "description": "Build playlists together from your music library in Plex, Jellyfin or Music Assistant.",
     "playlists": "Playlists",
     "playlistsShort": "Playlists"
   },
@@ -1778,13 +1780,13 @@
     "tokenSoon_one": "The token runs out tomorrow ({{day}}). Make a new one in Music Assistant and connect again.",
     "tokenSoon_other": "The token runs out in {{count}} days ({{day}}). Make a new one in Music Assistant and connect again.",
     "tokenExpired": "The token ran out on {{day}}. Make a new one in Music Assistant and connect again.",
-    "moodsValue": "Music Assistant has none, genre and decade work",
+    "moodsValue": "Music Assistant has none; genre and decade work",
     "otherProviders": "Choose other providers",
     "newToken": "Enter a new token",
     "disconnect": "Disconnect Music Assistant",
     "disconnectTitle": "Disconnect Music Assistant?",
     "disconnectText": "nexmix forgets the token and the catalogue of {{tracks}} tracks. Playlists with tracks from Music Assistant stay in nexmix, but search, suggestions and listening in only work again once you connect Music Assistant anew. It can only be brought back by connecting again. Nothing changes in Music Assistant itself. nexmix forgets mirrors of playlists there; the playlists stay as they are.",
-    "searchValue": "local in nexmix, Music Assistant is never asked while typing"
+    "searchValue": "inside nexmix, Music Assistant is never asked while you type"
   },
   "mirror": {
     "copyOpen": "Copy to …",

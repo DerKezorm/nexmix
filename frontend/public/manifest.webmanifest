@@ -1,7 +1,7 @@
 {
   "name": "nexmix",
   "short_name": "nexmix",
-  "description": "Build playlists together from your Plex music library.",
+  "description": "Build playlists together from your music library in Plex, Jellyfin or Music Assistant.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

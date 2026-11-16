@@ -10,7 +10,7 @@ stays as it is: new fields may come, nothing is renamed or taken away. A change 
 - **The snapshot**: the description is kept in `backend/tests/schema/openapi.json`, and a test fails when the interface
   changes without the snapshot being renewed on purpose.
 
-This is the interface of nexmix 0.1. Every route that comes later is added to the description and to the snapshot,
+This is the interface of nexmix 0.2. Every route that comes later is added to the description and to the snapshot,
 and described here.
 
 ## Ways to sign in
@@ -116,8 +116,8 @@ tracks are of its server (`server` of the playlist).
 
 ### `GET /api/v1/catalog/status`
 
-With a session, a device token or an API key: where the catalogue of the Plex library stands (`server` names it). `connected` and
-`library` (Plex is connected, a music library chosen), `ready` (a catalogue is there), `counts` (`artists`, `albums`,
+With a session, a device token or an API key: where the catalogue of a media server stands (`server` names it; without it the first one connected; `kind` is its kind). `connected` and
+`library` (the server is connected, a music library chosen), `ready` (a catalogue is there), `counts` (`artists`, `albums`,
 `tracks`, `songs`, `moods`), `synced_at` and `full_at`, the run under way (`running`, with `step` and `progress` in
 thousandths) or waiting (`queued`: `full` or `partial`), the `last` run that ended (`state`, `error` as a code), the
 sonic analysis of Plex (`analysis.state`: `unknown`, `off`, `running` with `percent`, `on`), the time of the nightly
@@ -133,7 +133,7 @@ takes it, named by an `ETag` (the generation and a digest of the content); `If-N
 - `moods`, `genres`, `styles`: names, sorted.
 - `artists`: `[id, name, [moods], [styles]]`.
 - `albums`: `[id, title, artist, year, cover, [genres], [styles], [moods], added]` (`artist` a place in `artists`,
-  `-1` unknown; `cover` 1 when there is one; `added` Plex's time).
+  `-1` unknown; `cover` 1 when there is one; `added` the server's time).
 - `tracks`: `[id, title, album, own artist, seconds, listeners, plays, [moods], disc, number, song, original year]`
   (`own artist` empty where it is the album's; `song` the id of the version shown for the song, so the track is that
   version when `song` equals its `id`; `original year` the earliest album year of the song, 0 for none).
@@ -158,12 +158,12 @@ album ids of up to four `covers`, the first `people` who added something; `?tras
 bring back, with `purge_at` (30 days after `deleted_at`), and `server`, the media server the playlist takes its tracks
 from (its catalogue is the one to search; `null` before any was connected). `GET /{id}` adds `items` in order (each entry has its own
 `id`, the `track`, title, artist, album, `album_id`, `year`, `duration`, `song`, `missing` when the track is no longer in
-the catalogue, `from_plex` when it was put in through its server (Plex or Jellyfin), `plex_hint` when it is in nexmix
+the catalogue, `from_plex` when it was put in through its server (Plex, Jellyfin or Music Assistant), `plex_hint` when it is in nexmix
 only (`refused`: the server did not take its track, five tries over some 80 minutes; `elsewhere`: the connected server
 has no such track; `missing`: the server lost it while its track left the library, it goes back after the next run of
 the catalogue),
 `added_by`) and the playlist's `moods`. Each playlist has
-`smart` and `plex`: how its copy on its server stands (`kind`: `plex` or `jellyfin`; `state`: `synced`, `pending`,
+`smart` and `plex`: how its copy on its server stands (`kind`: `plex`, `jellyfin` or `music_assistant`; `state`: `synced`, `pending`,
 `waiting` when the server was not reached and it is tried again, `error` with its code in `error`, `off` without a
 server), `total` of a smart playlist, `gone_in_plex` for one deleted there, `note` when it was sorted there and here at
 the same time, and `loss` when the server lost many entries at once (see below). These read with an API key too;
@@ -304,7 +304,8 @@ good, the playlist takes its mirrors from their servers too. Cards and the playl
 - `POST /{id}/mirrors/{server}/emptied` `{"empty"}` (whoever may change the playlist): the answer to a mirror emptied
   on its server, which nexmix never takes over by itself. `true` empties the playlist everywhere (in nexmix, on the
   source and every mirror), `false` keeps it and fills the mirror again (`404` when nothing waits for an answer). The
-  sync summary of a server (`GET /api/v1/plex/playlists`, `GET /api/v1/jellyfin/{id}/playlists`) counts the mirrors
+  sync summary of a server (`GET /api/v1/plex/playlists`, `GET /api/v1/jellyfin/{id}/playlists`,
+  `GET /api/v1/music-assistant/{id}/playlists`) counts the mirrors
   there that wait (`emptied`).
 
 **Take all over** (the operator, in a browser): `POST /api/v1/servers/{id}/transfer/preview` `{"mode", "source",
@@ -510,3 +511,41 @@ Every route here answers `403 operator_only` to a member and `403 browser_only` 
 
 Outside `/api/v1` the server answers only the files of the built interface and `/manifest.webmanifest`; nothing there
 changes anything.
+
+## Every route
+
+The whole list, by the first part of the path (the sections above say what each does and who may call it). A test
+compares it with the routes of the server, both ways: a route that is not here, or one here the server does not have,
+fails it.
+
+- **about**: `GET /api/v1/about`, `GET /api/v1/about/updates`, `PUT /api/v1/about/updates`, `POST /api/v1/about/updates/check`
+- **accounts**: `GET /api/v1/accounts`, `DELETE /api/v1/accounts/{account_id}`, `POST /api/v1/accounts/{account_id}/block`, `POST /api/v1/accounts/{account_id}/reset-link`, `PUT /api/v1/accounts/{account_id}/role`, `POST /api/v1/accounts/{account_id}/sign-out`, `POST /api/v1/accounts/{account_id}/totp/reset`, `POST /api/v1/accounts/{account_id}/unblock`
+- **admin**: `GET /api/v1/admin/api-keys`, `POST /api/v1/admin/api-keys/{key_id}/block`
+- **api-keys**: `GET /api/v1/api-keys`, `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{key_id}`
+- **auth**: `PUT /api/v1/auth/avatar`, `DELETE /api/v1/auth/avatar`, `POST /api/v1/auth/forgot`, `POST /api/v1/auth/login`, `POST /api/v1/auth/login/totp`, `POST /api/v1/auth/login/totp/cancel`, `POST /api/v1/auth/logout`, `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me`, `GET /api/v1/auth/methods`, `POST /api/v1/auth/passkey`, `POST /api/v1/auth/passkey/begin`, `GET /api/v1/auth/passkeys`, `POST /api/v1/auth/passkeys`, `POST /api/v1/auth/passkeys/begin`, `POST /api/v1/auth/passkeys/{uid}/remove`, `PUT /api/v1/auth/password`, `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/{uid}`, `POST /api/v1/auth/setup/codes`, `POST /api/v1/auth/setup/done`, `POST /api/v1/auth/totp/begin`, `POST /api/v1/auth/totp/confirm`, `POST /api/v1/auth/totp/disable`, `POST /api/v1/auth/totp/recovery`
+- **avatars**: `GET /api/v1/avatars/{account_id}`
+- **backups**: `GET /api/v1/backups`, `POST /api/v1/backups`, `POST /api/v1/backups/upload`, `DELETE /api/v1/backups/{name}`, `POST /api/v1/backups/{name}/check`, `POST /api/v1/backups/{name}/download`, `POST /api/v1/backups/{name}/restore`
+- **catalog**: `GET /api/v1/catalog`, `GET /api/v1/catalog/albums/{album_id}`, `GET /api/v1/catalog/artists/{artist_id}`, `GET /api/v1/catalog/cover/{album_id}`, `GET /api/v1/catalog/facets`, `GET /api/v1/catalog/search`, `GET /api/v1/catalog/status`, `POST /api/v1/catalog/sync`
+- **devices**: `GET /api/v1/devices`, `POST /api/v1/devices`, `DELETE /api/v1/devices/{uid}`
+- **email**: `GET /api/v1/email/confirm/{token}`, `POST /api/v1/email/confirm/{token}`
+- **guest**: `GET /api/v1/guest`, `GET /api/v1/guest/catalog`, `GET /api/v1/guest/catalog/search`, `GET /api/v1/guest/cover/{album_id}`, `GET /api/v1/guest/events`, `POST /api/v1/guest/items`, `POST /api/v1/guest/items/move`, `POST /api/v1/guest/items/remove`, `POST /api/v1/guest/items/restore`, `POST /api/v1/guest/leave`, `GET /api/v1/guest/suggestions`
+- **health**: `GET /api/v1/health`
+- **invite**: `GET /api/v1/invite/{token}`, `POST /api/v1/invite/{token}`
+- **invites**: `GET /api/v1/invites`, `POST /api/v1/invites`, `DELETE /api/v1/invites/{invite_id}`
+- **jellyfin**: `GET /api/v1/jellyfin`, `POST /api/v1/jellyfin/connect`, `POST /api/v1/jellyfin/quick`, `GET /api/v1/jellyfin/quick/{quick_id}`, `DELETE /api/v1/jellyfin/quick/{quick_id}`, `GET /api/v1/jellyfin/{server_id}`, `DELETE /api/v1/jellyfin/{server_id}`, `GET /api/v1/jellyfin/{server_id}/choices`, `PUT /api/v1/jellyfin/{server_id}/library`, `GET /api/v1/jellyfin/{server_id}/playlists`, `POST /api/v1/jellyfin/{server_id}/playlists/sync`, `PUT /api/v1/jellyfin/{server_id}/user`
+- **join**: `GET /api/v1/join/{code}`, `POST /api/v1/join/{code}`, `GET /api/v1/join/{code}/cover/{album_id}`
+- **locales**: `GET /api/v1/locales`, `GET /api/v1/locales/{code}`, `PUT /api/v1/locales/{code}`, `DELETE /api/v1/locales/{code}`
+- **logs**: `GET /api/v1/logs`, `DELETE /api/v1/logs`, `GET /api/v1/logs/download`, `GET /api/v1/logs/level`, `PUT /api/v1/logs/level`
+- **me**: `GET /api/v1/me`, `PUT /api/v1/me/email`, `DELETE /api/v1/me/email/pending`, `PUT /api/v1/me/language`, `PUT /api/v1/me/preferences`, `PUT /api/v1/me/profile`, `POST /api/v1/me/whats-new/seen`
+- **music-assistant**: `GET /api/v1/music-assistant`, `POST /api/v1/music-assistant/connect`, `GET /api/v1/music-assistant/{server_id}`, `DELETE /api/v1/music-assistant/{server_id}`, `GET /api/v1/music-assistant/{server_id}/playlists`, `POST /api/v1/music-assistant/{server_id}/playlists/sync`, `GET /api/v1/music-assistant/{server_id}/providers`, `PUT /api/v1/music-assistant/{server_id}/providers`
+- **oidc**: `DELETE /api/v1/oidc/admin/accounts/{account_id}/links/{provider_id}`, `GET /api/v1/oidc/admin/links`, `GET /api/v1/oidc/admin/providers`, `POST /api/v1/oidc/admin/providers`, `PUT /api/v1/oidc/admin/providers/order`, `PUT /api/v1/oidc/admin/providers/{provider_id}`, `DELETE /api/v1/oidc/admin/providers/{provider_id}`, `GET /api/v1/oidc/admin/providers/{provider_id}/impact`, `GET /api/v1/oidc/authentik/address`, `POST /api/v1/oidc/authentik/address`, `GET /api/v1/oidc/authentik/blueprint`, `POST /api/v1/oidc/authentik/setup`, `GET /api/v1/oidc/callback`, `GET /api/v1/oidc/me`, `POST /api/v1/oidc/me/address`, `GET /api/v1/oidc/providers`, `GET /api/v1/oidc/{slug}/callback`, `POST /api/v1/oidc/{slug}/link`, `DELETE /api/v1/oidc/{slug}/link`, `GET /api/v1/oidc/{slug}/start`
+- **playlists**: `GET /api/v1/playlists`, `POST /api/v1/playlists`, `GET /api/v1/playlists/{playlist_id}`, `PUT /api/v1/playlists/{playlist_id}`, `DELETE /api/v1/playlists/{playlist_id}`, `DELETE /api/v1/playlists/{playlist_id}/concurrent`, `GET /api/v1/playlists/{playlist_id}/events`, `PUT /api/v1/playlists/{playlist_id}/hidden`, `DELETE /api/v1/playlists/{playlist_id}/hidden`, `GET /api/v1/playlists/{playlist_id}/invite`, `POST /api/v1/playlists/{playlist_id}/invite`, `PUT /api/v1/playlists/{playlist_id}/invite`, `DELETE /api/v1/playlists/{playlist_id}/invite`, `DELETE /api/v1/playlists/{playlist_id}/invite/guests/{guest_id}`, `POST /api/v1/playlists/{playlist_id}/items`, `POST /api/v1/playlists/{playlist_id}/items/move`, `POST /api/v1/playlists/{playlist_id}/items/remove`, `POST /api/v1/playlists/{playlist_id}/items/restore`, `GET /api/v1/playlists/{playlist_id}/mirrors`, `POST /api/v1/playlists/{playlist_id}/mirrors`, `POST /api/v1/playlists/{playlist_id}/mirrors/preview`, `DELETE /api/v1/playlists/{playlist_id}/mirrors/{server_id}`, `POST /api/v1/playlists/{playlist_id}/mirrors/{server_id}/emptied`, `PUT /api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}`, `DELETE /api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}`, `POST /api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take`, `POST /api/v1/playlists/{playlist_id}/mirrors/{server_id}/remake`, `DELETE /api/v1/playlists/{playlist_id}/missing`, `POST /api/v1/playlists/{playlist_id}/missing/remove`, `POST /api/v1/playlists/{playlist_id}/move`, `POST /api/v1/playlists/{playlist_id}/plex-order`, `DELETE /api/v1/playlists/{playlist_id}/plex-order`, `POST /api/v1/playlists/{playlist_id}/restore`, `GET /api/v1/playlists/{playlist_id}/shares`, `PUT /api/v1/playlists/{playlist_id}/shares/{account_id}`, `DELETE /api/v1/playlists/{playlist_id}/shares/{account_id}`, `POST /api/v1/playlists/{playlist_id}/sync`
+- **plex**: `GET /api/v1/plex`, `DELETE /api/v1/plex`, `POST /api/v1/plex/connect`, `GET /api/v1/plex/libraries`, `PUT /api/v1/plex/library`, `POST /api/v1/plex/pin`, `GET /api/v1/plex/pin/{pin_id}`, `DELETE /api/v1/plex/pin/{pin_id}`, `GET /api/v1/plex/playlists`, `POST /api/v1/plex/playlists/sync`
+- **preview**: `GET /api/v1/preview`, `GET /api/v1/preview/{track_id}`
+- **push**: `GET /api/v1/push`, `POST /api/v1/push/devices`, `POST /api/v1/push/devices/lookup`, `PUT /api/v1/push/devices/{device_id}`, `DELETE /api/v1/push/devices/{device_id}`, `POST /api/v1/push/test`
+- **reset**: `GET /api/v1/reset/{token}`, `POST /api/v1/reset/{token}`
+- **servers**: `GET /api/v1/servers`, `DELETE /api/v1/servers/{server_id}`, `GET /api/v1/servers/{server_id}/transfer`, `POST /api/v1/servers/{server_id}/transfer`, `DELETE /api/v1/servers/{server_id}/transfer`, `GET /api/v1/servers/{server_id}/transfer/preview`, `POST /api/v1/servers/{server_id}/transfer/preview`
+- **settings**: `GET /api/v1/settings`, `PUT /api/v1/settings`, `POST /api/v1/settings/mail-test`, `GET /api/v1/settings/push`, `PUT /api/v1/settings/push`, `POST /api/v1/settings/push/renew`, `GET /api/v1/settings/readiness`
+- **setup**: `GET /api/v1/setup`, `POST /api/v1/setup`
+- **storage**: `GET /api/v1/storage`
+- **suggestions**: `GET /api/v1/suggestions`, `GET /api/v1/suggestions/hidden`, `POST /api/v1/suggestions/hidden`, `DELETE /api/v1/suggestions/hidden/{track_id}`, `GET /api/v1/suggestions/mood`, `GET /api/v1/suggestions/sonic`, `GET /api/v1/suggestions/together`

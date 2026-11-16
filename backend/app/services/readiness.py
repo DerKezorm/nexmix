@@ -155,7 +155,8 @@ def _proxy(request: Request, unknown_proxy: bool) -> Point:
 
 
 def _backups(db: Session) -> Point:
-    """The database, the settings and the secrets are copied regularly (the music is not: it lies in Plex)."""
+    """The database, the settings and the secrets are copied regularly (the music is not: it lies on the media
+    servers)."""
     every = backups.schedule(db)
     return Point("backups", OK if every != "off" else WARN, {"schedule": every})
 

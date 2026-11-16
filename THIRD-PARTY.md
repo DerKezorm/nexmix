@@ -17,7 +17,8 @@ nexmix loads no font, icon or script from another host.
 ## Backend
 
 What `backend/requirements.txt` names, and what those packages bring along (checked against the installed set, which is
-what the container image installs; on Linux `uvicorn[standard]` adds uvloop).
+what the container image installs; on Linux `uvicorn[standard]` adds uvloop). websockets is named directly since 0.2:
+nexmix speaks to Jellyfin and Music Assistant over their websockets.
 
 | Package | Licence |
 |---|---|

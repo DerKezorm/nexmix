@@ -39,7 +39,7 @@ PLEX = "plex--q9r8s7t6"
 BUILTIN = "builtin"
 SCHEMA = 65
 #: Commands only a user of the role ``admin`` may give (scope ``system.manage``).
-MANAGE = frozenset({"tasks/run", "tasks/cancel"})
+MANAGE = frozenset({"tasks/run", "tasks/cancel", "tasks/list"})
 #: The ``task_domain`` of the tasks at a playlist.
 ADD_DOMAIN, REMOVE_DOMAIN = "playlist_add_tracks", "playlist_remove_tracks"
 #: Lists longer than this come in parts (``partial``).
@@ -130,6 +130,7 @@ class FakeChannel:
         self.closed = False
         self.authed = False
         self.role = ""
+        self.token = ""
 
     def send(self, text: str) -> None:
         from app.services.music_assistant import Closed
@@ -232,9 +233,14 @@ class FakeMA:
         self.roles[token] = role
         return token
 
-    def set_role(self, token: str, role: str) -> None:
-        """The user of the token becomes ``role`` (the websockets open stay as they are until they open anew)."""
+    def set_role(self, token: str, role: str, *, open_too: bool = False) -> None:
+        """The user of the token becomes ``role``. The websockets open stay as they are until they open anew, unless
+        ``open_too``: then they refuse an admin's commands at once (whether Music Assistant does so was not measured)."""
         self.roles[token] = role
+        if open_too:
+            for one in self.channels:
+                if one.authed and one.token == token:
+                    one.role = role
 
     def revoke(self, token: str) -> None:
         self.tokens[token] = False
@@ -449,6 +455,7 @@ class FakeMA:
                                   "details": "The access token is invalid or has expired."})
                     return
                 channel.authed = True
+                channel.token = token
                 channel.role = self.roles.get(token, "admin")
                 channel.push({"message_id": ident, "result": {"authenticated": True,
                                                               "user": {"user_id": "u1", "role": channel.role}},

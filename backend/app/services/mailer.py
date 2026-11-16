@@ -73,7 +73,8 @@ def send_invite(db: Session, to: str, link: str, *, by: str, until: str = "") ->
     message["Subject"] = f"{by} invites you to nexmix"
     runs = f"until {until}" if until else "for a few days"
     message.set_content(
-        f"{by} invites you to nexmix, a place to build playlists together from a Plex music library.\n\n"
+        f"{by} invites you to nexmix, a place to build playlists together from a music library in Plex, Jellyfin "
+        "or Music Assistant.\n\n"
         f"Open this link to accept:\n{link}\n\n"
         f"The link works once, {runs}. If you did not expect this mail, ignore it.\n"
     )
