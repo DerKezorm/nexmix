@@ -60,6 +60,7 @@ def test_an_open_playlist_hears_what_came_from_plex_and_how_the_sync_stands(clie
     assert len(change["order"]) == 2 and change["name"] == "Live"
     state = listener.wait_for("plex")
     assert state["state"] == "synced"
+    listener.close()
 
 
 def test_a_playlist_deleted_in_plex_tells_its_browsers(client: TestClient, world: FakePlex) -> None:
@@ -71,6 +72,7 @@ def test_a_playlist_deleted_in_plex_tells_its_browsers(client: TestClient, world
     sync(world, look_at_plex=True)
     gone = listener.wait_for("playlist")
     assert gone["op"] == "deleted" and gone["plex"] is True
+    listener.close()
 
 
 # --- Plex's stream of events -------------------------------------------------------------------------------------------

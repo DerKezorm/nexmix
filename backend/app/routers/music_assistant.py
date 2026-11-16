@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from ..deps import DbSession, OperatorAccount
 from ..errors import error
 from ..models import SERVER_MA, MediaServer
-from ..services import catalog, ma_link, media, mirrors, sync
+from ..services import catalog, ma_link, media, mirrors, music_assistant, sync
 from ..services.music_assistant import MaError
 
 logger = logging.getLogger("nexmix.musicassistant")
@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/v1/music-assistant", tags=["music-assistant"])
 
 #: The status a failure answers with, by its code.
 STATUS = {"bad_url": 422, "bad_token": 422, "address_refused": 422, "not_ma": 422, "ma_too_old": 422,
+          "ma_not_admin": 422,
           "ma_unreachable": 502, "ma_timeout": 504, "ma_starting": 503, "ma_refused": 409}
 HANDLE = r"^[0-9a-f]{16}$"
 ServerId = Annotated[int, Path(ge=1, le=10**9)]
@@ -48,6 +49,8 @@ def view(db: DbSession, row: MediaServer, offered: list[ma_link.Provider] | None
         "providers": len(row.providers or []),
         # Chosen providers that are a Plex or Jellyfin server nexmix also knows directly: their tracks stand twice.
         "doubled": ma_link.doubled(db, row, offered) if offered is not None else [],
+        # The token is no admin's (any more): nothing is written to its playlists by place, the card says so.
+        "not_admin": music_assistant.may_manage(row.id) is False,
     }
 
 

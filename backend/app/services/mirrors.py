@@ -1039,13 +1039,15 @@ def drop_discarded(sync_round: Round, playlist_id: int) -> None:
         return
     from . import sync
 
-    there = {entry.track: entry for entry in sync._numbered(sync_round.server_id, sync_round.source.items(key),
-                                                              by_track=sync_round.by_track)}
+    read = sync._numbered(sync_round.server_id, sync_round.source.items(key), by_track=sync_round.by_track)
+    there = {entry.track: entry for entry in read}
     refs = [there[int(one.track_id)].ref for one in dropping if int(one.track_id) in there]
     if refs:
         if sync_round.caps.moves == "tail":
-            # By place (Music Assistant): what must stay is kept with the playlist until the step is done.
-            sync_round.source.remove_many(key, refs, guard=sync_round._guard)
+            # By place (Music Assistant): what must stay is kept with the playlist until the step is done; only from
+            # the reading just made, and somebody's track added meanwhile that may be gone is told.
+            sync_round.source.remove_many(key, refs, guard=sync_round._guard, expected=[entry.ref for entry in read],
+                                          noticed=sync_round._concurrent)
         else:
             sync_round.source.remove_many(key, refs)
         logger.info("Tracks only in the mirror taken out there playlist=%s count=%s", playlist_id, len(refs))
@@ -1287,6 +1289,14 @@ def refused(db: Session, copy_id: int, tracks: Sequence[int]) -> None:
     """The mirror's server refused the tracks for good: their entries say so for this mirror."""
     db.execute(update(MirrorItem).where(MirrorItem.copy_id == copy_id, MirrorItem.track_id.in_(list(tracks)))
                .values(hint=HINT_REFUSED))
+    db.commit()
+
+
+def missing(db: Session, copy_id: int, tracks: Sequence[int]) -> None:
+    """The mirror's server lacks the tracks (passed over when the mirror was copied for a new name): their entries say
+    so for this mirror, and they go back after the next run of the catalogue."""
+    db.execute(update(MirrorItem).where(MirrorItem.copy_id == copy_id, MirrorItem.track_id.in_(list(tracks)))
+               .values(hint=HINT_MISSING))
     db.commit()
 
 

@@ -219,11 +219,20 @@ everything else needs a session or a device token. A playlist the account may no
   taken by mistake is put back and the sync merges again. A new order takes out everything from the first entry out of
   place and puts it back in order; a new name makes a new playlist under it, copies every entry over and deletes the
   old one (its id changes; neither is ever taken in as another playlist). A name another playlist there has already is
-  made unique there (`Sommer (2)`) and stays nexmix's own here. Tracks Music Assistant does not take (unknown, or there
-  already) are offered again later as with Plex. The playlist's `plex` carries `kind` `music_assistant`; while Music
-  Assistant restarts or cannot be reached it is `waiting` (`ma_unreachable`, `ma_timeout`, `ma_starting`), a token it no
-  longer takes (run out after a year, or revoked) is `error` `ma_refused` (connect again), a playlist that kept changing
-  there while nexmix wrote it `error` `playlist_changed_meanwhile` (tried again later).
+  made unique there (`Sommer (2)`) and stays nexmix's own here. A track Music Assistant passes over in that copy stays
+  here with `plex_hint` `missing` (an entry whose file Music Assistant no longer knows stays behind with the old one).
+  Tracks Music Assistant does not take (unknown, or there already) are offered again later as with Plex. The
+  playlist's `plex` carries `kind` `music_assistant`; while Music Assistant restarts or cannot be reached it is
+  `waiting` (`ma_unreachable`, `ma_timeout`, `ma_starting`), and while a task of nexmix's there has not been seen to end
+  (cancelling it was refused, the websocket broke) `waiting` `ma_task_open`: nothing is written to the playlist and
+  nothing taken from it until Music Assistant says it ended, and what it took then that was not meant goes back. A
+  token it no longer takes (run out after a year, or revoked) is `error` `ma_refused` (connect again), one that is no
+  admin's any more `error` `ma_not_admin`, a playlist that kept changing there while nexmix wrote it `error`
+  `playlist_changed_meanwhile` (tried again later). Nothing goes out by place unless the playlist read right before is
+  the one merged and nobody else's task at it is under way; when somebody adds there right while nexmix takes out by
+  place all the same, Music Assistant may have taken that track instead (it names no entry, so which one is not known):
+  `plex.concurrent` says `{"at", "count"}` until `DELETE /{id}/concurrent` (seen; needs the right to change the
+  playlist).
 - Entries the server lost: before an entry taken out on the server is taken out here, the server is asked whether its
   track is still in its library (one question per sync, Jellyfin 200 tracks, Plex 50 to a request; when the question
   fails nothing is taken, and the sync is tried again). When its track left the library (Jellyfin drops an entry
@@ -435,10 +444,11 @@ session that began it: for every other one, even of another operator, it does no
 holds for a Quick Connect of Jellyfin (`quick_expired`). No answer ever holds a token.
 
 Music Assistant lives under `/api/v1/music-assistant`: `GET` the connected Music Assistant servers, each with its
-`token` (`expires_at`, `days_left`, `warn` from 30 days before, `expired`), `providers` (how many are chosen) and
-`doubled`; `POST /connect` `{"url", "token"}` with a long-lived token made in Music Assistant (profile, tokens; it lasts
+`token` (`expires_at`, `days_left`, `warn` from 30 days before, `expired`), `providers` (how many are chosen),
+`doubled` and `not_admin` (the token is no admin's any more: nothing is taken out or sorted there by place); `POST /connect` `{"url", "token"}` with a long-lived token made in Music Assistant (profile, tokens; it lasts
 a year). The address is checked first (`/info`; `422 not_ma`, `ma_too_old` for a schema older than nexmix speaks,
-`bad_url`, `address_refused`), then the token on a websocket of its own (`422 bad_token`); `409 no_music_provider` when
+`bad_url`, `address_refused`), then the token on a websocket of its own (`422 bad_token`; `422 ma_not_admin` for a token of a user who is no admin
+there: nexmix must be able to cancel its tasks); `409 no_music_provider` when
 it has none. The answer has the `server` and its music `providers` (`handle` of nexmix's own, `name`, `kind`, `chosen`);
 a single provider is chosen at once. `GET /{id}`, `GET /{id}/providers` (with `doubled`: chosen providers that are a
 Plex or Jellyfin server nexmix also knows directly, whose tracks would stand twice), `PUT /{id}/providers`

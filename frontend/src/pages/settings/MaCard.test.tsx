@@ -151,6 +151,18 @@ describe('the Music Assistant card', () => {
     expect(plain(document.querySelector('[data-testid="ma-doubled"]')!.textContent)).toContain('Plex bringt Titel, die nexmix auch direkt kennt')
   })
 
+  it('says when the token is not an admin token any more', async () => {
+    server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, not_admin: true }] }
+    await page.show(<MediaServers />)
+    await until(() => document.querySelector('[data-testid="ma-not-admin"]'), 'the alert')
+    expect(plain(document.querySelector('[data-testid="ma-not-admin"]')!.textContent)).toContain('Der Token gehört keinem Admin mehr')
+    page.close()
+    server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, not_admin: false }] }
+    await page.show(<MediaServers />)
+    await until(() => document.querySelector('[data-testid="ma-connected"]'), 'the card')
+    expect(document.querySelector('[data-testid="ma-not-admin"]')).toBeNull()
+  })
+
   it('asks before other providers replace the catalogue, and sends nothing without', async () => {
     await page.show(<MediaServers />)
     const box = card('ma-3')
@@ -173,5 +185,17 @@ describe('the Music Assistant card', () => {
     expect(server.changes()).toEqual([])
     await page.click(page.button('Music Assistant trennen', document.querySelector('[role="dialog"]') as HTMLElement))
     await until(() => server.changes().includes('DELETE /api/v1/music-assistant/3'), 'disconnected')
+  })
+
+  it('names the tracks that go even before the card knew the catalogue', async () => {
+    server.fails['GET /api/v1/catalog/status?server=3'] = { status: 503, code: 'busy' }
+    await page.show(<MediaServers />)
+    const box = card('ma-3')
+    await until(() => box.querySelector('[data-testid="ma-connected"]'), 'the card')
+    delete server.fails['GET /api/v1/catalog/status?server=3']
+    await page.click(page.button('Music Assistant trennen', box))
+    await until(() => document.querySelector('[role="dialog"]'), 'the question')
+    expect(page.text).toContain('nexmix vergisst den Token und den Katalog mit 33 Titeln')
+    expect(server.changes()).toEqual([])
   })
 })

@@ -8641,6 +8641,57 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/concurrent": {
+      "delete": {
+        "operationId": "seen_concurrent_api_v1_playlists__playlist_id__concurrent_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Seen Concurrent Api V1 Playlists  Playlist Id  Concurrent Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Seen: the note of tracks added in Music Assistant meanwhile, which may be gone, goes",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/events": {
       "get": {
         "operationId": "playlist_events_api_v1_playlists__playlist_id__events_get",

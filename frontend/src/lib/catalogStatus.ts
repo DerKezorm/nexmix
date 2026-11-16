@@ -33,6 +33,17 @@ export function useCatalogStatus(server?: number | null, wait = false): { status
   return { status, failed, refresh }
 }
 
+/** How many tracks the catalogue holds, for a question that names them: the status as shown, or (not there yet, the
+ * page just opened) asked now, so that a dialog never says 0 for a catalogue that has tracks. */
+export async function tracksOf(status: CatalogStatus | null, server?: number | null): Promise<number> {
+  if (status) return status.counts.tracks
+  try {
+    return (await catalogApi.status(server)).counts.tracks
+  } catch {
+    return 0
+  }
+}
+
 /** The share of a run done, in whole percent. */
 export function percentOf(status: CatalogStatus | null): number {
   return Math.max(0, Math.min(100, Math.floor((status?.running?.progress ?? 0) / 10)))

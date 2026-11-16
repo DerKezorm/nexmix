@@ -1,6 +1,8 @@
 """Random runs against the stand-in Music Assistant: changes in nexmix and in Music Assistant's own interface, some of
-them right while nexmix writes by place, restarts in between. After each run both sides hold the same, and every track
-nobody took out is still there (``NEXMIX_MA_RUNS`` runs, 25 by default)."""
+them right while nexmix writes by place (one to three at once: a track replaced is one taken out and another added),
+restarts in between. After each run both sides hold the same, and every track nobody took out is still there, or the
+playlist says that tracks added there meanwhile may be gone (Music Assistant names no entry: which one cannot be told)
+(``NEXMIX_MA_RUNS`` runs, 25 by default, from ``NEXMIX_MA_FIRST``)."""
 
 from __future__ import annotations
 
@@ -17,9 +19,10 @@ from .ma_world import both_equal, connect, events, keys, list_key, make, numbers
 from .plex_world import local_tracks, playlist_row
 
 RUNS = int(os.environ.get("NEXMIX_MA_RUNS", "25"))
+FIRST = int(os.environ.get("NEXMIX_MA_FIRST", "0"))
 
 
-@pytest.mark.parametrize("seed", range(RUNS))
+@pytest.mark.parametrize("seed", range(FIRST, FIRST + RUNS))
 def test_random_changes_on_both_sides_lose_nothing(seed: int, client: TestClient, operator: object,
                                                    fake_ma: FakeMA) -> None:
     rng = random.Random(seed)
@@ -87,8 +90,15 @@ def test_random_changes_on_both_sides_lose_nothing(seed: int, client: TestClient
         fake_ma.ui_order(current, there)
 
     def meanwhile() -> None:
-        # Somebody changes it in Music Assistant right before nexmix's next task runs there.
-        fake_ma.before_task = rng.choice([ui_add, ui_remove, ui_order])
+        # Somebody changes it in Music Assistant right before nexmix's next task runs there: one to three changes at
+        # once.
+        chosen = [rng.choice([ui_add, ui_remove, ui_order]) for _one in range(rng.randint(1, 3))]
+
+        def all_of() -> None:
+            for one in chosen:
+                one()
+
+        fake_ma.before_task = all_of
 
     def restart() -> None:
         fake_ma.restart()
@@ -116,8 +126,11 @@ def test_random_changes_on_both_sides_lose_nothing(seed: int, client: TestClient
         sync(rounds=20)
     key = list_key(playlist)
     there = both_equal(fake_ma, server, playlist)
-    # Nothing nobody took out is lost.
-    assert (added - removed) <= set(there), sorted((added - removed) - set(there))
+    # Nothing nobody took out is lost without a word: what is gone was added in Music Assistant while nexmix wrote by
+    # place, and the playlist says how many may be gone.
+    lost = (added - removed) - set(there)
+    note = client.get(f"/api/v1/playlists/{playlist}").json()["plex"].get("concurrent")
+    assert not lost or (note is not None and note["count"] >= len(lost)), (sorted(lost), note)
     # One playlist there, of nexmix's name.
     mine = [one for one in fake_ma.playlists.values() if one.editable]
     assert len(mine) == 1 and mine[0].id == key

@@ -1,7 +1,9 @@
 """A stand-in Music Assistant 2.10.9 for the tests, with every way of its that was measured on a throwaway server
 (``tools`` of the project, not in the repository): the greeting on the websocket, ``auth`` with errors 20 and 23, the
-answers in parts, the tasks that end later, taking out by place (0 takes the last, -1 the one before, a place past the
-end fails the whole task), tracks twice or unknown passed over without a word, a reading without ``force_refresh`` that
+answers in parts, the tasks that end later and run on their own (none behind a lookup of metadata that hangs without
+the internet, which a get starts unless told not to), taking out by place (0 takes the last, -1 the one before, a place
+past the end fails the whole task), tracks twice or unknown (a provider's file the library does not know) passed over
+without a word (``partial_success``), a reading without ``force_refresh`` that
 stays as it was after entries were taken out, ``music/playlists/remove`` that leaves the file behind (the playlist comes
 back at the next scan), a new name that does not take, no events while it scans its providers, error 999 for anything
 it does not expect, previews and pictures without signing in.
@@ -36,6 +38,10 @@ OTHER_FILES = "filesystem_local--e5f6a7b8"
 PLEX = "plex--q9r8s7t6"
 BUILTIN = "builtin"
 SCHEMA = 65
+#: Commands only a user of the role ``admin`` may give (scope ``system.manage``).
+MANAGE = frozenset({"tasks/run", "tasks/cancel"})
+#: The ``task_domain`` of the tasks at a playlist.
+ADD_DOMAIN, REMOVE_DOMAIN = "playlist_add_tracks", "playlist_remove_tracks"
 #: Lists longer than this come in parts (``partial``).
 PART = 400
 _VERSIONS = re.compile(r"\s*\((live[^()]*|acoustic|instrumental|[^()]*remaster[^()]*|radio edit|demo)\)\s*$",
@@ -108,8 +114,10 @@ class Task:
     #: As measured: "pending" until it runs (it may wait behind other tasks), then how it ended.
     status: str = "pending"
     error: str | None = None
-    #: How many more times ``tasks/get`` answers "running" before it runs.
+    #: How many more commands go by before it runs on its own.
     later: int = 0
+    #: As measured: what the task is about (``task_domain``, ``playlist_id``, ``item_count``).
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class FakeChannel:
@@ -121,6 +129,7 @@ class FakeChannel:
         self.inbox: queue.Queue[str | None] = queue.Queue()
         self.closed = False
         self.authed = False
+        self.role = ""
 
     def send(self, text: str) -> None:
         from app.services.music_assistant import Closed
@@ -162,6 +171,8 @@ class FakeMA:
         self.schema = SCHEMA
         self.min_schema = 28
         self.tokens: dict[str, bool] = {}
+        #: The role of each token's user (``admin`` or ``user``): only an admin's may run and cancel tasks.
+        self.roles: dict[str, str] = {}
         self.token = self.make_token()
         self.providers: list[dict[str, Any]] = [
             {"type": "music", "domain": "filesystem_local", "instance_id": FILES, "name": "Musik", "available": True},
@@ -199,8 +210,12 @@ class FakeMA:
         self.break_after: set[str] = set()
         #: Runs right before a task does its work (somebody changes the playlist in Music Assistant meanwhile).
         self.before_task: Any = None
-        #: How many times ``tasks/get`` says "running" before a task runs.
+        #: How many commands go by (whatever they are) before a task runs on its own.
         self.task_later = 0
+        #: Without the internet a lookup of metadata hangs, and holds Music Assistant's tasks behind it: what
+        #: ``music/tracks/get`` and ``music/playlists/get`` start unless asked with ``allow_update_metadata: false``.
+        self.offline = True
+        self.hung = False
         #: Events are held back while Music Assistant scans its providers (``music/sync``).
         self.scanning = False
         #: Files of playlists removed with ``music/playlists/remove``: back at the next scan.
@@ -211,10 +226,15 @@ class FakeMA:
 
     # --- The library ----------------------------------------------------------------------------------------------
 
-    def make_token(self, days: float = 365.0) -> str:
+    def make_token(self, days: float = 365.0, *, role: str = "admin") -> str:
         token = make_token(days)
         self.tokens[token] = True
+        self.roles[token] = role
         return token
+
+    def set_role(self, token: str, role: str) -> None:
+        """The user of the token becomes ``role`` (the websockets open stay as they are until they open anew)."""
+        self.roles[token] = role
 
     def revoke(self, token: str) -> None:
         self.tokens[token] = False
@@ -312,12 +332,14 @@ class FakeMA:
     # --- From Music Assistant's own interface ---------------------------------------------------------------------
 
     def ui_add(self, playlist: int, track: int) -> None:
+        """Added in Music Assistant's own interface: a task of its own like nexmix's, run at once."""
         with self.lock:
             entry = self.tracks[track].mappings[0]
             found = self.playlists[playlist]
             if entry not in found.entries:
                 found.entries.append(entry)
                 found.cached = list(found.entries)
+            self._done_task(f"Add items to playlist {found.name}", ADD_DOMAIN, playlist, 1)
             self._event("media_item_updated", f"library://playlist/{playlist}", self._playlist(found))
 
     def ui_remove(self, playlist: int, track: int) -> None:
@@ -326,13 +348,28 @@ class FakeMA:
             entry = self.tracks[track].mappings[0]
             if entry in found.entries:
                 found.entries.remove(entry)
+            self._done_task(f"Remove items from playlist {found.name}", REMOVE_DOMAIN, playlist, 1)
             self._event("media_item_updated", f"library://playlist/{playlist}", self._playlist(found))
 
+    def _done_task(self, name: str, domain: str, playlist: int, count: int) -> None:
+        made = Task(secrets.token_hex(16), name, None, status="success",
+                    metadata={"task_domain": domain, "playlist_id": str(playlist), "playlist_name": name,
+                              "item_count": count})
+        self.tasks[made.id] = made
+
     def ui_order(self, playlist: int, tracks: list[int]) -> None:
+        """A new order from Music Assistant's own interface: it cannot move, so the entries out of place are taken out
+        and put in again (two tasks, as nexmix's own)."""
         with self.lock:
             found = self.playlists[playlist]
+            before = list(found.entries)
             found.entries = [self.tracks[one].mappings[0] for one in tracks]
             found.cached = list(found.entries)
+            first = next((place for place, (one, two) in enumerate(zip(before, found.entries, strict=False)) if one != two), None)
+            if first is not None:
+                moved = len(found.entries) - first
+                self._done_task(f"Remove items from playlist {found.name}", REMOVE_DOMAIN, playlist, moved)
+                self._done_task(f"Add items to playlist {found.name}", ADD_DOMAIN, playlist, moved)
             self._event("media_item_updated", f"library://playlist/{playlist}", self._playlist(found))
 
     def ui_create(self, name: str, tracks: list[int] | None = None) -> int:
@@ -412,12 +449,19 @@ class FakeMA:
                                   "details": "The access token is invalid or has expired."})
                     return
                 channel.authed = True
+                channel.role = self.roles.get(token, "admin")
                 channel.push({"message_id": ident, "result": {"authenticated": True,
-                                                              "user": {"user_id": "u1", "role": "admin"}},
+                                                              "user": {"user_id": "u1", "role": channel.role}},
                               "partial": False})
                 return
             if not channel.authed:
                 channel.push({"message_id": ident, "error_code": 20, "details": "Authentication is required."})
+                return
+            # Time goes by: the tasks waiting run on their own, without anybody asking about them.
+            self._tick()
+            if command in MANAGE and channel.role != "admin":
+                # The scope ``system.manage`` (commands.json of 2.10.9); the code of the refusal was not measured.
+                channel.push({"message_id": ident, "error_code": 20, "details": "Insufficient permissions."})
                 return
             if command in self.fail_once:
                 code = self.fail_once.pop(command)
@@ -554,6 +598,7 @@ class FakeMA:
                  "provider_mappings": []} for key, name in self._page(sorted(self.genres.items()), args)]
 
     def _c_music__tracks__get(self, args: dict[str, Any]) -> Any:
+        self._lookup(args)
         if args.get("provider_instance_id_or_domain") != "library":
             raise _Error(2)
         track = self.tracks.get(int(args["item_id"]))
@@ -585,6 +630,7 @@ class FakeMA:
         return self._page(found, args)
 
     def _c_music__playlists__get(self, args: dict[str, Any]) -> Any:
+        self._lookup(args)
         found = self.playlists.get(int(args["item_id"]))
         if found is None:
             raise _Error(2)
@@ -609,22 +655,44 @@ class FakeMA:
             raise _Error(3)
         return self._playlist(self._create(str(args["name"])))
 
-    def _task(self, name: str, work: Any) -> dict[str, Any]:
-        made = Task(secrets.token_hex(16), name, work, later=self.task_later)
+    def _task(self, name: str, work: Any, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        made = Task(secrets.token_hex(16), name, work, later=self.task_later, metadata=dict(metadata or {}))
         self.tasks[made.id] = made
         return self._task_view(made)
 
     @staticmethod
     def _task_view(task: Task) -> dict[str, Any]:
         return {"name": task.name, "id": task.id, "status": task.status, "last_error": task.error,
-                "progress": None, "metadata": {}}
+                "progress": None, "metadata": dict(task.metadata)}
+
+    def _c_tasks__list(self, _args: dict[str, Any]) -> Any:
+        return [self._task_view(one) for one in self.tasks.values()]
 
     def run_tasks(self) -> None:
-        """Every task still running does its work now (Music Assistant runs them one after another)."""
+        """Every task still running does its work now (Music Assistant runs them one after another; a lookup of
+        metadata that hung is over)."""
         with self.lock:
+            self.hung = False
             for task in list(self.tasks.values()):
                 if task.status == "pending":
                     self._run(task)
+
+    def _tick(self) -> None:
+        """A task waits ``later`` commands, then runs; none runs behind a lookup of metadata that hangs."""
+        if self.hung:
+            return
+        for task in list(self.tasks.values()):
+            if task.status != "pending":
+                continue
+            if task.later > 0:
+                task.later -= 1
+            else:
+                self._run(task)
+
+    def _lookup(self, args: dict[str, Any]) -> None:
+        """A get of a single item looks up its metadata unless told not to: without the internet that hangs."""
+        if args.get("allow_update_metadata") is not False and self.offline:
+            self.hung = True
 
     def _run(self, task: Task) -> None:
         if self.before_task is not None:
@@ -655,11 +723,6 @@ class FakeMA:
         task = self.tasks.get(str(args["task_id"]))
         if task is None:
             raise _Error(2)
-        if task.status == "pending":
-            if task.later > 0:
-                task.later -= 1
-            else:
-                self._run(task)
         return self._task_view(task)
 
     def _c_music__playlists__add_playlist_tracks(self, args: dict[str, Any]) -> Any:
@@ -687,7 +750,8 @@ class FakeMA:
             self._event("media_item_updated", f"library://playlist/{ident}", self._playlist(found))
             return "partial_success" if unknown else "success"
 
-        return self._task(f"Add items to playlist {ident}", work)
+        return self._task(f"Add items to playlist {ident}", work,
+                          {"task_domain": ADD_DOMAIN, "playlist_id": str(ident), "item_count": len(uris)})
 
     def _entry_of(self, uri: str) -> tuple[str, str] | None:
         found = re.fullmatch(r"([^:]+)://track/(.+)", uri)
@@ -697,8 +761,8 @@ class FakeMA:
         if instance == "library":
             track = self.tracks.get(int(item)) if item.isdigit() else None
             return track.mappings[0] if track is not None else None
-        return (instance, item) if self._library_of(instance, item) is not None or instance in (FILES, OTHER_FILES,
-                                                                                                PLEX) else None
+        # As measured: a provider's URI of a file the library does not know (renamed, gone) is passed over.
+        return (instance, item) if self._library_of(instance, item) is not None else None
 
     def _c_music__playlists__remove_playlist_tracks(self, args: dict[str, Any]) -> Any:
         ident = int(args["db_playlist_id"])
@@ -717,7 +781,8 @@ class FakeMA:
             self._event("media_item_updated", f"library://playlist/{ident}", self._playlist(found))
             return "success"
 
-        return self._task(f"Remove items from playlist {ident}", work)
+        return self._task(f"Remove items from playlist {ident}", work,
+                          {"task_domain": REMOVE_DOMAIN, "playlist_id": str(ident), "item_count": len(places)})
 
     def _c_music__playlists__playlist_tracks(self, args: dict[str, Any]) -> Any:
         found = self.playlists.get(int(args["item_id"]))

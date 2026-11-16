@@ -17,7 +17,7 @@ import { ApiError } from '../../api/client'
 import { busy, catalogApi, type CatalogStatus } from '../../api/plex'
 import { jellyfinApi, type Handle, type JellyfinServer, type JellyfinUser, type QuickStart } from '../../api/servers'
 import { useConfirm } from '../../components/useConfirm'
-import { percentOf, useCatalogStatus } from '../../lib/catalogStatus'
+import { percentOf, tracksOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
 import { ServerPlaylists, Steps } from './PlexCard'
@@ -128,10 +128,10 @@ export function JellyfinCard({ server, onChanged }: { server: JellyfinServer; on
       await refresh()
     })
 
-  const disconnect = () =>
+  const disconnect = async () =>
     ask({
       title: t('jellyfin.disconnectTitle'),
-      text: t('jellyfin.disconnectText', { tracks: (status?.counts.tracks ?? 0).toLocaleString(i18n.language) }),
+      text: t('jellyfin.disconnectText', { tracks: (await tracksOf(status, server.id)).toLocaleString(i18n.language) }),
       confirm: t('jellyfin.disconnect'),
       run: async () => {
         await jellyfinApi.disconnect(server.id)

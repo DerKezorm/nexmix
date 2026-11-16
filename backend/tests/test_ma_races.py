@@ -139,12 +139,12 @@ def test_a_new_name_broken_off_half_way_leaves_one_playlist(client: TestClient, 
     original = connector.MusicAssistantSource.copy
     calls = {"count": 0}
 
-    def broken(self: connector.MusicAssistantSource, key: str, into: str) -> None:
+    def broken(self: connector.MusicAssistantSource, key: str, into: str) -> list[Raw]:
         calls["count"] += 1
         if calls["count"] == 1:
             self._add_uris(into, [one.uri for one in self.raw(key)][:3])
             raise MaError("ma_unreachable")
-        original(self, key, into)
+        return original(self, key, into)
 
     monkeypatch.setattr(connector.MusicAssistantSource, "copy", broken)
     assert client.put(f"/api/v1/playlists/{playlist}", json={"name": "Neu"}).status_code == 200
@@ -325,7 +325,7 @@ def test_added_in_music_assistant_to_the_old_playlist_while_it_is_copied_for_a_n
     extra = fake_ma.track_by_name("Small Hours").id
     original = connector.MusicAssistantSource.copy
 
-    def meanwhile(self: connector.MusicAssistantSource, key: str, into: str) -> list[str]:
+    def meanwhile(self: connector.MusicAssistantSource, key: str, into: str) -> list[Raw]:
         copied = original(self, key, into)
         # Somebody adds to the old one in Music Assistant right after it was copied.
         fake_ma.ui_add(old, extra)

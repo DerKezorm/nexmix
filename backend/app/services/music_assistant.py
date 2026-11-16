@@ -90,6 +90,26 @@ class MaError(PlexError):
     """Music Assistant did not play along. ``code`` says how; never a text from Music Assistant."""
 
 
+#: The role of a user of Music Assistant who may run and cancel tasks; a token of anybody else is refused.
+ADMIN = "admin"
+NOT_ADMIN = "ma_not_admin"
+
+
+#: A task of Music Assistant whose end nexmix could not see (cancelling it was refused, it outran every wait, or the
+#: websocket broke meanwhile): it may still run later.
+TASK_OPEN = "ma_task_open"
+
+
+class TaskOpen(MaError):
+    """A task of Music Assistant (``task``) that may still run: nobody saw it end, nobody saw it cancelled. ``meant``:
+    what a step by place meant to take out (the entries' ``Raw.ident``), so that it is never put back."""
+
+    def __init__(self, task: str, meant: list[str] | None = None) -> None:
+        super().__init__(TASK_OPEN, 503)
+        self.task = task
+        self.meant = list(meant or [])
+
+
 def check_address(url: str) -> str:
     """``http(s)://host[:port]`` as nexmix keeps it (no credentials, no path); a link-local or metadata address is
     refused, whoever typed it."""
@@ -318,6 +338,9 @@ class Connection:
         self._reader: threading.Thread | None = None
         self.alive = False
         self.server: dict[str, Any] = {}
+        #: The role of the token's user, as ``auth`` answered: only an admin may run and cancel tasks
+        #: (``tasks/run``, ``tasks/cancel`` need the scope ``system.manage``).
+        self.role = ""
         #: Events as they came, for whoever listens (``ma_events``); the oldest go when nobody does.
         self.events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=2000)
 
@@ -345,6 +368,8 @@ class Connection:
                 result = message.get("result")
                 if not isinstance(result, dict) or result.get("authenticated") is not True:
                     raise MaError("ma_refused")
+                user = result.get("user") if isinstance(result.get("user"), dict) else {}
+                self.role = str(user.get("role") or "")[:40]
                 break
         except Closed as exc:
             channel.close()
@@ -370,6 +395,11 @@ class Connection:
             message = _parse(raw)
             if message is not None and "server_id" in message:
                 return message
+
+    @property
+    def admin(self) -> bool:
+        """Whether the token's user may run and cancel tasks (an admin of Music Assistant)."""
+        return self.role == ADMIN
 
     def _read(self) -> None:
         channel = self._channel
@@ -493,6 +523,8 @@ class _Kept:
 
 
 _kept: dict[int, _Kept] = {}
+#: Whether each server's token was an admin's at the last opening (``may_manage``).
+_admin: dict[int, bool] = {}
 _kept_lock = threading.Lock()
 #: One lock per server around opening, so that two asking at once open one websocket.
 _opening: dict[int, threading.Lock] = {}
@@ -544,7 +576,16 @@ def connection(server_id: int, url: str, token: str) -> Connection:
             raise MaError("ma_unreachable") from exc
         with _kept_lock:
             _kept[server_id] = _Kept(made, mark)
+            _admin[server_id] = made.admin
+        if not made.admin:
+            logger.warning("Music Assistant token is no admin's, nothing is written by place server=%s", server_id)
         return made
+
+
+def may_manage(server_id: int) -> bool | None:
+    """Whether the server's token was an admin's when the websocket last opened (None: not opened yet)."""
+    with _kept_lock:
+        return _admin.get(server_id)
 
 
 def current(server_id: int) -> Connection | None:
@@ -558,6 +599,7 @@ def drop(server_id: int) -> None:
     """The server's websocket closes (let go of, another token, another address)."""
     with _kept_lock:
         kept = _kept.pop(server_id, None)
+        _admin.pop(server_id, None)
     if kept is not None and kept.connection is not None:
         kept.connection.close()
 
@@ -567,6 +609,7 @@ def forget() -> None:
     with _kept_lock:
         found = list(_kept.values())
         _kept.clear()
+        _admin.clear()
     for kept in found:
         if kept.connection is not None:
             kept.connection.close()

@@ -29,27 +29,35 @@ def quick(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class Listener:
-    """A browser with the playlist open: reads its event stream in a thread of its own."""
+    """A browser with the playlist open: reads its event stream in a thread of its own. ``close`` waits until the
+    stream ended (the server ends it after ``STREAM_SECONDS``): a test that opened one closes it before its client
+    goes, so the thread never reads from a client already closed."""
 
     def __init__(self, browser: TestClient, playlist_id: int) -> None:
         self.events: list[tuple[str, Any]] = []
         self.ready = threading.Event()
+        #: What ended the reading other than the end of the stream (raised where the test waits, not in the thread).
+        self.error: BaseException | None = None
         self.thread = threading.Thread(target=self._read, args=(browser, playlist_id), daemon=True)
         self.thread.start()
         assert self.ready.wait(5), "the stream did not open"
 
     def _read(self, browser: TestClient, playlist_id: int) -> None:
         name = ""
-        with browser.stream("GET", f"/api/v1/playlists/{playlist_id}/events") as answer:
-            self.status = answer.status_code
-            for line in answer.iter_lines():
-                if line.startswith("event: "):
-                    name = line[7:]
-                elif line.startswith("data: "):
-                    self.events.append((name, json.loads(line[6:])))
-                    if name == "hello":
-                        self.ready.set()
-        self.ready.set()
+        try:
+            with browser.stream("GET", f"/api/v1/playlists/{playlist_id}/events") as answer:
+                self.status = answer.status_code
+                for line in answer.iter_lines():
+                    if line.startswith("event: "):
+                        name = line[7:]
+                    elif line.startswith("data: "):
+                        self.events.append((name, json.loads(line[6:])))
+                        if name == "hello":
+                            self.ready.set()
+        except Exception as exc:  # noqa: BLE001 - handed to the test, never left to the thread
+            self.error = exc
+        finally:
+            self.ready.set()
 
     def wait_for(self, name: str, seconds: float = 3.0) -> Any:
         deadline = time.monotonic() + seconds
@@ -57,8 +65,16 @@ class Listener:
             for event, data in self.events:
                 if event == name:
                     return data
+            if self.error is not None:
+                raise AssertionError(f"the stream broke off: {type(self.error).__name__}")
             time.sleep(0.02)
         raise AssertionError(f"no {name} event; got {[event for event, _data in self.events]}")
+
+    def close(self, seconds: float = 10.0) -> None:
+        """Waits for the stream to end, and says whether it ended cleanly."""
+        self.thread.join(seconds)
+        assert not self.thread.is_alive(), "the stream did not end"
+        assert self.error is None, type(self.error).__name__
 
 
 @pytest.fixture

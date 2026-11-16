@@ -128,7 +128,12 @@
     "lossRemove": "Hier auch entfernen",
     "lossRemoveTitle": "Auch in nexmix entfernen?",
     "lossRemoveText": "Die Titel, die in {{server}} fehlen, verschwinden auch aus „{{name}}“. Gleich danach lässt sich das über Rückgängig zurückholen, später nicht mehr.",
-    "lossRemoved": "Titel entfernt"
+    "lossRemoved": "Titel entfernt",
+    "concurrentTitle_one": "In Music Assistant gleichzeitig geändert, bitte prüfen",
+    "concurrentTitle_other": "In Music Assistant gleichzeitig geändert, bitte prüfen",
+    "concurrentText_one": "Während nexmix die Playlist dort geändert hat, kam in Music Assistant ein Titel dazu. Er fehlt jetzt womöglich. Welcher es war, sagt Music Assistant nicht. Sieh dort nach und füge ihn wieder hinzu, falls er fehlt.",
+    "concurrentText_other": "Während nexmix die Playlist dort geändert hat, kamen in Music Assistant {{count}} Titel dazu. Sie fehlen jetzt womöglich. Welche es waren, sagt Music Assistant nicht. Sieh dort nach und füge sie wieder hinzu, falls sie fehlen.",
+    "concurrentSeen": "Gesehen"
   },
   "settings": {
     "title": "Einstellungen",
@@ -949,6 +954,8 @@
     "ma_copy": "Die Kopie in Music Assistant stimmte nicht. nexmix versucht es gleich noch einmal.",
     "ma_bad_place": "Die Playlist in Music Assistant hat sich gerade geändert. nexmix gleicht neu ab.",
     "ma_twice": "Ein Titel steht in Music Assistant doppelt in der Playlist. Nimm ihn dort einmal heraus.",
+    "ma_task_open": "Eine Aufgabe in Music Assistant ist noch nicht fertig. Bis sie durch ist, schreibt nexmix nichts in diese Playlist.",
+    "ma_not_admin": "Der Token gehört keinem Admin von Music Assistant. nexmix braucht einen Admin-Token, damit es seine Änderungen dort abbrechen kann. Leg ihn als Admin an und verbinde neu.",
     "playlist_changed_meanwhile": "Die Playlist wurde auf dem Server immer wieder gleichzeitig geändert. nexmix versucht es später noch einmal."
   },
   "ready": {
@@ -1764,6 +1771,7 @@
     "providersText": "Der Katalog dieses Music Assistant wird gelöscht und mit den gewählten Anbietern neu geholt. Bis dahin gibt es keine Suche. Zurückholen lässt er sich, indem du wieder die alten Anbieter wählst.",
     "providersConfirm": "Anbieter wechseln",
     "doubled": "{{names}} bringt Titel, die nexmix auch direkt kennt. Sie stünden doppelt da. Lass diesen Anbieter besser weg.",
+    "notAdmin": "Der Token gehört keinem Admin mehr. nexmix nimmt in Music Assistant deshalb nichts mehr aus Playlisten heraus und sortiert nicht um. Gib einen Admin-Token ein.",
     "token": "Token",
     "tokenUntil": "gültig bis {{day}}",
     "tokenOpen": "ohne Ablaufdatum",

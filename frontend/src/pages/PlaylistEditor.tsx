@@ -409,6 +409,16 @@ export function PlaylistEditor() {
       },
     })
   }, [playlistId, run, show, t])
+  /** The note "changed in Music Assistant at the same time": seen, it goes. */
+  const seenConcurrent = useCallback(async () => {
+    try {
+      const plex = await playlistsApi.seenConcurrent(playlistId)
+      const now = current.current
+      if (now) show({ ...now, plex })
+    } catch (error) {
+      setProblem(errorText(codeOf(error)))
+    }
+  }, [playlistId, show])
   const keepOrder = useCallback(async () => {
     try {
       const plex = await playlistsApi.keepOrder(playlistId)
@@ -607,6 +617,19 @@ export function PlaylistEditor() {
                       }
                     >
                       {t('sync.lossRemove')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {playlist.plex?.concurrent && (
+              <div className="note" data-testid="concurrent-note" role="status">
+                <b>{t('sync.concurrentTitle', { count: playlist.plex.concurrent.count })}</b>
+                {t('sync.concurrentText', { count: playlist.plex.concurrent.count })}
+                {canEdit && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" className="btn" onClick={() => void seenConcurrent()}>
+                      {t('sync.concurrentSeen')}
                     </button>
                   </div>
                 )}

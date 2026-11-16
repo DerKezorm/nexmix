@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { busy, catalogApi } from '../../api/plex'
 import { jellyfinApi, maApi, serversApi, type JellyfinServer, type MaServer, type MediaServer } from '../../api/servers'
 import { useConfirm } from '../../components/useConfirm'
-import { useCatalogStatus } from '../../lib/catalogStatus'
+import { tracksOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { iso } from '../../lib/say'
 import { JellyfinCard, JellyfinConnect, ServerCatalog } from './JellyfinCard'
 import { MaCard, MaConnect } from './MaCard'
@@ -49,10 +49,10 @@ function OtherPlexCard({ server, onChanged }: { server: MediaServer; onChanged: 
         <Button
           ghost
           disabled={action.busy}
-          onClick={() =>
+          onClick={async () =>
             ask({
               title: t('servers.disconnectTitle', { name: iso(server.name) }),
-              text: t('servers.disconnectText', { tracks: (status?.counts.tracks ?? 0).toLocaleString(i18n.language) }),
+              text: t('servers.disconnectText', { tracks: (await tracksOf(status, server.id)).toLocaleString(i18n.language) }),
               confirm: t('servers.disconnect'),
               run: async () => {
                 await serversApi.disconnect(server.id)

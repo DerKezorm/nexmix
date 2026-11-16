@@ -341,6 +341,19 @@ describe('a playlist on a server without moods (Jellyfin)', () => {
     await until(() => !document.querySelector('[data-testid="loss-note"]'), 'the note goes')
   })
 
+  it('says that tracks added in Music Assistant meanwhile may be gone, until seen', async () => {
+    server.answers['GET /api/v1/playlists/7'] = playlist({ server: 2, plex: { ...jellySync, kind: 'music_assistant', concurrent: { at: '2026-11-16T12:00:00Z', count: 1 } } })
+    server.answers['DELETE /api/v1/playlists/7/concurrent'] = { ...jellySync, kind: 'music_assistant' }
+    await open()
+    const note = document.querySelector('[data-testid="concurrent-note"]')!
+    expect(plain(note.textContent)).toContain('In Music Assistant gleichzeitig geändert, bitte prüfen')
+    expect(plain(note.textContent)).toContain('kam in Music Assistant ein Titel dazu')
+    expect(note.textContent).not.toMatch(/[–—]/)
+    await page.click(page.button('Gesehen'))
+    await until(() => server.called('DELETE', '/api/v1/playlists/7/concurrent'), 'seen')
+    await until(() => !document.querySelector('[data-testid="concurrent-note"]'), 'the note goes')
+  })
+
   it('keeps the entries Jellyfin lost when asked to', async () => {
     server.answers['GET /api/v1/playlists/7'] = playlist({ server: 2, plex: { ...jellySync, loss: { at: '2026-11-15T12:00:00Z', count: 6 } } })
     server.answers['DELETE /api/v1/playlists/7/missing'] = jellySync

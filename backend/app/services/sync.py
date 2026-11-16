@@ -53,8 +53,13 @@ as for Jellyfin. Entries go out by their places in a reading of the moment, and 
 still be there afterwards (``writing["restore"]``): a step broken off half way is put right at the next sync
 (``_restore``), never read as entries taken out there. When the playlist changed in Music Assistant meanwhile, the
 connector puts back what it may have taken by mistake and the sync merges again (``Raced``) instead of taking out by
-place once more. A new order takes out everything from the first entry out of place and puts it back in order. A new
-name makes a new playlist, copies everything over and deletes the old one (``_rename_copy``); while that runs,
+place once more. Nothing goes by place unless the reading right before is the one merged and nobody else's task at the
+playlist is under way; an entry added there while a step ran that may be gone is told (``note["concurrent"]``). A task
+nobody saw end (``TaskOpen``) is kept (``writing["tasks"]``): until Music Assistant says it ended, nothing is written to
+the playlist, nothing taken from it (``_await_tasks``). Only a token of an admin there writes by place. A new order
+takes out everything from the first entry out of place and puts it back in order. A new name makes a new playlist,
+copies everything over (what Music Assistant passes over stays in nexmix as missing there) and deletes the old one
+(``_rename_copy``); while that runs,
 ``writing["renaming"]`` names both, so that neither is ever taken for a playlist deleted there or made there, and a copy
 broken off half way is cleaned up (``_finish_rename``). Changes made there come as events at once (``ma_events``); the
 list is looked at every minute.
@@ -106,6 +111,7 @@ from . import jobs, match, media, merge, mirrors, plex_link, sources
 from .events import hub, playlist_topic
 from .jellyfin import AWAY as JELLYFIN_AWAY
 from .music_assistant import AWAY as MA_AWAY
+from .music_assistant import TASK_OPEN, MaError, TaskOpen
 from .plex import PlexError
 from .sources.base import PLAYLISTS_NOT_FOUND, Entry, Listed
 from .sources.plex import CHUNK
@@ -134,7 +140,9 @@ CHECK_PER_LOOK = 10
 #: The waits after failed tries in a row, in seconds; the last one stays.
 BACKOFF = (5, 10, 30, 60, 120, 300, 600)
 #: Codes that mean the server was not reached: the playlist waits for it.
-AWAY = frozenset({"plex_unreachable", "plex_timeout", "plex_busy", *JELLYFIN_AWAY, *MA_AWAY})
+AWAY = frozenset({"plex_unreachable", "plex_timeout", "plex_busy", *JELLYFIN_AWAY, *MA_AWAY, TASK_OPEN})
+#: The most tasks of Music Assistant kept as open for one copy (``writing["tasks"]``).
+TASKS_KEPT = 50
 #: Codes with which the server says it does not know the playlist (or the entry). A sign only: whether the playlist
 #: is gone there says ``Round._vanished``.
 GONE = frozenset({"plex_not_found", "jellyfin_not_found", "ma_not_found"})
@@ -181,6 +189,8 @@ RACED, RACED_TRIES = "playlist_changed_meanwhile", 5
 ADOPT_UNIQUE = 3600
 #: The playlist lives in nexmix only: its source server takes no playlists from nexmix.
 LOCAL = "local"
+#: The note of entries added on the server while nexmix wrote by place, which may be gone (Music Assistant).
+CONCURRENT = "concurrent"
 #: Why a smart playlist rests on a server it was not made on: its rules live on its own server.
 SMART_NOT_HERE = "smart_not_here"
 
@@ -356,8 +366,9 @@ def view(db: Session, playlist_id: int, row: ServerPlaylist | None = None) -> di
     """How the copy on the source server stands, for the interface: the server's ``kind``; ``off`` without a server,
     ``local`` when the server takes no playlists from nexmix (no kind of server today), else ``synced``, ``pending``,
     ``waiting`` (server not reached) or ``error`` with its code; whether it is a smart playlist and how many entries
-    it has; the note of an order sorted on the server and in nexmix at the same time, and the note of many entries the
-    server lost at once (``loss``)."""
+    it has; the note of an order sorted on the server and in nexmix at the same time, the note of many entries the
+    server lost at once (``loss``), and the note of entries added in Music Assistant while nexmix wrote there by place,
+    which may be gone (``concurrent``)."""
     source = media.source_of(db, playlist_id)
     row = copy_of(db, playlist_id, source) if row is None else row
     state = row.state if row is not None else PENDING
@@ -369,6 +380,7 @@ def view(db: Session, playlist_id: int, row: ServerPlaylist | None = None) -> di
         state, row = LOCAL, None
     note = row.note if row is not None and isinstance(row.note, dict) else None
     loss = note.get("loss") if note is not None and isinstance(note.get("loss"), dict) else None
+    concurrent = _concurrent_note(db, playlist_id)
     return {
         "state": state,
         "kind": server.kind if server is not None else None,
@@ -379,7 +391,20 @@ def view(db: Session, playlist_id: int, row: ServerPlaylist | None = None) -> di
         "gone_in_plex": bool(row is not None and row.gone_there),
         "note": {"at": note.get("at"), "count": len(note.get("order") or [])} if note and note.get("order") else None,
         "loss": {"at": loss.get("at"), "count": int(loss.get("count") or 0)} if loss else None,
+        "concurrent": concurrent,
     }
+
+
+def _concurrent_note(db: Session, playlist_id: int) -> dict[str, Any] | None:
+    """Entries added in Music Assistant while nexmix wrote there by place, which may be gone (``Round._concurrent``):
+    of every copy of the playlist, the source's and the mirrors', how many and when last."""
+    count, at = 0, None
+    for note in db.scalars(select(ServerPlaylist.note).where(ServerPlaylist.playlist_id == playlist_id)):
+        found = note.get(CONCURRENT) if isinstance(note, dict) else None
+        if isinstance(found, dict):
+            count += int(found.get("count") or 0)
+            at = max(at or "", str(found.get("at") or "")) or None
+    return {"at": at, "count": count} if count else None
 
 
 def _publish(db: Session, playlist_id: int | None, row: ServerPlaylist | None = None) -> None:
@@ -446,18 +471,31 @@ def plex_order(db: Session, playlist_id: int) -> list[int] | None:
 
 
 def drop_note(db: Session, playlist_id: int, part: str = "order") -> None:
-    """The note of an order sorted on both sides (``order``) or of entries lost on the server at once (``loss``)
-    goes."""
-    row = mirror_of(db, playlist_id)
-    note = row.note if row is not None and isinstance(row.note, dict) else None
-    if row is None or note is None:
+    """The note of an order sorted on both sides (``order``), of entries lost on the server at once (``loss``), or of
+    entries added in Music Assistant meanwhile that may be gone (``concurrent``, of every copy) goes."""
+    if part == CONCURRENT:
+        rows = list(db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)))
+    else:
+        found = mirror_of(db, playlist_id)
+        rows = [found] if found is not None else []
+    changed = None
+    for row in rows:
+        note = row.note if isinstance(row.note, dict) else None
+        if note is None:
+            continue
+        rest = {key: value for key, value in note.items() if key not in ((part, "at") if part == "order" else (part,))}
+        if rest == note:
+            continue
+        # The time of an order's note goes with it; what is left of other notes stays.
+        row.note = rest if any(key != "at" for key in rest) else None
+        changed = row
+    if changed is None:
         return
-    rest = {key: value for key, value in note.items() if key not in ((part, "at") if part == "order" else (part,))}
-    if rest == note:
-        return
-    row.note = rest if rest.get("order") or rest.get("loss") else None
     db.commit()
-    _publish(db, playlist_id, row)
+    if part == CONCURRENT:
+        hub.publish(playlist_topic(playlist_id), "plex", view(db, playlist_id))
+    else:
+        _publish(db, playlist_id, changed)
 
 
 def missing_tracks(db: Session, playlist_id: int) -> list[int]:
@@ -502,7 +540,7 @@ def after_catalogue(db: Session, server_id: int) -> int:
         row = mirror_of(db, playlist_id)
         if row is not None and isinstance(row.note, dict) and row.note.get("loss") and len(found) == len(items):
             rest = {key: value for key, value in row.note.items() if key != "loss"}
-            row.note = rest if rest.get("order") else None
+            row.note = rest if any(key != "at" for key in rest) else None
         db.flush()
         mark(db, playlist_id, at_once=True)
         db.commit()
@@ -708,6 +746,25 @@ def _raced(db: Session, ident: int) -> None:
                 row.playlist_id, row.server_id, row.tries)
 
 
+def _task_left(db: Session, ident: int, exc: TaskOpen) -> None:
+    """A task of Music Assistant nobody saw end (cancelling it was refused, the websocket broke): kept with the open
+    write (``writing["tasks"]``), with what it meant to take out, until Music Assistant says it ended. Until then
+    nothing is written to the playlist, nothing is taken from it (``Round._await_tasks``)."""
+    db.rollback()
+    row = db.get(ServerPlaylist, ident, populate_existing=True)
+    if row is None:
+        return
+    writing = dict(row.writing) if isinstance(row.writing, dict) else {}
+    tasks = [one for one in writing.get("tasks") or [] if isinstance(one, dict) and one.get("id") != exc.task]
+    tasks.append({"id": exc.task, "meant": [str(one) for one in exc.meant][:5000]})
+    writing["tasks"] = tasks[-TASKS_KEPT:]
+    row.writing = writing
+    db.commit()
+    logger.warning("Music Assistant task left open, the playlist waits until it ends playlist=%s server=%s",
+                   row.playlist_id, row.server_id)
+    _failed(db, ident, exc.code)
+
+
 def run_round(db: Session, job: Job) -> None:
     ident = int(job.ref)
     row = db.get(ServerPlaylist, ident, populate_existing=True)
@@ -729,6 +786,8 @@ def run_round(db: Session, job: Job) -> None:
         db.rollback()
     except sources.Raced:
         _raced(db, ident)
+    except TaskOpen as exc:
+        _task_left(db, ident, exc)
     except plex_link.Unreadable:
         _failed(db, ident, "token_unreadable")
     except PlexError as exc:
@@ -883,6 +942,12 @@ class Round:
         self.raw_tracks: set[int] = set()
         #: The playlist changed role while this sync ran (moved to another server): it starts again.
         self.role_changed = False
+        #: Tracks a new name by copy left behind (Music Assistant passed them over): kept in nexmix as missing there;
+        #: and how the server names them.
+        self.left_in_copy: set[int] = set()
+        self.left_keys: set[str] = set()
+        #: How the server names the entries of its playlist as last read (every one, held out or not), in order.
+        self.raw_order: list[str] = []
 
     @property
     def via(self) -> str:
@@ -915,6 +980,7 @@ class Round:
     def _items(self, key: str) -> list[Item]:
         found = _numbered(self.server_id, self.source.items(key), by_track=self.by_track)
         self.raw_tracks = {item.track for item in found}
+        self.raw_order = [item.ref for item in found]
         if self.held_out:
             # Tracks put into the mirror that the source has no match for: neither taken over nor taken out.
             found = [item for item in found if item.track not in self.held_out]
@@ -1264,6 +1330,12 @@ class Round:
                       if not one.smart and one.title == asked and one.leaf_count == 0
                       and one.key not in keys and one.guid not in guids
                       and (_made_then(one, server_now, waited) or (unique and not one.created))]
+            if self.caps.unique_names and chosen:
+                # Music Assistant's list tells no count: only a playlist read empty now is the one made then, and only
+                # when there is just one (somebody may have made one of that name meanwhile).
+                chosen = [one for one in chosen if self._empty_there(one.key)]
+                if len(chosen) != 1:
+                    chosen = []
             ours = set(self.source.owned([one.key for one in chosen])) if chosen else set()
             adopted = next((one for one in chosen if one.key in ours), None)
             row = self.fresh_row()
@@ -1285,6 +1357,15 @@ class Round:
         row.writing = None
         self.made = adopted
         db.commit()
+
+    def _empty_there(self, key: str) -> bool:
+        """Whether the server's playlist holds nothing, read now (gone meanwhile: not one to take)."""
+        try:
+            return bool(self.source.empty(key))
+        except PlexError as exc:
+            if exc.code in GONE:
+                return False
+            raise
 
     def _read(self, playlist_id: int) -> tuple[Listed, list[Item]] | None:
         key = self.row.ext_key
@@ -1326,6 +1407,7 @@ class Round:
         db = self.db
         if self.row.ext_key is None:
             self._make(playlist_id)
+        self._await_tasks()
         self._finish_rename()
         self._restore()
         if self.mirror:
@@ -1701,7 +1783,8 @@ class Round:
         going = [entry.ref for entry in remote if entry.track not in wanted and entry.item is not None and entry.ref]
         if going:
             if by_place:
-                source.remove_many(key, going, guard=self._guard)
+                source.remove_many(key, going, guard=self._guard, expected=self._expected(),
+                                   noticed=self._concurrent)
             else:
                 source.remove_many(key, going)
             wrote = True
@@ -1729,7 +1812,8 @@ class Round:
             here = {entry.track for entry in fresh}
             if [entry.track for entry in fresh] != [track for track in target if track in here]:
                 refs = {entry.track: entry.ref for entry in fresh}
-                source.arrange(key, [refs[track] for track in target if track in refs], guard=self._guard)
+                source.arrange(key, [refs[track] for track in target if track in refs], guard=self._guard,
+                               expected=self._expected(), noticed=self._concurrent)
                 wrote = True
                 fresh = self._items(key)
         for _attempt in range(0 if by_place else MOVE_TRIES):
@@ -1753,6 +1837,28 @@ class Round:
             fresh = self._items(key)
         return fresh, wrote, False
 
+    def _expected(self) -> list[str]:
+        """The server's playlist as this sync last read it (what a step by place starts from), without what a new name
+        by copy left behind."""
+        return [ref for ref in self.raw_order if ref not in self.left_keys]
+
+    def _concurrent(self, count: int) -> None:
+        """Somebody changed the server's playlist while it was written by place, and ``count`` entries added there
+        meanwhile may be gone (Music Assistant names no entry, nexmix never saw them): the playlist says so
+        (``note["concurrent"]``) until somebody looked (``drop_note``). Never lost without a word."""
+        db = self.db
+        db.rollback()
+        row = self.fresh_row()
+        note = dict(row.note) if isinstance(row.note, dict) else {}
+        before = note.get(CONCURRENT) if isinstance(note.get(CONCURRENT), dict) else {}
+        note[CONCURRENT] = {"at": clock.now().isoformat(), "count": int(before.get("count") or 0) + max(count, 1)}
+        row.note = note
+        db.commit()
+        logger.warning("Entries added on the server while nexmix wrote by place may be gone playlist=%s server=%s "
+                       "count=%s", row.playlist_id, self.server_id, count)
+        if row.playlist_id is not None:
+            hub.publish(playlist_topic(row.playlist_id), "plex", view(db, row.playlist_id))
+
     def _writing_part(self, name: str, value: Any) -> None:
         """One part of the open write set (None: taken away), in a transaction of its own, committed at once."""
         db = self.db
@@ -1773,6 +1879,40 @@ class Round:
         """What must still be in the server's playlist after a step that takes entries out by place (None: the step is
         done). Kept with the open write until then, so that a step broken off half way is put right (``_restore``)."""
         self._writing_part("restore", list(entries) if entries is not None else None)
+
+    def _await_tasks(self) -> None:
+        """Tasks of Music Assistant nobody saw end (``_task_left``): each asked again. While one may still run,
+        nothing is written to the playlist (it would take out by place whatever stands there when it runs) and nothing
+        is taken from it into nexmix: what the playlist holds now joins what must be there afterwards (``restore``,
+        except what the task meant to take out), and the sync waits (``ma_task_open``). Once all ended, ``_restore``
+        puts back whatever they took that was not meant: never read as taken out there."""
+        row = self.fresh_row()
+        writing = dict(row.writing) if isinstance(row.writing, dict) else {}
+        tasks = [dict(one) for one in writing.get("tasks") or [] if isinstance(one, dict) and one.get("id")]
+        key = row.ext_key
+        playlist_id = row.playlist_id
+        self.db.rollback()
+        if not tasks:
+            return
+        still = [one for one in tasks if not self.source.task_ended(str(one["id"]))]
+        if not still:
+            self._writing_part("tasks", None)
+            logger.info("Music Assistant tasks left open have ended playlist=%s server=%s", playlist_id,
+                        self.server_id)
+            return
+        meant = {str(name) for one in still for name in one.get("meant") or []}
+        try:
+            there = self.source.kept_now(key) if key is not None else []
+        except PlexError as exc:
+            if exc.code not in GONE:
+                raise
+            there = []
+        kept = [one for one in writing.get("restore") or [] if isinstance(one, list | tuple) and len(one) == 2]
+        known = {str(one[0]) for one in kept}
+        kept += [list(one) for one in there if str(one[0]) not in known and str(one[0]) not in meant]
+        self._writing_part("restore", kept)
+        self._writing_part("tasks", still)
+        raise MaError(TASK_OPEN, 503)
 
     def _restore(self) -> None:
         """A step by place broken off half way: whatever of what had to stay the playlist lacks is put back."""
@@ -1798,16 +1938,11 @@ class Round:
         self._writing_part("renaming", {"from": old, "title": unique, "key": None})
         made = source.create(unique)
         self._writing_part("renaming", {"from": old, "title": unique, "key": made.key})
-        try:
-            source.copy(old, made.key)
-        except PlexError as exc:
-            if exc.code == "ma_copy":
-                # The copy does not hold the same: it goes, the old one stays, and the sync is tried again later.
-                source.delete(made.key)
-                self._writing_part("renaming", None)
-            raise
+        # What Music Assistant passes over (a file it no longer knows) stays behind; never tried again.
+        lacking = source.copy(old, made.key)
+        passed = {one.ident for one in lacking}
         # Added in Music Assistant to the old one meanwhile: along into the new one, before the old one goes.
-        source.top_up(old, made.key)
+        source.top_up(old, made.key, passed)
         db = self.db
         db.rollback()
         row = self.fresh_row()
@@ -1816,18 +1951,57 @@ class Round:
         writing["renaming"] = {"from": old, "title": unique, "key": made.key, "swapped": True}
         row.writing = writing
         db.commit()
-        self._delete_after_top_up(old, made.key)
+        self._left_behind([one.track for one in lacking if one.track is not None])
+        self._delete_after_top_up(old, made.key, passed)
         self._writing_part("renaming", None)
         logger.info("Playlist renamed on the server by a copy playlist=%s server=%s", row.playlist_id, self.server_id)
         return made.key
 
-    def _delete_after_top_up(self, going: str, staying: str) -> None:
+    def _left_behind(self, keys: list[str]) -> None:
+        """Tracks of the library a new name by copy left behind (Music Assistant passed them over): they stay in nexmix
+        with the note that the server lacks them (``HINT_MISSING``), out of the common state, never written again by
+        this sync (written back after the next run of the catalogue, as any entry the server lost)."""
+        if not keys:
+            return
+        db = self.db
+        db.rollback()
+        numbers = media.known_numbers(db, self.server_id, media.TRACK, keys)
+        tracks = sorted({int(number) for number in numbers.values()})
+        db.rollback()
+        if not tracks:
+            return
+        self.left_in_copy |= set(tracks)
+        self.left_keys |= {str(key) for key, number in numbers.items() if int(number) in self.left_in_copy}
+        row = self.fresh_row()
+        playlist_id = row.playlist_id
+        logger.warning("Tracks the server passed over in a new name by copy kept as missing playlist=%s count=%s",
+                       playlist_id, len(tracks))
+        if self.mirror:
+            mirrors.missing(db, self.ident, tracks)
+            return
+        if playlist_id is None:
+            return
+        taken = db.execute(update(PlaylistItem).where(
+            PlaylistItem.playlist_id == playlist_id, PlaylistItem.track_id.in_(tracks),
+            PlaylistItem.removed_at.is_(None)).values(plex_hint=HINT_MISSING)).rowcount
+        if not taken:
+            db.rollback()
+            return
+        db.execute(update(Playlist).where(Playlist.id == playlist_id)
+                   .values(version=Playlist.version + 1, updated_at=clock.now()))
+        db.commit()
+        changed = list(db.scalars(select(PlaylistItem).where(
+            PlaylistItem.playlist_id == playlist_id, PlaylistItem.track_id.in_(tracks),
+            PlaylistItem.removed_at.is_(None))))
+        publish_items(db, playlist_id, [], changed=changed)
+
+    def _delete_after_top_up(self, going: str, staying: str, passed: Iterable[str] = ()) -> None:
         """``going`` deleted on the server, after what it holds that ``staying`` lacks went into ``staying`` (looked at
-        once more right before: somebody may add to it in Music Assistant until it is gone). One gone already is
-        fine."""
+        once more right before: somebody may add to it in Music Assistant until it is gone; ``passed``: what Music
+        Assistant passed over in the copy, not tried again). One gone already is fine."""
         try:
             for _try in range(3):
-                if not self.source.top_up(going, staying):
+                if not self.source.top_up(going, staying, passed):
                     break
         except PlexError as exc:
             if exc.code not in GONE:
@@ -1924,7 +2098,7 @@ class Round:
                 catalog.request_partial(db, "playlist", self.server_id)
         row = self.fresh_row()
         items = [[track, self.entry_ids.get(track), there.get(track)] for track in plan.merged.order
-                 if track in there or track not in self.added]
+                 if (track in there or track not in self.added) and track not in self.left_in_copy]
         row.base = {"title": plan.title, "items": items}
         row.writing = None
         given_up = self._refused(row, [track for track in refused if track in alive])

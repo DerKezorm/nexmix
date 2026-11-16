@@ -244,6 +244,14 @@ def keep_loss(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[
     return sync.view(db, playlist_id)
 
 
+@router.delete("/{playlist_id}/concurrent",
+               summary="Seen: the note of tracks added in Music Assistant meanwhile, which may be gone, goes")
+def seen_concurrent(playlist_id: PlaylistId, account: Account, db: DbSession) -> dict[str, Any]:
+    playlists.load(db, account, playlist_id, "edit")
+    sync.drop_note(db, playlist_id, sync.CONCURRENT)
+    return sync.view(db, playlist_id)
+
+
 def _still_sees(request: Request, account_id: int, playlist_id: int) -> bool:
     """Whether the stream may go on: its credential still speaks for the account (not signed out, revoked or blocked),
     and the account still sees the playlist."""

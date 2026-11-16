@@ -35,7 +35,11 @@ listed. They all belong to the operator in nexmix. As Music Assistant 2.10.9 ans
 
 Before every step that takes entries out, ``guard`` is told what must still be there afterwards: the sync keeps it,
 so that a step broken off half way (a fault, a stop) is put right at the next sync instead of read as entries taken
-out in Music Assistant.
+out in Music Assistant. A step by place goes only from the reading the sync merged, while nobody else's task at the
+playlist is under way (``_window``); somebody else's task that added there while it ran is told (``_unseen``: the entry
+may be gone, Music Assistant names none), and then everything missing that was not meant goes back. A task nobody saw
+end is ``TaskOpen`` (kept by the sync until ``task_ended``). Only an admin's token may run and cancel tasks: without one
+nothing goes by place.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from ... import clock
 from .. import music_assistant as client
-from ..music_assistant import COVER_SIZE, PICTURE_ID, Connection, MaError, picture
+from ..music_assistant import COVER_SIZE, PICTURE_ID, Connection, MaError, TaskOpen, picture
 from ..plex import ALBUM as ALBUM_TYPE
 from ..plex import ARTIST as ARTIST_TYPE
 from ..plex import TRACK as TRACK_TYPE
@@ -84,6 +88,9 @@ UNKNOWN_SECONDS = 600.0
 
 #: How a task may end.
 SUCCESS, PARTIAL, FAILED, CANCELLED = "success", "partial_success", "failed", "cancelled"
+ENDED = (SUCCESS, PARTIAL, FAILED)
+#: The ``task_domain`` of a task that takes entries out of a playlist (every other one at a playlist may add).
+REMOVE_DOMAIN = "playlist_remove_tracks"
 
 
 def _text(value: Any, limit: int = 500) -> str:
@@ -232,6 +239,8 @@ class MusicAssistantSource:
         #: Music Assistant tells no time: the sync does without (``Listed.updated_at`` 0).
         self.clock: int | None = None
         self.began: int | None = None
+        #: The tasks this connector started (anybody else's are told apart by that).
+        self._own: set[str] = set()
 
     def __enter__(self) -> Self:
         return self
@@ -252,46 +261,100 @@ class MusicAssistantSource:
 
     # --- Tasks --------------------------------------------------------------------------------------------------
 
+    def _ask_task(self, command: str, ident: str) -> Any:
+        """A question about a task under way. Music Assistant away meanwhile (the websocket broke, no answer): the
+        task may still run, nobody knows (``TaskOpen``)."""
+        try:
+            return self.call(command, {"task_id": ident}, timeout=15.0)
+        except MaError as exc:
+            if exc.code in client.AWAY:
+                raise TaskOpen(ident) from exc
+            raise
+
     def _task(self, started: Any) -> str:
         """Waits for a task of Music Assistant to end; its status (``success``, ``partial_success``, ``failed``).
         Music Assistant runs its tasks one after another (a few at once), so nexmix's task is asked to run next
         (``tasks/run``): it may wait behind others, a lookup of metadata that hangs without the internet among them.
         A task that has not ended in ``TASK_SECONDS`` is cancelled; one cancelled before it ran did nothing
-        (``ma_timeout``), and one that runs meanwhile is waited for a while longer: a step by place must never run
-        later, unseen."""
+        (``ma_timeout``). One whose end nobody saw (cancelling refused, still running after a while longer, the
+        websocket broken meanwhile) may run later: ``TaskOpen``, and the sync keeps it until Music Assistant says it
+        ended (``task_ended``). A step by place must never run later, unseen."""
         if not isinstance(started, dict) or not started.get("id"):
             raise MaError("ma_error")
         ident = str(started["id"])[:64]
+        self._own.add(ident)
         status = str(started.get("status") or "")
-        if status not in (SUCCESS, PARTIAL, FAILED):
+        if status not in ENDED:
             try:
-                self.call("tasks/run", {"task_id": ident}, timeout=15.0)
-            except MaError as exc:
-                if exc.code in client.AWAY:
-                    raise
+                self._ask_task("tasks/run", ident)
+            except TaskOpen:
+                raise
+            except MaError:
+                pass
         deadline = clock.monotonic() + TASK_SECONDS
         cancelled = False
-        while status not in (SUCCESS, PARTIAL, FAILED):
+        while status not in ENDED:
             if status == CANCELLED:
                 raise MaError("ma_timeout", 504)
             if clock.monotonic() > deadline:
                 if cancelled:
-                    raise MaError("ma_timeout", 504)
+                    logger.warning("Music Assistant task did not end, kept until it does")
+                    raise TaskOpen(ident)
                 cancelled = True
                 deadline = clock.monotonic() + TASK_SECONDS / 2
                 try:
-                    self.call("tasks/cancel", {"task_id": ident}, timeout=15.0)
+                    self._ask_task("tasks/cancel", ident)
+                except TaskOpen:
+                    raise
                 except MaError as exc:
-                    if exc.code in client.AWAY:
-                        raise
+                    # Refused (a token without the right, a task running already): not cancelled, it may still run.
+                    logger.warning("Music Assistant did not cancel a task code=%s", exc.code)
             client.pause(TASK_EVERY)
-            found = self.call("tasks/get", {"task_id": ident}, timeout=15.0)
+            try:
+                found = self._ask_task("tasks/get", ident)
+            except TaskOpen:
+                raise
+            except MaError as exc:
+                if exc.code == "ma_not_found":
+                    # Music Assistant forgot it (it started anew): it never runs any more.
+                    raise MaError("ma_timeout", 504) from exc
+                raise TaskOpen(ident) from exc
             if not isinstance(found, dict):
-                raise MaError("ma_error")
+                raise TaskOpen(ident)
             status = str(found.get("status") or "")
         if status != SUCCESS:
             logger.info("Music Assistant task did not go through whole status=%s", status)
         return status
+
+    def task_ended(self, ident: str) -> bool:
+        """Whether a task nexmix lost sight of has ended for sure: it ended, it was cancelled, or Music Assistant no
+        longer knows it (it started anew: a task never outlives that). A task still waiting is asked to be cancelled
+        once more (it may be refused again); a fault of the question is raised."""
+        try:
+            found = self.call("tasks/get", {"task_id": ident}, timeout=15.0)
+        except MaError as exc:
+            if exc.code == "ma_not_found":
+                return True
+            raise
+        status = str(found.get("status") or "") if isinstance(found, dict) else ""
+        if status in ENDED or status == CANCELLED:
+            return True
+        try:
+            self.call("tasks/cancel", {"task_id": ident}, timeout=15.0)
+        except MaError as exc:
+            if exc.code in client.AWAY:
+                raise
+            return False
+        again = self.call("tasks/get", {"task_id": ident}, timeout=15.0)
+        return isinstance(again, dict) and str(again.get("status") or "") in (*ENDED, CANCELLED)
+
+    def empty(self, key: str) -> bool:
+        """Whether the playlist holds no entry at all, read now (the list's count is always 0 with Music Assistant)."""
+        return not self.raw(key)
+
+    def kept_now(self, key: str) -> list[list[str]]:
+        """Every entry of the playlist now, as a guard keeps it (``Raw.kept``)."""
+        return [one.kept for one in self.raw(key)]
 
     # --- Playlists ----------------------------------------------------------------------------------------------
 
@@ -331,9 +394,12 @@ class MusicAssistantSource:
         return self._listed(found)
 
     def gone(self, key: str) -> bool:
-        """Whether Music Assistant has the playlist no longer (``music/playlists/get`` says it does not know it)."""
+        """Whether Music Assistant has the playlist no longer: only when ``music/playlists/get`` says it does not know
+        it (error 2). One it still gives, though no longer as one of its own that may be changed (no provider's
+        mapping, made read-only), is no deletion."""
         try:
-            self.meta(key)
+            self.call("music/playlists/get", {"item_id": number(key), "provider_instance_id_or_domain": "library",
+                                              "allow_update_metadata": False})
         except MaError as exc:
             if exc.code == "ma_not_found":
                 return True
@@ -534,34 +600,125 @@ class MusicAssistantSource:
         if guard is not None:
             guard([one.kept for one in should] if missing else None)
 
+    def _playlist_tasks(self, key: str) -> dict[str, tuple[str, str, int]] | None:
+        """The tasks Music Assistant keeps of the playlist (``tasks/list``, its own and anybody else's, by their
+        ``metadata``): ``{id: (status, task_domain, item_count)}``. None: Music Assistant would not tell."""
+        try:
+            found = self.call("tasks/list", {}, timeout=15.0)
+        except MaError as exc:
+            if exc.code in client.AWAY:
+                raise
+            logger.info("Music Assistant tasks not listed code=%s", exc.code)
+            return None
+        tasks: dict[str, tuple[str, str, int]] = {}
+        for one in found if isinstance(found, list) else []:
+            meta = one.get("metadata") if isinstance(one, dict) and isinstance(one.get("metadata"), dict) else None
+            if meta is None or str(meta.get("playlist_id") or "") != str(key) or not one.get("id"):
+                continue
+            tasks[str(one["id"])[:64]] = (str(one.get("status") or ""), str(meta.get("task_domain") or ""),
+                                          max(0, _plain(meta.get("item_count")) or 0))
+        return tasks
+
+    def _window(self, key: str, before: list[Raw],
+                expected: Sequence[str] | None) -> dict[str, tuple[str, str, int]] | None:
+        """Right before a step by place: the playlist as read now must be the one the sync merged (``expected``, the
+        library's tracks in order, each once), and nobody else's task may be under way at it. Else the step waits and
+        the sync merges again (``Raced``). Returns the playlist's tasks as they stand, to tell afterwards whose ran in
+        between."""
+        if expected is not None:
+            now = list(dict.fromkeys(one.track for one in before if one.track is not None))
+            if now != [number(one) for one in expected]:
+                logger.info("Music Assistant playlist changed since it was read, merged again first")
+                raise Raced
+        tasks = self._playlist_tasks(key)
+        if tasks and any(status not in (*ENDED, CANCELLED) and ident not in self._own
+                         for ident, (status, _domain, _count) in tasks.items()):
+            logger.info("Music Assistant playlist being changed by somebody else, merged again first")
+            raise Raced
+        return tasks
+
+    def _foreign(self, key: str, watch: dict[str, tuple[str, str, int]] | None) -> int:
+        """How many entries somebody else's tasks added to the playlist while a step by place ran (between the reading
+        before and the one after; by their ``item_count``). 0: none, or Music Assistant would not tell."""
+        if watch is None:
+            return 0
+        now = self._playlist_tasks(key)
+        added = 0
+        for ident, (status, domain, count) in (now or {}).items():
+            if ident in self._own or (ident in watch and watch[ident][0] in (*ENDED, CANCELLED)):
+                continue
+            if status in (SUCCESS, PARTIAL) and domain != REMOVE_DOMAIN:
+                added += max(count, 1)
+        return added
+
+    @staticmethod
+    def _unseen(added: int, before: list[Raw], after: list[Raw], noticed: Callable[[int], None] | None) -> None:
+        """Somebody else's tasks added ``added`` entries while a step by place ran: an entry added then may have stood
+        at a place this step took out, and nexmix never saw it. When fewer new entries show than were added,
+        ``noticed`` hears how many may be gone (the playlist says so; Music Assistant names no entry, so which one is
+        not known)."""
+        if not added or noticed is None:
+            return
+        seen = len({one.ident for one in after} - {one.ident for one in before})
+        if seen < added:
+            logger.warning("Music Assistant playlist changed while it was written by place, entries may be gone "
+                           "count=%s", added - seen)
+            noticed(added - seen)
+
+    def _may_place(self) -> None:
+        """Only with a token that may cancel a task (an admin's): a step by place nobody can cancel may run later,
+        unseen. ``ma_not_admin`` otherwise (the card says so)."""
+        if self._connection is None or not self._connection.alive:
+            self._connection = self._connect()
+        if not self._connection.admin:
+            raise MaError(client.NOT_ADMIN, 409)
+
     def remove_many(self, key: str, refs: Sequence[str],
-                    guard: Callable[[list[list[str]] | None], None] | None = None) -> None:
-        """The entries of these tracks out, by their places in a reading of the moment. ``guard`` hears what must
-        still be there afterwards before anything is taken out, and None once it is. Read again afterwards: when
-        anything else is missing, what this step may have taken by mistake goes back in, and ``Raced`` says the
-        playlist changed meanwhile."""
+                    guard: Callable[[list[list[str]] | None], None] | None = None,
+                    expected: Sequence[str] | None = None, noticed: Callable[[int], None] | None = None) -> None:
+        """The entries of these tracks out, by their places in a reading of the moment (``_window``: the one the sync
+        merged, nobody else's task under way). ``guard`` hears what must still be there afterwards before anything is
+        taken out, and None once it is. Read again afterwards: when anything else is missing, what this step may have
+        taken by mistake goes back in, and ``Raced`` says the playlist changed meanwhile; an entry added there
+        meanwhile that may be gone is told (``noticed``)."""
         going = {number(ref) for ref in refs}
+        self._may_place()
         before = self.raw(key)
         if not self._places_ok(before):
             raise MaError("ma_error")
         places = [one.place for one in before if one.track is not None and one.track in going]
         if not places:
             return
+        watch = self._window(key, before, expected)
         staying = [one for one in before if one.place not in set(places)]
         if guard is not None:
             guard([one.kept for one in staying])
-        if self._take_out(key, places, len(before)) in (FAILED, CANCELLED):
+        try:
+            status = self._take_out(key, places, len(before))
+        except TaskOpen as exc:
+            # It may run later: what it meant to take out is never put back for it.
+            exc.meant = [one.ident for one in before if one.place in set(places)]
+            raise
+        if status in (FAILED, CANCELLED):
             # Nothing was taken out: the playlist was shorter by then.
             if guard is not None:
                 guard(None)
             raise Raced
         after = self.raw(key)
+        added = self._foreign(key, watch)
+        self._unseen(added, before, after, noticed)
         if [one.ident for one in after] == [one.ident for one in staying]:
             if guard is not None:
                 guard(None)
             return
-        wrong = {one.ident for one in _wrongly_taken(before, after, places)}
         there = {one.ident for one in after}
+        if added:
+            # Somebody else added meanwhile (an entry taken out and put in again moves it to the end): the places may
+            # have named anything, no explanation by entries taken out holds. Everything missing that was not meant
+            # goes back (adding wins).
+            wrong = {one.ident for one in staying if one.ident not in there}
+        else:
+            wrong = {one.ident for one in _wrongly_taken(before, after, places)}
         # Gone by somebody else's hand meanwhile: that stays so; what this step took by mistake goes back.
         foreign = {one.ident for one in staying if one.ident not in there and one.ident not in wrong}
         if wrong:
@@ -571,12 +728,15 @@ class MusicAssistantSource:
         raise Raced
 
     def arrange(self, key: str, wanted: Sequence[str],
-                guard: Callable[[list[list[str]] | None], None] | None = None) -> bool:
+                guard: Callable[[list[list[str]] | None], None] | None = None,
+                expected: Sequence[str] | None = None, noticed: Callable[[int], None] | None = None) -> bool:
         """The tracks ``wanted`` in that order; entries it does not name keep their place after the entry they
         followed. Music Assistant cannot move: everything from the first entry out of place is taken out and put back
-        in the new order. False: the order was right already."""
+        in the new order (only from the reading the sync merged, nobody else's task under way: ``_window``). False:
+        the order was right already."""
         from .. import merge
 
+        self._may_place()
         before = self.raw(key)
         if not self._places_ok(before):
             raise MaError("ma_error")
@@ -590,6 +750,7 @@ class MusicAssistantSource:
         first = next((place for place, (one, two) in enumerate(zip(before, new, strict=True)) if one != two), None)
         if first is None:
             return False
+        watch = self._window(key, before, expected)
         if guard is not None:
             guard([one.kept for one in before])
         if self._take_out(key, list(range(first + 1, len(before) + 1)), len(before)) in (FAILED, CANCELLED):
@@ -598,6 +759,7 @@ class MusicAssistantSource:
             raise Raced
         self._add_uris(key, [one.adding for one in new[first:]])
         after = self.raw(key)
+        self._unseen(self._foreign(key, watch), before, after, noticed)
         if [one.ident for one in after] != [one.ident for one in new]:
             logger.warning("Music Assistant playlist changed while it was sorted, everything put back")
             self._settle(key, before, guard)
@@ -621,17 +783,22 @@ class MusicAssistantSource:
 
     def copy(self, key: str, into: str) -> list[str]:
         """Every entry of one playlist into another (empty) one, in order, also the ones whose track is not in the
-        library. ``ma_copy`` when the copy does not hold the same afterwards. Returns what was copied."""
+        library (Music Assistant passes those over when their file is gone: they stay behind with the old one).
+        Returns the entries the copy lacks (passed over): the caller keeps the library's ones as missing and never
+        tries them again."""
         raws = self.raw(key)
         self._add_uris(into, [one.adding for one in raws])
-        if [one.ident for one in self.raw(into)] != [one.ident for one in raws]:
-            raise MaError("ma_copy")
-        return [one.ident for one in raws]
-
-    def top_up(self, key: str, into: str) -> int:
-        """What ``key`` holds that ``into`` lacks, put at the end of ``into`` (somebody added it in Music Assistant
-        while it was copied). Returns how many."""
         there = {one.ident for one in self.raw(into)}
+        lacking = [one for one in raws if one.ident not in there]
+        outside = sum(1 for one in lacking if one.track is None)
+        if outside:
+            logger.info("Entries outside the library left behind with the old playlist count=%s", outside)
+        return lacking
+
+    def top_up(self, key: str, into: str, but: Iterable[str] = ()) -> int:
+        """What ``key`` holds that ``into`` lacks, put at the end of ``into`` (somebody added it in Music Assistant
+        while it was copied); ``but`` (``Raw.ident``): what the copy passed over already. Returns how many."""
+        there = {one.ident for one in self.raw(into)} | set(but)
         extra = list(dict.fromkeys(one.adding for one in self.raw(key) if one.ident not in there))
         if extra:
             self._add_uris(into, extra)

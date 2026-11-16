@@ -109,7 +109,8 @@ def probe(url: str) -> tuple[str, dict[str, Any]]:
 
 def sign_in(url: str, token: str) -> Found:
     """The address checked (``/info``: a Music Assistant of a schema nexmix speaks), the token tried on a websocket of
-    its own, the music providers read. ``bad_token`` for a token the server does not take."""
+    its own, the music providers read. ``bad_token`` for a token the server does not take, ``ma_not_admin`` for one of a
+    user who may not run and cancel tasks."""
     token = music_assistant.check_token(token)
     address, server = probe(url)
     probe_connection = music_assistant.Connection(address, token)
@@ -120,6 +121,10 @@ def sign_in(url: str, token: str) -> Found:
             raise MaError("bad_token", 422) from exc
         raise
     try:
+        if not probe_connection.admin:
+            # nexmix must be able to cancel a task it gave up on (``tasks/cancel``): never a task left to run later,
+            # unseen, taking out by place what stands there by then.
+            raise MaError(music_assistant.NOT_ADMIN, 422)
         found = probe_connection.call("providers", {}, timeout=15.0)
     finally:
         probe_connection.close()

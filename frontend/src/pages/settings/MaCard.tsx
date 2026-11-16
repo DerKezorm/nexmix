@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 import { busy, catalogApi } from '../../api/plex'
 import { maApi, type MaProvider, type MaServer } from '../../api/servers'
 import { useConfirm } from '../../components/useConfirm'
-import { useCatalogStatus } from '../../lib/catalogStatus'
+import { tracksOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { iso } from '../../lib/say'
 import { ServerCatalog } from './JellyfinCard'
 import { ServerPlaylists, Steps } from './PlexCard'
@@ -128,10 +128,10 @@ export function MaCard({ server, onChanged }: { server: MaServer; onChanged: () 
     if (missing) void open().catch(() => undefined)
   }, [missing, open])
 
-  const disconnect = () =>
+  const disconnect = async () =>
     ask({
       title: t('ma.disconnectTitle'),
-      text: t('ma.disconnectText', { tracks: (status?.counts.tracks ?? 0).toLocaleString(i18n.language) }),
+      text: t('ma.disconnectText', { tracks: (await tracksOf(status, server.id)).toLocaleString(i18n.language) }),
       confirm: t('ma.disconnect'),
       run: async () => {
         await maApi.disconnect(server.id)
@@ -195,6 +195,11 @@ export function MaCard({ server, onChanged }: { server: MaServer; onChanged: () 
           {server.doubled.length > 0 && (
             <p className="alert" role="note" data-testid="ma-doubled">
               {t('ma.doubled', { names: server.doubled.join(', ') })}
+            </p>
+          )}
+          {server.not_admin && (
+            <p className="alert" role="alert" data-testid="ma-not-admin">
+              {t('ma.notAdmin')}
             </p>
           )}
           <div className="flex flex-wrap gap-2" style={{ marginTop: 14 }}>

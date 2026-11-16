@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../../api/client'
 import { busy, catalogApi, plexApi, type CatalogStatus, type PinStart, type PlaylistSync, type PlexLibrary, type PlexServerChoice, type PlexState } from '../../api/plex'
 import { useConfirm } from '../../components/useConfirm'
-import { percentOf, useCatalogStatus } from '../../lib/catalogStatus'
+import { percentOf, tracksOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
 import { kindName } from '../../lib/servers'
@@ -180,7 +180,6 @@ export function PlexCard({ alongside = false, onDone }: { alongside?: boolean; o
     })
 
   const library = plex?.connected ? plex.library : null
-  const tracks = status?.counts.tracks ?? 0
 
   const chooseLibrary = (choice: PlexLibrary) => {
     if (alongside) {
@@ -207,10 +206,10 @@ export function PlexCard({ alongside = false, onDone }: { alongside?: boolean; o
     void action.run(go)
   }
 
-  const disconnect = () =>
+  const disconnect = async () =>
     ask({
       title: t('plex.disconnectTitle'),
-      text: t('plex.disconnectText', { tracks: tracks.toLocaleString(i18n.language) }),
+      text: t('plex.disconnectText', { tracks: (await tracksOf(status, plex?.connected ? (plex.server ?? null) : null)).toLocaleString(i18n.language) }),
       confirm: t('plex.disconnect'),
       run: async () => {
         await plexApi.disconnect()
@@ -389,7 +388,7 @@ function Connected({ status, onSync, onLibraries, onDisconnect, working }: {
   status: CatalogStatus | null
   onSync: () => void
   onLibraries: () => void
-  onDisconnect: () => void
+  onDisconnect: () => void | Promise<void>
   working: boolean
 }) {
   const { t, i18n } = useTranslation()

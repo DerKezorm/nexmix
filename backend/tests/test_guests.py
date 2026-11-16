@@ -833,6 +833,7 @@ def test_the_host_sees_a_guest_join_and_its_track_live(host: Host, quick: None) 
     assert event["op"] == "add" and event["by"] == {"id": None, "name": "Lena", "display_name": "Lena",
                                                     "avatar": None, "guest": True}
     assert event["entries"][0]["added_by_name"] == "Lena"
+    listener.close()
 
 
 def test_a_guest_taken_out_hears_it_at_once(host: Host, quick: None) -> None:

@@ -75,6 +75,8 @@ export type MaServer = Omit<MediaServer, 'capabilities' | 'primary'> & {
   providers: number
   /** Chosen providers that are a Plex or Jellyfin server nexmix also knows directly. */
   doubled: string[]
+  /** The token is no admin's (any more): nothing is taken out or sorted there. */
+  not_admin?: boolean
 }
 
 /** A music provider of Music Assistant's library, by nexmix's own handle. */

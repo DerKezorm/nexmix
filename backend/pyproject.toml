@@ -26,3 +26,5 @@ extend-immutable-calls = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# A test that hangs (no test here takes ten minutes) prints the stack of every thread, so the cause shows.
+faulthandler_timeout = 600

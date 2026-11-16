@@ -27,6 +27,8 @@ export type PlexSync = {
   note: { at: string; count: number } | null
   /** The server lost many entries at once (or became empty): nexmix kept them, they go back after the catalogue sync. */
   loss?: { at: string; count: number } | null
+  /** Tracks added in Music Assistant while nexmix wrote there by place: they may be gone (which, nobody knows). */
+  concurrent?: { at: string | null; count: number } | null
 }
 
 export type Card = Summary & {
@@ -124,6 +126,7 @@ export const playlistsApi = {
   takeLoss: (id: number) => api<Change>(`${base(id)}/missing/remove`, { method: 'POST' }),
   /** Keep them: the note goes, they go back to the server after the next catalogue sync. */
   keepLoss: (id: number) => api<PlexSync>(`${base(id)}/missing`, { method: 'DELETE' }),
+  seenConcurrent: (id: number) => api<PlexSync>(`${base(id)}/concurrent`, { method: 'DELETE' }),
   /** Hide from the own overview, or show again: only this account's view. */
   hide: (id: number) => api<{ id: number; hidden: boolean }>(`${base(id)}/hidden`, { method: 'PUT' }),
   show: (id: number) => api<{ id: number; hidden: boolean }>(`${base(id)}/hidden`, { method: 'DELETE' }),

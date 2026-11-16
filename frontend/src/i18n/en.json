@@ -128,7 +128,12 @@
     "lossRemove": "Take out here too",
     "lossRemoveTitle": "Take them out of nexmix too?",
     "lossRemoveText": "The tracks missing in {{server}} also go from “{{name}}”. Right afterwards Undo brings them back, later not.",
-    "lossRemoved": "Tracks taken out"
+    "lossRemoved": "Tracks taken out",
+    "concurrentTitle_one": "Changed in Music Assistant at the same time, please check",
+    "concurrentTitle_other": "Changed in Music Assistant at the same time, please check",
+    "concurrentText_one": "While nexmix changed the playlist there, a track was added in Music Assistant. It may be missing now. Music Assistant does not say which one it was. Look there and add it again if it is missing.",
+    "concurrentText_other": "While nexmix changed the playlist there, {{count}} tracks were added in Music Assistant. They may be missing now. Music Assistant does not say which ones they were. Look there and add them again if they are missing.",
+    "concurrentSeen": "Seen"
   },
   "settings": {
     "title": "Settings",
@@ -949,6 +954,8 @@
     "ma_copy": "The copy in Music Assistant did not match. nexmix tries again shortly.",
     "ma_bad_place": "The playlist in Music Assistant changed just now. nexmix syncs again.",
     "ma_twice": "A track stands twice in the playlist in Music Assistant. Take it out there once.",
+    "ma_task_open": "A task in Music Assistant has not finished yet. Until it has, nexmix writes nothing to this playlist.",
+    "ma_not_admin": "The token belongs to a user of Music Assistant without full rights. nexmix needs a token of a user with full rights there, so that it can cancel its changes. Make one as such a user and connect again.",
     "playlist_changed_meanwhile": "The playlist kept changing on the server at the same time. nexmix tries again later."
   },
   "ready": {
@@ -1764,6 +1771,7 @@
     "providersText": "The catalogue of this Music Assistant is deleted and fetched anew with the chosen providers. Until then there is no search. It comes back when you choose the old providers again.",
     "providersConfirm": "Change providers",
     "doubled": "{{names}} brings tracks nexmix also knows directly. They would stand twice. Better leave this provider out.",
+    "notAdmin": "The token's user no longer has full rights in Music Assistant. So nexmix no longer takes tracks out of playlists there and does not sort them. Enter a token of a user with full rights.",
     "token": "Token",
     "tokenUntil": "valid until {{day}}",
     "tokenOpen": "without an end date",

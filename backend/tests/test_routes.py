@@ -226,6 +226,7 @@ TOKEN_ROUTES = {
     ("DELETE", "/api/v1/playlists/{playlist_id}/plex-order"),
     ("POST", "/api/v1/playlists/{playlist_id}/missing/remove"),
     ("DELETE", "/api/v1/playlists/{playlist_id}/missing"),
+    ("DELETE", "/api/v1/playlists/{playlist_id}/concurrent"),
     # Hiding a playlist from the own overview, and showing it again.
     ("PUT", "/api/v1/playlists/{playlist_id}/hidden"),
     ("DELETE", "/api/v1/playlists/{playlist_id}/hidden"),
