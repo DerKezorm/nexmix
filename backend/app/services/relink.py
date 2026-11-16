@@ -1,8 +1,9 @@
 """Entries that lost their track when the catalogue of their server changed, found again.
 
 Jellyfin's id of a track hangs on the path of its file: renamed or moved, the file is a track gone and a new one, and
-Jellyfin drops it from its own playlists without a word. nexmix keeps every entry with what it knew of its track (title,
-artist, album, length), so after each run of the catalogue of a Jellyfin server the entries of the playlists that take
+Jellyfin drops it from its own playlists without a word. Music Assistant gives a renamed file a new id in its library
+too. nexmix keeps every entry with what it knew of its track (title,
+artist, album, length), so after each run of the catalogue of such a server the entries of the playlists that take
 their tracks from it and whose track is no longer in the catalogue are looked for (``match.py``, only what says the
 same file: the same id of the recording, the same MusicBrainz id of the track, or the same title on the same album by
 the same artist, ``SAME``). The MusicBrainz id of the track gone is the one the catalogue had for it: a full run keeps
@@ -20,7 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import SERVER_JELLYFIN, CatalogTrack, Playlist, PlaylistItem
+from ..models import SERVER_JELLYFIN, SERVER_MA, CatalogTrack, Playlist, PlaylistItem
 from . import match, media
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def after_run(db: Session, server_id: int) -> int:
     from . import playlists, sync
 
     row = media.get(db, server_id)
-    if row is None or row.kind != SERVER_JELLYFIN or not row.active or not row.generation:
+    if row is None or row.kind not in (SERVER_JELLYFIN, SERVER_MA) or not row.active or not row.generation:
         db.rollback()
         return 0
     generation = int(row.generation)

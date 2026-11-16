@@ -17,8 +17,8 @@ from starlette.concurrency import run_in_threadpool
 
 from ..deps import DbSession, OperatorAccount, Reader
 from ..errors import error
-from ..models import SERVER_JELLYFIN, SERVER_PLEX, CatalogAlbum
-from ..services import catalog, catalog_view, covers, jellyfin, media, plex, plex_link, search, sources
+from ..models import SERVER_JELLYFIN, SERVER_MA, SERVER_PLEX, CatalogAlbum
+from ..services import catalog, catalog_view, covers, jellyfin, media, music_assistant, plex, plex_link, search, sources
 from ..services.media import NUMBER_LIMIT
 from ..services.sources.jellyfin import TAG as JELLYFIN_TAG
 
@@ -146,6 +146,9 @@ def _shaped(kind: str, thumb: str) -> bool:
     """Only a cover the catalogue took from the server, and only one shaped like one of its kind."""
     if kind == SERVER_JELLYFIN:
         return bool(JELLYFIN_TAG.fullmatch(thumb or ""))
+    if kind == SERVER_MA:
+        # The id of a picture of Music Assistant: 64 hexadecimal characters, nothing else reaches it.
+        return bool(music_assistant.PICTURE_ID.fullmatch(thumb or ""))
     return bool(plex.THUMB.fullmatch(thumb or ""))
 
 
@@ -206,10 +209,13 @@ async def serve_cover(request: Request, album_id: int, db: DbSession, size: int,
         return Response(status_code=304, headers=headers)
     if wanted.kept is not None:
         return Response(wanted.kept[0], media_type=wanted.kept[1], headers=headers)
-    label = "Jellyfin" if wanted.kind == SERVER_JELLYFIN else "Plex"
+    label = {SERVER_JELLYFIN: "Jellyfin", SERVER_MA: "Music Assistant"}.get(wanted.kind, "Plex")
 
     def ask_server() -> tuple[bytes, str]:
-        if wanted.kind == SERVER_JELLYFIN:
+        if wanted.kind == SERVER_MA:
+            # Music Assistant's own sizes (80, 256, 512 for nexmix's 80, 200, 400), always as JPEG.
+            data, kind = music_assistant.picture(wanted.url, wanted.thumb, music_assistant.COVER_SIZE[size])
+        elif wanted.kind == SERVER_JELLYFIN:
             with sources.JellyfinSource(wanted.url, wanted.token, wanted.client, "", "", timeout=20.0) as jelly:
                 data, kind = jelly.cover(wanted.key, size)
         else:
@@ -224,7 +230,7 @@ async def serve_cover(request: Request, album_id: int, db: DbSession, size: int,
     except covers.Unavailable as exc:
         raise _unavailable(exc.code, exc.retry) from exc
     except plex.PlexError as exc:
-        if exc.code in ("plex_not_found", "jellyfin_not_found", "no_cover"):
+        if exc.code in ("plex_not_found", "jellyfin_not_found", "ma_not_found", "no_cover"):
             raise error("not_found", "Not found.", 404) from exc
         if exc.code in covers.OUTAGE:
             covers.plex_failed(exc.code, wanted.server, label)

@@ -13,7 +13,7 @@ export type Summary = { count: number; duration: number; covers: number[]; peopl
 /** How the copy of a playlist on its media server (Plex or Jellyfin) stands. */
 export type PlexSync = {
   state: 'synced' | 'pending' | 'waiting' | 'error' | 'off'
-  /** The kind of the playlist's server: `plex` or `jellyfin` (null: none). */
+  /** The kind of the playlist's server: `plex`, `jellyfin` or `music_assistant` (null: none). */
   kind?: string | null
   /** The code of the last failure, while it waits for the server or failed. */
   error: string | null

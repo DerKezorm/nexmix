@@ -18,6 +18,7 @@ import { useConfirm } from '../../components/useConfirm'
 import { percentOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
+import { kindName } from '../../lib/servers'
 import { Button, Card, Feedback, Input, Toggle, useAction } from './ui'
 
 /** How long to wait between two asks for the PIN; the tests shorten it. */
@@ -451,14 +452,14 @@ function Connected({ status, onSync, onLibraries, onDisconnect, working }: {
 }
 
 /**
- * How the playlists stand on a server (Plex, or a Jellyfin with `kind` "jellyfin"): how many are saved there, waiting
+ * How the playlists stand on a server (Plex, Jellyfin or Music Assistant by `kind`): how many are saved there, waiting
  * or failed, the smart ones, the last look.
  */
-export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load: () => Promise<PlaylistSync>; syncAll: () => Promise<PlaylistSync>; kind?: 'plex' | 'jellyfin' }) {
+export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load: () => Promise<PlaylistSync>; syncAll: () => Promise<PlaylistSync>; kind?: 'plex' | 'jellyfin' | 'music_assistant' }) {
   const { t, i18n } = useTranslation()
   const [found, setFound] = useState<PlaylistSync | null>(null)
   const [started, setStarted] = useState(false)
-  const server = kind === 'jellyfin' ? 'Jellyfin' : 'Plex'
+  const server = kindName(kind)
   const load = useCallback(async () => {
     try {
       setFound(await fetch())
@@ -483,7 +484,7 @@ export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load:
     <>
       <dt>{t('sync.plex.title')}</dt>
       <dd data-testid={`${kind}-playlists`}>
-        {found.playlists ? parts.join(' · ') : kind === 'jellyfin' ? t('sync.plex.noneJellyfin') : t('sync.plex.none', { server })}{' '}
+        {found.playlists ? parts.join(' · ') : kind === 'jellyfin' ? t('sync.plex.noneJellyfin') : kind === 'music_assistant' ? t('sync.plex.noneMa') : t('sync.plex.none', { server })}{' '}
         <button
           type="button"
           className="linkbtn"
@@ -506,7 +507,9 @@ export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load:
           ? t('sync.plex.notYet')
           : found.poll_error
             ? t('sync.plex.lookedFailed', { when: at, server, reason: errorText(found.poll_error) })
-            : kind === 'jellyfin'
+            : kind === 'music_assistant'
+              ? t('sync.plex.lookedEvents', { when: at })
+              : kind === 'jellyfin'
               ? t('sync.plex.lookedEvery', { when: at })
               : t('sync.plex.lookedValue', { when: at, server, minutes: found.order_minutes ?? 2 })}
       </dd>

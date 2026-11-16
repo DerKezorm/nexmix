@@ -22,6 +22,8 @@ export function useServers(): MediaServer[] | null {
 }
 
 /** The name of a kind of server, as people know it. */
-export function kindName(kind: string): string {
-  return kind === 'jellyfin' ? 'Jellyfin' : 'Plex'
+export function kindName(kind: string | null | undefined): string {
+  if (kind === 'jellyfin') return 'Jellyfin'
+  if (kind === 'music_assistant') return 'Music Assistant'
+  return 'Plex'
 }

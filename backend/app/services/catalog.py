@@ -70,8 +70,9 @@ ANALYSIS_EVERY = timedelta(hours=1)
 TICK_SECONDS = 60
 TYPES = (ARTIST, ALBUM, TRACK)
 #: A server that is still starting (Jellyfin answers 503 for up to a minute when it starts), after the connector
-#: waited for it: the run stops without counting as failed.
-STARTING = frozenset({"jellyfin_starting"})
+#: waited for it, or a Music Assistant away (it restarts in some 13 seconds): the run stops without counting as
+#: failed, and the clock asks again.
+STARTING = frozenset({"jellyfin_starting", "ma_starting", "ma_unreachable", "ma_timeout"})
 
 #: The share of a full run each step takes, for the progress the interface shows.
 WEIGHTS = {"artists": 2, "albums": 6, "tracks": 25, "album_tags": 10, "artist_tags": 4, "track_moods": 40,

@@ -50,7 +50,9 @@ from app.services import (  # noqa: E402
     jellyfin,
     jellyfin_link,
     jobs,
+    ma_events,
     mirrors,
+    music_assistant,
     notices,
     oidc_store,
     passkeys,
@@ -65,6 +67,7 @@ from app.services import (  # noqa: E402
     updates,
 )
 from app.services import sync as server_sync  # noqa: E402
+from app.services.sources import music_assistant as ma_sources  # noqa: E402
 from app.vendor.nexoidc import attempt as nexoidc_attempt  # noqa: E402
 from app.vendor.nexoidc import protocol as nexoidc_protocol  # noqa: E402
 
@@ -107,6 +110,9 @@ def clean_db(schema: None) -> Iterator[None]:
     passkeys.forget()
     plex_link.forget()
     jellyfin_link.forget()
+    music_assistant.forget()
+    ma_sources.forget()
+    ma_events.forget()
     server_sync.forget()
     mirrors.forget_asked()
     mirrors.forget_looks()
@@ -241,6 +247,25 @@ def fake_jellyfin(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setattr(jellyfin, "pause", waits.append)
     fake.waits = waits  # type: ignore[attr-defined]
     return fake
+
+
+@pytest.fixture
+def fake_ma(monkeypatch: pytest.MonkeyPatch) -> object:
+    """The stand-in Music Assistant (``fakema``) under the real client: its websocket in memory, its plain requests
+    through a stand-in transport, nothing to the network. Waits (the end of a task, a pause) are counted, not waited."""
+    from .fakema import FakeMA
+
+    fake = FakeMA()
+    transport = fake.transport()
+    monkeypatch.setattr(music_assistant, "CHANNEL", fake.channel)
+    monkeypatch.setattr(music_assistant, "TRANSPORT", transport)
+    monkeypatch.setattr(music_assistant, "ASYNC_TRANSPORT", transport)
+    monkeypatch.setattr(plex, "resolver", fake_resolver)
+    waits: list[float] = []
+    monkeypatch.setattr(music_assistant, "pause", waits.append)
+    fake.waits = waits  # type: ignore[attr-defined]
+    yield fake
+    music_assistant.forget()
 
 
 @pytest.fixture

@@ -3,7 +3,10 @@ through nexmix.
 
 **The way to the server.** Only a track of a live catalogue, by its number; the request is built for the track's
 server (Plex: its converter, ``universal/start.mp3`` from 35 % of the track at 192 kbit/s; Jellyfin: ``stream.mp3``
-from 35 % at 192 kbit/s, which always converts, ``jellyfin.sound_request``) with the token in a header. Jellyfin
+from 35 % at 192 kbit/s, which always converts, ``jellyfin.sound_request``) with the token in a header. Music
+Assistant gives only the first 30 seconds of a track (AAC, ``music/tracks/preview`` on its websocket answers a path with
+a token good for a minute, fetched here and never shown to a browser); when another connected server has the same
+track (``_twin``: same title, artist and length), its preview from 35 % is taken instead. Jellyfin
 serves sound to whoever knows a track's id: neither the id nor the address ever goes to a browser. Nothing the
 browser sends reaches the server but the server's key of that track. The answer is passed on as it comes and cut at
 ``MAX_BYTES`` (about forty seconds) or ``MAX_SECONDS``; then, and whenever the listener goes away early (the browser
@@ -56,8 +59,8 @@ from starlette.types import Receive, Scope, Send
 
 from .. import clock
 from ..errors import error
-from ..models import SERVER_JELLYFIN, SERVER_PLEX, CatalogTrack
-from . import jellyfin, plex, plex_link, settings_service, sources
+from ..models import SERVER_JELLYFIN, SERVER_MA, SERVER_PLEX, CatalogTrack
+from . import jellyfin, music_assistant, plex, plex_link, settings_service, sources
 from .sources import PlexSource
 
 logger = logging.getLogger("nexmix.preview")
@@ -141,6 +144,7 @@ class Kept:
     track: int
     data: bytes
     made: float
+    media: str = "audio/mpeg"
 
 
 _lock = threading.Lock()
@@ -158,7 +162,7 @@ def forget() -> None:
         _kept.clear()
 
 
-def _keep(key: str, track: int, data: bytes) -> None:
+def _keep(key: str, track: int, data: bytes, media: str = "audio/mpeg") -> None:
     if not data:
         return
     with _lock:
@@ -166,17 +170,22 @@ def _keep(key: str, track: int, data: bytes) -> None:
         while len(_kept) >= KEPT:
             oldest = min(_kept.values(), key=lambda one: one.made)
             del _kept[oldest.key]
-        _kept[key] = Kept(key, track, data, clock.monotonic())
+        _kept[key] = Kept(key, track, data, clock.monotonic(), media)
 
 
-def kept(key: str, track: int) -> bytes | None:
-    """The listener's whole preview of this track, while it is kept."""
+def _kept_one(key: str, track: int) -> Kept | None:
     moment = clock.monotonic()
     with _lock:
         for stale in [one.key for one in _kept.values() if moment - one.made >= KEEP_SECONDS]:
             del _kept[stale]
         found = _kept.get(key)
-        return found.data if found is not None and found.track == track else None
+        return found if found is not None and found.track == track else None
+
+
+def kept(key: str, track: int) -> bytes | None:
+    """The listener's whole preview of this track, while it is kept."""
+    found = _kept_one(key, track)
+    return found.data if found is not None else None
 
 
 def kept_now() -> int:
@@ -234,17 +243,17 @@ def asked_part(header: str | None) -> Part | None:
     return Part(start, end)
 
 
-def part_response(data: bytes, part: Part | None) -> Response:
+def part_response(data: bytes, part: Part | None, media: str = "audio/mpeg") -> Response:
     """A kept preview, whole (200) or the part asked for (206), always with its length; 416 for a part beyond it."""
     headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
     total = len(data)
     if part is None:
-        return Response(data, status_code=200, headers=headers, media_type="audio/mpeg")
+        return Response(data, status_code=200, headers=headers, media_type=media)
     bounds = part.bounds(total)
     if bounds is None:
         return Response(b"", status_code=416, headers={**headers, "Content-Range": f"bytes */{total}"})
     first, last = bounds
-    return Response(data[first:last + 1], status_code=206, media_type="audio/mpeg",
+    return Response(data[first:last + 1], status_code=206, media_type=media,
                     headers={**headers, "Content-Range": f"bytes {first}-{last}/{total}"})
 
 
@@ -318,8 +327,47 @@ class Plan:
     offset: int
     #: The track's key on its server.
     key: str = ""
-    #: The kind of its server (``plex``, ``jellyfin``).
+    #: The kind of its server (``plex``, ``jellyfin``, ``music_assistant``).
     kind: str = SERVER_PLEX
+    #: The server (Music Assistant: its websocket is asked for the preview's path).
+    server: int = 0
+
+    @property
+    def media(self) -> str:
+        return "audio/aac" if self.kind == SERVER_MA else "audio/mpeg"
+
+
+def _twin(db: Session, track: CatalogTrack, server_id: int) -> tuple[int, CatalogTrack] | None:
+    """The same track on another connected server that gives a preview from 35 % (not Music Assistant): the same
+    title, the same artist (of the track or its album) and a length within three seconds. None: there is none."""
+    from sqlalchemy import select
+
+    from ..models import CatalogAlbum, CatalogArtist
+    from . import catalog, match, media
+
+    wanted_title = match.title_key(track.title or "")
+    if not wanted_title:
+        return None
+
+    def people(of: CatalogTrack, generation: int) -> frozenset[str]:
+        album = db.get(CatalogAlbum, (of.server_id, generation, of.album_id)) if of.album_id else None
+        owner = db.get(CatalogArtist, (of.server_id, generation, album.artist_id if album else of.artist_id))
+        return match.people_keys(of.artist or "", owner.title if owner is not None else "")
+
+    here = people(track, track.generation)
+    for other, generation in catalog.live(db).items():
+        row = media.get(db, other)
+        if other == server_id or row is None or row.kind == SERVER_MA:
+            continue
+        found = db.scalars(select(CatalogTrack).where(
+            CatalogTrack.server_id == other, CatalogTrack.generation == generation,
+            CatalogTrack.title == track.title,
+            CatalogTrack.duration.between((track.duration or 0) - match.TOLERANCE,
+                                          (track.duration or 0) + match.TOLERANCE)).limit(20)).all()
+        for one in found:
+            if match.title_key(one.title or "") == wanted_title and people(one, generation) & here:
+                return other, one
+    return None
 
 
 def allowed(db: Session) -> bool:
@@ -359,13 +407,33 @@ def prepare(request: Request, track_id: int) -> Plan:
             token, client_id = sources.secret_of(db, row)
         except plex_link.Unreadable as exc:
             raise error("token_unreadable", "Connect the media server again.", 409) from exc
-        url, kind = row.url, row.kind
+        url, kind, server = row.url, row.kind, row.id
         seconds = max(0, int((track.duration or 0) / 1000))
-    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE), keys[track_id], kind)
+        key = keys[track_id]
+        if kind == SERVER_MA:
+            # Music Assistant gives the first 30 seconds only: the same track on another server, from 35 %, when
+            # there is one.
+            twin = _twin(db, track, row.id)
+            other = media.get(db, twin[0]) if twin is not None else None
+            if twin is not None and other is not None:
+                other_keys = media.keys(db, other.id, media.TRACK, [twin[1].id])
+                if twin[1].id in other_keys:
+                    try:
+                        token, client_id = sources.secret_of(db, other)
+                    except plex_link.Unreadable:
+                        other = None
+                    if other is not None:
+                        url, kind, server, key = other.url, other.kind, other.id, other_keys[twin[1].id]
+                        seconds = max(0, int((twin[1].duration or 0) / 1000))
+    return Plan(listener, url, token, client_id, track_id, int(seconds * START_SHARE) if kind != SERVER_MA else 0, key,
+                kind, server)
 
 
 def _named(kind: str, code: str) -> str:
     """A code of Plex as the server of the kind says it (``plex_refused`` is ``jellyfin_refused`` for Jellyfin)."""
+    if kind == SERVER_MA and code.startswith("plex_"):
+        found = "ma_" + code[len("plex_"):]
+        return "ma_starting" if found == "ma_busy" else found
     if kind == SERVER_JELLYFIN and code.startswith("plex_"):
         found = "jellyfin_" + code[len("plex_"):]
         return jellyfin.STARTING if found == "jellyfin_busy" else found
@@ -434,12 +502,13 @@ def _log_refusal(plan: Plan, refusal: Refusal, attempt: int | str, began: float)
     """``attempt`` 1 or 2 before the sound, ``-`` once it was flowing."""
     took = max(0, int((clock.monotonic() - began) * 1000))
     logger.warning("%s refused a preview track=%s attempt=%s status=%s kind=%s ms=%s detail=%r",
-                   "Jellyfin" if plan.kind == SERVER_JELLYFIN else "Plex", plan.track, attempt,
+                   {SERVER_JELLYFIN: "Jellyfin", SERVER_MA: "Music Assistant"}.get(plan.kind, "Plex"), plan.track,
+                   attempt,
                    refusal.status if refusal.status is not None else "-", refusal.kind, took, refusal.detail)
 
 
 async def _stop(client: httpx.AsyncClient, plan: Plan, session: str) -> None:
-    if plan.kind == SERVER_JELLYFIN:
+    if plan.kind in (SERVER_JELLYFIN, SERVER_MA):
         # Jellyfin's converter ends when the connection does (measured: no ffmpeg left 1.5 s later).
         return
     try:
@@ -447,6 +516,25 @@ async def _stop(client: httpx.AsyncClient, plan: Plan, session: str) -> None:
         await client.get(url, params=params, headers=headers, timeout=5.0)
     except httpx.HTTPError:
         logger.info("Plex did not take the end of a preview")
+
+
+#: Music Assistant away: the listener may try again in a moment.
+AWAY_MA = music_assistant.AWAY
+
+
+def _ma_path(plan: Plan) -> str:
+    """The path of a preview of Music Assistant (``/preview?token=…``), asked on its websocket for the track as its
+    provider has it (measured: asked by the library's id, the sound breaks off before the first byte)."""
+    connection = music_assistant.connection(plan.server, plan.url, plan.token)
+    track = connection.call("music/tracks/get", {"item_id": plan.key, "provider_instance_id_or_domain": "library",
+                                                 "allow_update_metadata": False}, timeout=15.0)
+    found = track.get("provider_mappings") if isinstance(track, dict) else None
+    usable = [one for one in found or [] if isinstance(one, dict) and one.get("available", True)
+              and one.get("provider_instance") and one.get("item_id")]
+    if not usable:
+        raise music_assistant.MaError("ma_not_found", 404)
+    asked = {"provider_instance_id_or_domain": usable[0]["provider_instance"], "item_id": str(usable[0]["item_id"])}
+    return str(connection.call("music/tracks/preview", asked, timeout=15.0) or "")
 
 
 async def _close(client: httpx.AsyncClient, plan: Plan, session: str, upstream: httpx.Response | None = None) -> None:
@@ -477,7 +565,17 @@ async def _ask(client: httpx.AsyncClient, plan: Plan, session: str
     refusal has closed everything and told Plex the session is over."""
     upstream: httpx.Response | None = None
     try:
-        if plan.kind == SERVER_JELLYFIN:
+        if plan.kind == SERVER_MA:
+            try:
+                path = await anyio.to_thread.run_sync(_ma_path, plan)
+                # The token stands in the path it answered: no parameters of nexmix (they would replace it).
+                url, headers, params = music_assistant.preview_url(plan.url, path), {}, None
+            except music_assistant.MaError as exc:
+                await _close(client, plan, session)
+                code = exc.code if exc.code.startswith("ma_") else "ma_error"
+                return Refusal(code, None, code, False,
+                               error(code, "The media server did not play along.", 503 if code in AWAY_MA else 502))
+        elif plan.kind == SERVER_JELLYFIN:
             url, headers, params = jellyfin.sound_request(plan.url, plan.token, plan.client_id, plan.key,
                                                           plan.offset, session, BITRATE)
         else:
@@ -521,9 +619,9 @@ async def start(plan: Plan, range_header: str | None = None,
     comes, or, for a part, whole and then the part (``PreviewResponse``). A request without the header (a program)
     is always a new preview. ``gone`` says whether the listener has left: then a refusal is not tried again."""
     part = asked_part(range_header)
-    data = kept(plan.listener.key, plan.track) if range_header else None
-    if data is not None:
-        return part_response(data, part)
+    found = _kept_one(plan.listener.key, plan.track) if range_header else None
+    if found is not None:
+        return part_response(found.data, part, found.media)
     _take_hour(plan.listener.key)
     try:
         running = _claim(plan.listener.key)
@@ -539,7 +637,8 @@ async def start(plan: Plan, range_header: str | None = None,
         while True:
             attempt += 1
             session = secrets.token_hex(12)
-            client = jellyfin.async_client(15.0) if plan.kind == SERVER_JELLYFIN else plex.async_client(15.0)
+            client = (jellyfin.async_client(15.0) if plan.kind == SERVER_JELLYFIN
+                      else music_assistant.async_client(15.0) if plan.kind == SERVER_MA else plex.async_client(15.0))
             began = clock.monotonic()
             asked = await _ask(client, plan, session)
             if not isinstance(asked, Refusal):
@@ -572,6 +671,7 @@ class PreviewResponse(Response):
     def __init__(self, plan: Plan, session: str, client: httpx.AsyncClient, upstream: httpx.Response,
                  running: Running, part: Part | None = None, stream: AsyncIterator[bytes] | None = None,
                  first: bytes = b"") -> None:
+        self.media_type = plan.media
         super().__init__(status_code=200, headers={"Cache-Control": "no-store", "Accept-Ranges": "none"},
                          media_type=self.media_type)
         # The length is not known before the end: no Content-Length (an empty body would have said 0).
@@ -649,12 +749,12 @@ class PreviewResponse(Response):
                 self.ended = self.ended or "done"
                 group.cancel_scope.cancel()
             if self.ended in _WHOLE:
-                _keep(self.plan.listener.key, self.plan.track, bytes(whole))
+                _keep(self.plan.listener.key, self.plan.track, bytes(whole), self.plan.media)
             if not gone and streaming:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
             elif not gone:
                 if whole:
-                    answer = part_response(bytes(whole), self.part)
+                    answer = part_response(bytes(whole), self.part, self.plan.media)
                 else:
                     empty = Refusal(_named(self.plan.kind, "plex_empty"), 200, "", False,
                                     _status_error(502, self.plan.kind))

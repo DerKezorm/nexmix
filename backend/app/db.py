@@ -38,7 +38,7 @@ _settings.data_dir.mkdir(parents=True, exist_ok=True)
 BUSY_SECONDS = 15
 
 #: The version of the schema the models describe.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 #: The same, as it was when the module was loaded: only a database brought to it is compared with the models (the
 #: tests of the schema bring records to older versions).
 _MODELS_VERSION = SCHEMA_VERSION
@@ -340,10 +340,23 @@ def _to_11(connection: Connection) -> None:
         connection.exec_driver_sql(statement)
 
 
+#: Version 12: Music Assistant. The providers of its library that count, and when its token runs out.
+_SCHEMA_12 = (
+    "ALTER TABLE media_servers ADD COLUMN providers JSON",
+    "ALTER TABLE media_servers ADD COLUMN token_expires_at DATETIME",
+)
+
+
+def _to_12(connection: Connection) -> None:
+    for statement in _SCHEMA_12:
+        connection.exec_driver_sql(statement)
+
+
 #: ``MIGRATIONS[n]`` brings a database from version ``n - 1`` to ``n``. Version 1 is the first schema; it has no step.
 #: Later steps are written out as the tables stood then, not taken from the models, which move on.
 MIGRATIONS: dict[int, Callable[[Connection], None]] = {2: _to_2, 3: _to_3, 4: _to_4, 5: _to_5, 6: _to_6, 7: _to_7,
-                                                       8: _to_8, 9: _to_9, 10: _to_10, 11: _to_11}
+                                                       8: _to_8, 9: _to_9, 10: _to_10, 11: _to_11,
+                                                       12: _to_12}
 
 
 # No pool with an upper bound: with the default pool the sixteenth concurrent request would block the event

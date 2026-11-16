@@ -106,7 +106,8 @@ def describe(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, ma
     for start in range(0, len(wanted), 500):
         for row in db.execute(select(CatalogTrack.id, CatalogTrack.title, CatalogTrack.artist, CatalogTrack.album_id,
                                      CatalogTrack.artist_id, CatalogTrack.duration, CatalogTrack.guid,
-                                     CatalogTrack.mbid_track, CatalogTrack.number, CatalogTrack.disc).where(
+                                     CatalogTrack.mbid_track, CatalogTrack.mbid_recording, CatalogTrack.number,
+                                     CatalogTrack.disc).where(
                 CatalogTrack.server_id == server_id, CatalogTrack.generation == generation,
                 CatalogTrack.id.in_(wanted[start:start + 500]))):
             rows[int(row.id)] = row
@@ -145,7 +146,7 @@ def describe(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, ma
         found[ident] = match.Wanted(
             title=str(row.title or ""), artist=str(row.artist or owner), album=album_title,
             duration=int(row.duration or 0), guid=str(row.guid or ""), mbid=str(row.mbid_track or ""),
-            album_artist=owner, number=int(row.number) if row.number else None,
+            recording=str(row.mbid_recording or ""), album_artist=owner, number=int(row.number) if row.number else None,
             disc=int(row.disc) if row.disc else None, shape=tuple(sorted(shapes.get(int(row.album_id or 0), ()))))
     return found
 
@@ -186,14 +187,15 @@ class Decision:
 
 
 def _plex_mbids(db: Session, source_id: int, tracks: Sequence[int]) -> dict[int, str]:
-    """The MusicBrainz ids of tracks of a Plex server, asked of the server (the catalogue does not hold them, see
-    ``PlexSource.mbids``); kept for a while, so that the copy after its preview does not ask again. Nothing when the
-    server is no Plex or cannot be asked: the steps by name stand."""
-    from ..models import SERVER_PLEX
+    """The MusicBrainz ids of tracks of a Plex server (of the track) or a Music Assistant server (of the recording),
+    asked of the server (the catalogue does not hold them, see ``PlexSource.mbids`` and
+    ``MusicAssistantSource.recordings``); kept for a while, so that the copy after its preview does not ask again.
+    Nothing when the server is neither or cannot be asked: the steps by name stand."""
+    from ..models import SERVER_MA, SERVER_PLEX
     from . import plex_link, sources
 
     server = media.get(db, source_id)
-    if server is None or server.kind != SERVER_PLEX or not server.active or not tracks:
+    if server is None or server.kind not in (SERVER_PLEX, SERVER_MA) or not server.active or not tracks:
         return {}
     found = {track: _mbid_cache[(source_id, track)] for track in tracks if (source_id, track) in _mbid_cache}
     asking = [track for track in tracks if (source_id, track) not in _mbid_cache]
@@ -201,7 +203,10 @@ def _plex_mbids(db: Session, source_id: int, tracks: Sequence[int]) -> dict[int,
         keys = media.keys(db, source_id, media.TRACK, asking)
         try:
             with sources.open_server(db, server) as source:
-                answered = source.mbids(keys.values())
+                if server.kind == SERVER_MA:
+                    answered = source.recordings(keys.values())  # type: ignore[union-attr]
+                else:
+                    answered = source.mbids(keys.values())  # type: ignore[union-attr]
         except (plex_link.Unreadable, PlexError) as exc:
             code = exc.code if isinstance(exc, PlexError) else UNREADABLE
             logger.warning("MusicBrainz ids not asked of the server server=%s error=%s", source_id, code)
@@ -265,15 +270,22 @@ def decide(db: Session, items: Sequence[PlaylistItem], source_id: int, target_id
         finder = _finder(db, target_id)
         hits = match.assign(wanted, finder, used)
         weak = [item.track_id for item, hit, one in zip(rest, hits, wanted, strict=True)
-                if (hit is None or not hit.sure) and not one.mbid]
+                if (hit is None or not hit.sure) and not one.mbid and not one.recording]
         more = _plex_mbids(db, source_id, weak) if ask and weak else {}
         if more:
-            wanted = [replace(one, mbid=more.get(int(item.track_id), one.mbid))
+            # Music Assistant's ids are of the recording, Plex's of the track (``match.py``).
+            field = "recording" if _kind_of(db, source_id) == "music_assistant" else "mbid"
+            wanted = [replace(one, **{field: more.get(int(item.track_id), getattr(one, field))})
                       for item, one in zip(rest, wanted, strict=True)]
             hits = match.assign(wanted, finder, used)
         for item, hit in zip(rest, hits, strict=True):
             found[item.id] = Decision(hit.track.id, hit.how) if hit is not None else Decision(None, match.NONE)
     return found
+
+
+def _kind_of(db: Session, server_id: int) -> str:
+    server = media.get(db, server_id)
+    return server.kind if server is not None else ""
 
 
 def taken(one: Decision, unsure: bool) -> bool:
@@ -1031,7 +1043,11 @@ def drop_discarded(sync_round: Round, playlist_id: int) -> None:
                                                               by_track=sync_round.by_track)}
     refs = [there[int(one.track_id)].ref for one in dropping if int(one.track_id) in there]
     if refs:
-        sync_round.source.remove_many(key, refs)
+        if sync_round.caps.moves == "tail":
+            # By place (Music Assistant): what must stay is kept with the playlist until the step is done.
+            sync_round.source.remove_many(key, refs, guard=sync_round._guard)
+        else:
+            sync_round.source.remove_many(key, refs)
         logger.info("Tracks only in the mirror taken out there playlist=%s count=%s", playlist_id, len(refs))
     db.execute(delete(MirrorExtra).where(MirrorExtra.id.in_([one.id for one in dropping])))
     db.commit()
@@ -1478,12 +1494,14 @@ def _finish(db: Session, row: Transfer) -> None:
 
 def disconnect(db: Session, server: MediaServer) -> None:
     """Lets go of a server that is no playlist's source: its mirrors are forgotten, its token and catalogue go."""
-    from ..models import SERVER_JELLYFIN
-    from . import jellyfin_link, plex_link
+    from ..models import SERVER_JELLYFIN, SERVER_MA
+    from . import jellyfin_link, ma_link, plex_link
 
     forget_server(db, server.id)
     if server.kind == SERVER_JELLYFIN:
         jellyfin_link.rest(db, server)
+    elif server.kind == SERVER_MA:
+        ma_link.rest(db, server)
     else:
         plex_link.rest(db, server)
 

@@ -202,8 +202,43 @@ def _jellyfin(db: Session) -> Point | None:
     return Point("jellyfin", OK, {"names": ", ".join(row.name for row in rows), "token": True})
 
 
+def _music_assistant(db: Session) -> Point | None:
+    """Music Assistant serves previews and pictures to whoever knows their id, without signing in, and its token (a
+    year at most) opens everything there: the server is best reached at an address inside the own network, its token
+    must be there, readable and not about to run out (``ma_link.WARN_DAYS``)."""
+    from ..models import SERVER_MA
+    from . import ma_link, media
+
+    rows = [row for row in media.active(db) if row.kind == SERVER_MA]
+    if not rows:
+        return None
+    no_token, outside, running_out = [], [], []
+    soonest: int | None = None
+    for row in rows:
+        try:
+            readable = bool(row.token_enc) and bool(ma_link.token_of(row))
+        except ma_link.Unreadable:
+            readable = False
+        token = ma_link.token_view(row)
+        if not readable or token["expired"]:
+            no_token.append(row.name)
+        elif token["warn"]:
+            running_out.append(row.name)
+            soonest = token["days_left"] if soonest is None else min(soonest, token["days_left"])
+        if _internal(row.url) is not True:
+            outside.append(row.name)
+    if no_token:
+        return Point("music_assistant", BAD, {"names": ", ".join(no_token), "token": False, "days": None})
+    if running_out:
+        return Point("music_assistant", WARN, {"names": ", ".join(running_out), "token": True, "days": soonest})
+    if outside:
+        return Point("music_assistant", WARN, {"names": ", ".join(outside), "token": True, "days": None})
+    return Point("music_assistant", OK, {"names": ", ".join(row.name for row in rows), "token": True, "days": None})
+
+
 def check(db: Session, request: Request, operator: Account, unknown_proxy: bool) -> dict[str, Any]:
     jellyfin = _jellyfin(db)
+    music_assistant = _music_assistant(db)
     points = [
         _https(db, request),
         _two_factor(db),
@@ -214,5 +249,6 @@ def check(db: Session, request: Request, operator: Account, unknown_proxy: bool)
         _proxy(request, unknown_proxy),
         _backups(db),
         *([jellyfin] if jellyfin is not None else []),
+        *([music_assistant] if music_assistant is not None else []),
     ]
     return {"points": [point.as_dict() for point in points], "open": sum(point.state != OK for point in points)}

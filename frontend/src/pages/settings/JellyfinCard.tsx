@@ -37,7 +37,7 @@ function when(moment: string | null, language: string): string {
 }
 
 /** The catalogue of one server, as the Plex card shows it: counts or the progress of a run, the last sync, a failure. */
-export function ServerCatalog({ status, extra, kind = 'plex' }: { status: CatalogStatus | null; extra?: ReactNode; kind?: 'plex' | 'jellyfin' }) {
+export function ServerCatalog({ status, extra, kind = 'plex' }: { status: CatalogStatus | null; extra?: ReactNode; kind?: 'plex' | 'jellyfin' | 'music_assistant' }) {
   const { t, i18n } = useTranslation()
   const number = (value: number) => value.toLocaleString(i18n.language)
   const full = status?.running?.kind === 'full' || status?.queued === 'full'
@@ -65,7 +65,7 @@ export function ServerCatalog({ status, extra, kind = 'plex' }: { status: Catalo
         <dt>{t('plex.lastSynced')}</dt>
         <dd>{status?.synced_at ? t('plex.lastSyncedValue', { when: when(status.synced_at, i18n.language) }) : t('plex.notYet')}</dd>
         <dt>{t('plex.search')}</dt>
-        <dd>{kind === 'jellyfin' ? t('jellyfin.searchValue') : t('plex.searchValue')}</dd>
+        <dd>{kind === 'jellyfin' ? t('jellyfin.searchValue') : kind === 'music_assistant' ? t('ma.searchValue') : t('plex.searchValue')}</dd>
         {extra}
       </dl>
       {failed && (

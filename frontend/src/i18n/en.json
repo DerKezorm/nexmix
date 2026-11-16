@@ -118,7 +118,9 @@
       "lookedEvery": "{{when}} · then every 15 seconds",
       "noneJellyfin": "None yet. Playlists of the chosen user in Jellyfin appear here by themselves when nexmix is connected as that user (Quick Connect).",
       "emptied_one": "{{count}} mirror on {{server}} emptied. nexmix does not take that over; the playlist asks.",
-      "emptied_other": "{{count}} mirrors on {{server}} emptied at once. nexmix takes none of it over; each playlist asks."
+      "emptied_other": "{{count}} mirrors on {{server}} emptied at once. nexmix takes none of it over; each playlist asks.",
+      "noneMa": "None yet. Music Assistant's own playlists appear here by themselves.",
+      "lookedEvents": "{{when}} · Music Assistant tells of changes at once, the list every minute"
     },
     "lossTitle": "{{count}} tracks suddenly missing in {{server}}",
     "lossText": "nexmix kept them here and writes them back to {{server}} after the next catalogue sync. If you removed them there on purpose, take them out here too.",
@@ -931,7 +933,23 @@
     "mirror_gone": "Deleted on the server.",
     "mirror_smart": "It became a smart playlist on the server.",
     "still_source": "The server could not be disconnected: playlists still come from it.",
-    "smart_stays": "A smart playlist stays on its own server."
+    "smart_stays": "A smart playlist stays on its own server.",
+    "ma_unreachable": "Music Assistant cannot be reached.",
+    "ma_timeout": "Music Assistant did not answer in time.",
+    "ma_starting": "Music Assistant is starting. Try again in a moment.",
+    "ma_refused": "Music Assistant no longer takes the token. Make a new one there and connect again.",
+    "ma_error": "Music Assistant did not play along.",
+    "ma_not_found": "Music Assistant does not know that.",
+    "ma_bad_request": "Music Assistant did not take the request.",
+    "ma_unsupported": "This version of Music Assistant cannot do that.",
+    "not_ma": "No Music Assistant answers at this address.",
+    "ma_too_old": "This version of Music Assistant is too old for nexmix.",
+    "ma_no_provider": "First choose the providers whose tracks count.",
+    "no_music_provider": "This Music Assistant has no music provider.",
+    "ma_copy": "The copy in Music Assistant did not match. nexmix tries again shortly.",
+    "ma_bad_place": "The playlist in Music Assistant changed just now. nexmix syncs again.",
+    "ma_twice": "A track stands twice in the playlist in Music Assistant. Take it out there once.",
+    "playlist_changed_meanwhile": "The playlist kept changing on the server at the same time. nexmix tries again later."
   },
   "ready": {
     "title": "Ready for the internet?",
@@ -998,6 +1016,14 @@
       "ok": "Jellyfin is connected inside the own network. nexmix passes sound and pictures through; no browser sees ids or the address.",
       "warn": "Jellyfin ({{names}}) is connected at an address outside the own network. Jellyfin hands out sound and pictures without a sign-in. nexmix never passes ids on, but an address inside the own network is safer.",
       "bad": "There is no readable key for Jellyfin ({{names}}). Connect Jellyfin again."
+    },
+    "music_assistant": {
+      "title": "Music Assistant",
+      "ok": "Music Assistant is connected inside the own network and its token is valid. nexmix passes previews and pictures through.",
+      "warn": "Music Assistant ({{names}}) is connected at an address outside the own network. Music Assistant hands out previews and pictures without signing in; an address inside the own network is safer.",
+      "expiring_one": "The token of Music Assistant ({{names}}) runs out tomorrow. Make a new one there and connect again.",
+      "expiring_other": "The token of Music Assistant ({{names}}) runs out in {{count}} days. Make a new one there and connect again.",
+      "bad": "A valid token for Music Assistant ({{names}}) is missing. Connect Music Assistant again."
     }
   },
   "mail": {
@@ -1678,7 +1704,8 @@
     "library": "Library",
     "disconnect": "Disconnect server",
     "disconnectTitle": "Disconnect \"{{name}}\"?",
-    "disconnectText": "nexmix forgets the token and the catalogue with {{tracks}} tracks. Playlists that take their tracks from this server stay in nexmix, but search, suggestions and listening in only work again once you connect it again. Only connecting again brings this back. Nothing changes on the server itself. nexmix forgets the mirrors of playlists on this server; the playlists there stay as they are."
+    "disconnectText": "nexmix forgets the token and the catalogue with {{tracks}} tracks. Playlists that take their tracks from this server stay in nexmix, but search, suggestions and listening in only work again once you connect it again. Only connecting again brings this back. Nothing changes on the server itself. nexmix forgets the mirrors of playlists on this server; the playlists there stay as they are.",
+    "addMa": "Music Assistant"
   },
   "jellyfin": {
     "title": "Jellyfin",
@@ -1716,6 +1743,40 @@
     "libraryText": "The catalogue of \"{{old}}\" is deleted and the one of \"{{new}}\" fetched. Until then there is no search. It only comes back if you choose \"{{old}}\" again and it is fetched anew.",
     "libraryConfirm": "Change library",
     "searchValue": "inside nexmix, Jellyfin is never asked while you type"
+  },
+  "ma": {
+    "title": "Music Assistant",
+    "textNew": "Connect a Music Assistant. Make a long-lived token there in your profile under tokens and enter it here.",
+    "textConnected": "Connected to Music Assistant “{{name}}”. Playlists live there as Music Assistant's own playlists.",
+    "textConnectedPlain": "Connected to Music Assistant. Playlists live there as Music Assistant's own playlists.",
+    "address": "Address",
+    "addressHint": "For example http://music-assistant:8095. Best an address inside your own network.",
+    "tokenLabel": "Token",
+    "tokenHint": "A long-lived token lasts a year. nexmix tells you 30 days before.",
+    "connect": "Connect",
+    "stepToken": "Token",
+    "stepProviders": "Providers",
+    "stepProvidersNamed": "Providers: {{names}}",
+    "chooseProviders": "Choose the providers whose tracks count in nexmix.",
+    "providerKind": "Provider {{kind}}",
+    "saveProviders": "Use these providers",
+    "providersTitle": "Choose other providers?",
+    "providersText": "The catalogue of this Music Assistant is deleted and fetched anew with the chosen providers. Until then there is no search. It comes back when you choose the old providers again.",
+    "providersConfirm": "Change providers",
+    "doubled": "{{names}} brings tracks nexmix also knows directly. They would stand twice. Better leave this provider out.",
+    "token": "Token",
+    "tokenUntil": "valid until {{day}}",
+    "tokenOpen": "without an end date",
+    "tokenSoon_one": "The token runs out tomorrow ({{day}}). Make a new one in Music Assistant and connect again.",
+    "tokenSoon_other": "The token runs out in {{count}} days ({{day}}). Make a new one in Music Assistant and connect again.",
+    "tokenExpired": "The token ran out on {{day}}. Make a new one in Music Assistant and connect again.",
+    "moodsValue": "Music Assistant has none, genre and decade work",
+    "otherProviders": "Choose other providers",
+    "newToken": "Enter a new token",
+    "disconnect": "Disconnect Music Assistant",
+    "disconnectTitle": "Disconnect Music Assistant?",
+    "disconnectText": "nexmix forgets the token and the catalogue of {{tracks}} tracks. Playlists with tracks from Music Assistant stay in nexmix, but search, suggestions and listening in only work again once you connect Music Assistant anew. It can only be brought back by connecting again. Nothing changes in Music Assistant itself. nexmix forgets mirrors of playlists there; the playlists stay as they are.",
+    "searchValue": "local in nexmix, Music Assistant is never asked while typing"
   },
   "mirror": {
     "copyOpen": "Copy to …",

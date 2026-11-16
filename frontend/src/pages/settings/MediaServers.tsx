@@ -1,6 +1,7 @@
 /**
  * Settings, Server: the media servers. The Plex card as it always was (the first Plex server); a card for each Plex
- * server connected beside it and for each Jellyfin server; and "Add a server" with the choice of Plex or Jellyfin.
+ * server connected beside it, for each Jellyfin server and for each Music Assistant; and "Add a server" with the choice
+ * of Plex, Jellyfin or Music Assistant.
  * Disconnecting asks first and says what goes. With nothing connected yet, the Plex card stands first as before. With
  * more than one server, each ready one has "take all playlists over" (``TransferCard``).
  */
@@ -8,11 +9,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { busy, catalogApi } from '../../api/plex'
-import { jellyfinApi, serversApi, type JellyfinServer, type MediaServer } from '../../api/servers'
+import { jellyfinApi, maApi, serversApi, type JellyfinServer, type MaServer, type MediaServer } from '../../api/servers'
 import { useConfirm } from '../../components/useConfirm'
 import { useCatalogStatus } from '../../lib/catalogStatus'
 import { iso } from '../../lib/say'
 import { JellyfinCard, JellyfinConnect, ServerCatalog } from './JellyfinCard'
+import { MaCard, MaConnect } from './MaCard'
 import { PlexCard } from './PlexCard'
 import { TransferCard } from './TransferCard'
 import { Button, Card, Feedback, useAction } from './ui'
@@ -68,24 +70,28 @@ function OtherPlexCard({ server, onChanged }: { server: MediaServer; onChanged: 
   )
 }
 
-type Adding = 'choose' | 'plex' | 'jellyfin' | null
+type Adding = 'choose' | 'plex' | 'jellyfin' | 'music_assistant' | null
 
 export function MediaServers() {
   const { t } = useTranslation()
   const [servers, setServers] = useState<MediaServer[] | null>(null)
   const [jellyfins, setJellyfins] = useState<JellyfinServer[]>([])
+  const [assistants, setAssistants] = useState<MaServer[]>([])
   const [adding, setAdding] = useState<Adding>(null)
   // The Plex card reads its server anew when a server comes or goes.
   const [round, setRound] = useState(0)
 
   const load = useCallback(async () => {
     try {
-      const [all, jelly] = await Promise.all([serversApi.list(), jellyfinApi.list()])
+      // A Music Assistant that cannot be listed leaves the other cards as they are.
+      const [all, jelly, ma] = await Promise.all([serversApi.list(), jellyfinApi.list(), maApi.list().catch(() => null)])
       setServers(Array.isArray(all?.servers) ? all.servers : [])
       setJellyfins(Array.isArray(jelly?.servers) ? jelly.servers : [])
+      setAssistants(Array.isArray(ma?.servers) ? ma.servers : [])
     } catch {
       setServers([])
       setJellyfins([])
+      setAssistants([])
     }
   }, [])
   useEffect(() => {
@@ -114,6 +120,9 @@ export function MediaServers() {
       {jellyfins.map((server) => (
         <JellyfinCard key={server.id} server={server} onChanged={changed} />
       ))}
+      {assistants.map((server) => (
+        <MaCard key={server.id} server={server} onChanged={changed} />
+      ))}
       {targets.map((server) => (
         <TransferCard key={`transfer-${server.id}`} target={server} others={active.filter((one) => one.id !== server.id)} />
       ))}
@@ -135,11 +144,21 @@ export function MediaServers() {
           onCancel={() => setAdding(null)}
         />
       )}
-      {servers !== null && adding !== 'plex' && adding !== 'jellyfin' && (
+      {adding === 'music_assistant' && (
+        <MaConnect
+          onConnected={async () => {
+            setAdding(null)
+            await changed()
+          }}
+          onCancel={() => setAdding(null)}
+        />
+      )}
+      {servers !== null && adding !== 'plex' && adding !== 'jellyfin' && adding !== 'music_assistant' && (
         <Card id="servers-add" title={t('servers.addTitle')} text={t('servers.addText')}>
           <div className="flex flex-wrap gap-2" data-testid="servers-add">
             <Button onClick={() => setAdding('plex')}>{t('servers.addPlex')}</Button>
             <Button onClick={() => setAdding('jellyfin')}>{t('servers.addJellyfin')}</Button>
+            <Button onClick={() => setAdding('music_assistant')}>{t('servers.addMa')}</Button>
           </div>
         </Card>
       )}

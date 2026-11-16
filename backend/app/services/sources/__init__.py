@@ -1,7 +1,7 @@
 """The connectors to media servers: one per kind of server, each behind the same narrow set of questions (the
 catalogue, the playlists, a preview, the covers, "sounds alike", what it can do). The sync of the playlists, the
 catalogue, the suggestions, the preview and the covers ask a connector; what is special about one kind of server stays
-in its connector (``plex.py``, ``jellyfin.py``).
+in its connector (``plex.py``, ``jellyfin.py``, ``music_assistant.py``).
 
 ``open_server`` opens the connector of a server row; the token is unsealed for it and never leaves it.
 """
@@ -12,17 +12,20 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ...models import SERVER_JELLYFIN, SERVER_PLEX, MediaServer
-from .base import Capabilities, Entry, Listed, NotSupported
+from ...models import SERVER_JELLYFIN, SERVER_MA, SERVER_PLEX, MediaServer
+from .base import Capabilities, Entry, Listed, NotSupported, Raced
 from .jellyfin import CAPABILITIES as JELLYFIN_CAPABILITIES
 from .jellyfin import JellyfinSource
+from .music_assistant import CAPABILITIES as MA_CAPABILITIES
+from .music_assistant import MusicAssistantSource
 from .plex import CAPABILITIES as PLEX_CAPABILITIES
 from .plex import PlexSource
 
-__all__ = ["Capabilities", "Entry", "JellyfinSource", "Listed", "NotSupported", "PlexSource", "capabilities",
-           "open_server", "secret_of"]
+__all__ = ["Capabilities", "Entry", "JellyfinSource", "Listed", "MusicAssistantSource", "NotSupported", "PlexSource",
+           "Raced", "capabilities", "open_server", "secret_of"]
 
-_CAPABILITIES: dict[str, Capabilities] = {SERVER_PLEX: PLEX_CAPABILITIES, SERVER_JELLYFIN: JELLYFIN_CAPABILITIES}
+_CAPABILITIES: dict[str, Capabilities] = {SERVER_PLEX: PLEX_CAPABILITIES, SERVER_JELLYFIN: JELLYFIN_CAPABILITIES,
+                                          SERVER_MA: MA_CAPABILITIES}
 
 
 def capabilities(kind: str) -> Capabilities:
@@ -32,22 +35,35 @@ def capabilities(kind: str) -> Capabilities:
 def secret_of(db: Session, row: MediaServer) -> tuple[str, str]:
     """The server's token and nexmix's own name there (Plex's client id, Jellyfin's device id), for a request built
     outside a connector (the sound of a preview). ``plex_link.Unreadable`` when the token cannot be opened."""
-    from .. import jellyfin_link, plex_link
+    from .. import jellyfin_link, ma_link, plex_link
 
     if row.kind == SERVER_JELLYFIN:
         return jellyfin_link.token_of(row), jellyfin_link.device_id(db, row.machine_id)
     if row.kind == SERVER_PLEX:
         return plex_link.token_of(row), plex_link.client_id(db)
+    if row.kind == SERVER_MA:
+        return ma_link.token_of(row), ""
     raise NotSupported(row.kind)
 
 
-def open_server(db: Session, row: MediaServer, **options: Any) -> PlexSource | JellyfinSource:
+def open_server(db: Session, row: MediaServer, **options: Any) -> PlexSource | JellyfinSource | MusicAssistantSource:
     """The connector of the server, opened (``with``). ``plex_link.Unreadable`` when its token cannot be opened. A
     Jellyfin server opened for a long piece of work (``stop`` given) waits while it starts, unless ``patient`` is
     False: the sync of the playlists never asks twice (a write whose answer was lost would be done twice) and waits
     with its own pauses."""
-    from .. import jellyfin_link, plex_link
+    from .. import jellyfin_link, ma_link, plex_link
 
+    if row.kind == SERVER_MA:
+        # The token is unsealed here, the websocket opened at the first question (shared by everybody asking it).
+        options.pop("patient", None)
+        server, url, token = row.id, row.url, ma_link.token_of(row)
+
+        def connect() -> Any:
+            from .. import music_assistant
+
+            return music_assistant.connection(server, url, token)
+
+        return MusicAssistantSource(row.id, connect, list(row.providers or []), **options)
     if row.kind == SERVER_JELLYFIN:
         token, device = jellyfin_link.token_of(row), jellyfin_link.device_id(db, row.machine_id)
         if "stop" in options:

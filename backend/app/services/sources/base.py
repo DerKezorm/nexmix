@@ -29,8 +29,17 @@ class Capabilities:
     #: nexmix keeps its playlists there (else a playlist with that source lives in nexmix only).
     playlists: bool = True
     #: How the server names an entry of a playlist: ``own`` (an id of its own, given in order as entries are added:
-    #: Plex's ``playlistItemID``) or ``track`` (the track's id: Jellyfin's ``PlaylistItemId`` is the track's ``Id``).
+    #: Plex's ``playlistItemID``) or ``track`` (the track's id: Jellyfin's ``PlaylistItemId`` is the track's ``Id``;
+    #: Music Assistant names an entry by its place only, and nexmix by its track).
     entries: str = "own"
+    #: How a playlist gets another name: ``own`` (the server renames it) or ``copy`` (made anew under the new name,
+    #: everything copied over, the old one deleted: Music Assistant).
+    rename: str = "own"
+    #: How entries are moved: ``own`` (one by one, after another entry) or ``tail`` (everything from the first entry out
+    #: of place taken out and put back in order: Music Assistant).
+    moves: str = "own"
+    #: nexmix gives its playlists names no other playlist there has (``unique_title``, ``same_title``).
+    unique_names: bool = False
 
     def view(self) -> dict[str, object]:
         return {"moods": self.moods, "sound": self.sound, "smart_playlists": self.smart_playlists,
@@ -81,3 +90,8 @@ PLAYLISTS_NOT_FOUND = "playlists_not_found"
 
 class NotSupported(Exception):
     """The server cannot do this (no analysis of the sound, for one)."""
+
+
+class Raced(Exception):
+    """The playlist changed on the server while nexmix wrote it by place (Music Assistant): what nexmix may have taken
+    by mistake is back, and the sync merges again instead of writing on."""

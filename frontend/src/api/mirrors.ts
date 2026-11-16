@@ -13,7 +13,7 @@ export type Extra = { id: number; title: string; artist: string; album: string; 
 
 export type Mirror = {
   server: number
-  kind: 'plex' | 'jellyfin'
+  kind: 'plex' | 'jellyfin' | 'music_assistant'
   name: string
   state: MirrorState
   error: string | null

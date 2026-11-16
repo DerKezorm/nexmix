@@ -18,6 +18,7 @@ function sentence(point: Point): string {
   if (key === 'secrets' && state === 'ok') return values.source ? 'ready.secrets.env' : 'ready.secrets.ok'
   if (key === 'proxy' && state === 'ok') return values.forwarded ? 'ready.proxy.ok' : 'ready.proxy.direct'
   if (key === 'brake' && state === 'bad') return values.broken ? 'ready.brake.broken' : 'ready.brake.bad'
+  if (key === 'music_assistant' && state === 'warn' && typeof values.days === 'number') return 'ready.music_assistant.expiring'
   return `ready.${key}.${state}`
 }
 

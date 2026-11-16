@@ -1,6 +1,7 @@
 """The media servers, as everybody signed in may see them: which there are, what they are called, whether they are
 connected and ready, and what they can do. Never where they are or how nexmix signs in there. Connecting a server goes
-through ``/api/v1/plex`` and ``/api/v1/jellyfin`` (the operator); letting go of any one of them through here."""
+through ``/api/v1/plex``, ``/api/v1/jellyfin`` and ``/api/v1/music-assistant`` (the operator); letting go of any one of
+them through here."""
 
 from __future__ import annotations
 

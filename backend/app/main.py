@@ -52,6 +52,7 @@ from .routers import join as join_router
 from .routers import locales as locales_router
 from .routers import logs as logs_router
 from .routers import mirrors as mirrors_router
+from .routers import music_assistant as music_assistant_router
 from .routers import playlists as playlists_router
 from .routers import plex as plex_router
 from .routers import preview as preview_router
@@ -70,6 +71,7 @@ from .services import (
     jobs,
     locales,
     logs,
+    ma_events,
     mirrors,
     mounts,
     notices,
@@ -91,7 +93,8 @@ logger = logging.getLogger("nexmix")
 ROUTERS = [
     health, about, docs, locales_router, logs_router, auth, totp_router, oidc, invites, settings_router,
     backups_router, avatars_router, emails, apikeys, devices, v1_router, push, passkeys, resets, storage_router,
-    plex_router, jellyfin_router, servers_router, catalog_router, playlists_router, mirrors_router, preview_router,
+    plex_router, jellyfin_router, music_assistant_router, servers_router, catalog_router, playlists_router,
+    mirrors_router, preview_router,
     suggestions_router,
     guest_invites_router, join_router, guest_router,
 ]
@@ -166,6 +169,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         tasks.append(asyncio.create_task(sync.run_forever(stop)))
         tasks.append(asyncio.create_task(plex_events.run_forever(stop)))
         tasks.append(asyncio.create_task(jellyfin_events.run_forever(stop)))
+        tasks.append(asyncio.create_task(ma_events.run_forever(stop)))
     logger.info("nexmix %s started", __version__)
     with SessionLocal() as db:
         accounts.announce_setup_code(db)

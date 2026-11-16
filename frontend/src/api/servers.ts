@@ -1,5 +1,6 @@
 /**
- * The media servers (`/api/v1/servers`, everybody signed in) and connecting Jellyfin (`/api/v1/jellyfin`, the operator).
+ * The media servers (`/api/v1/servers`, everybody signed in), connecting Jellyfin (`/api/v1/jellyfin`) and Music Assistant
+ * (`/api/v1/music-assistant`, the operator).
  * No answer carries a token, the address of a server or one of Jellyfin's ids: a library and a user of Jellyfin are
  * named by a handle of nexmix's own.
  */
@@ -16,9 +17,11 @@ export type Capabilities = {
   playlists: boolean
 }
 
+export type ServerKind = 'plex' | 'jellyfin' | 'music_assistant'
+
 export type MediaServer = {
   id: number
-  kind: 'plex' | 'jellyfin'
+  kind: ServerKind
   name: string
   active: boolean
   library: string | null
@@ -60,4 +63,31 @@ export const jellyfinApi = {
   /** How the playlists stand in this Jellyfin, and "sync every playlist now". */
   playlists: (server: number) => api<PlaylistSync>(`/api/v1/jellyfin/${server}/playlists`),
   syncPlaylists: (server: number) => api<PlaylistSync>(`/api/v1/jellyfin/${server}/playlists/sync`, { method: 'POST' }),
+}
+
+/** When the token of a Music Assistant runs out: the card warns 30 days before. */
+export type MaToken = { expires_at: string | null; days_left: number | null; warn: boolean; expired: boolean }
+
+export type MaServer = Omit<MediaServer, 'capabilities' | 'primary'> & {
+  token: MaToken
+  connected_at: string | null
+  /** How many providers are chosen. */
+  providers: number
+  /** Chosen providers that are a Plex or Jellyfin server nexmix also knows directly. */
+  doubled: string[]
+}
+
+/** A music provider of Music Assistant's library, by nexmix's own handle. */
+export type MaProvider = { handle: string; name: string; kind: string; chosen: boolean; available: boolean }
+
+export const maApi = {
+  list: () => api<{ servers: MaServer[] }>('/api/v1/music-assistant'),
+  connect: (url: string, token: string) =>
+    api<{ server: MaServer; providers: MaProvider[] }>('/api/v1/music-assistant/connect', { method: 'POST', body: { url, token } }),
+  providers: (server: number) => api<{ providers: MaProvider[]; doubled: string[] }>(`/api/v1/music-assistant/${server}/providers`),
+  choose: (server: number, handles: string[]) =>
+    api<{ server: MaServer; providers: MaProvider[] }>(`/api/v1/music-assistant/${server}/providers`, { method: 'PUT', body: { handles } }),
+  disconnect: (server: number) => api<void>(`/api/v1/music-assistant/${server}`, { method: 'DELETE' }),
+  playlists: (server: number) => api<PlaylistSync>(`/api/v1/music-assistant/${server}/playlists`),
+  syncPlaylists: (server: number) => api<PlaylistSync>(`/api/v1/music-assistant/${server}/playlists/sync`, { method: 'POST' }),
 }

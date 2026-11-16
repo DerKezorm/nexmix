@@ -368,7 +368,8 @@ class Job(Base):
 #: The kinds of media server nexmix speaks with (``services/sources``).
 SERVER_PLEX = "plex"
 SERVER_JELLYFIN = "jellyfin"
-SERVER_KINDS = (SERVER_PLEX, SERVER_JELLYFIN)
+SERVER_MA = "music_assistant"
+SERVER_KINDS = (SERVER_PLEX, SERVER_JELLYFIN, SERVER_MA)
 
 
 class MediaServer(Base):
@@ -387,7 +388,7 @@ class MediaServer(Base):
     __tablename__ = "media_servers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    #: ``plex`` or ``jellyfin`` (``SERVER_KINDS``).
+    #: ``plex``, ``jellyfin`` or ``music_assistant`` (``SERVER_KINDS``).
     kind: Mapped[str] = mapped_column(String(16), default=SERVER_PLEX)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     serial: Mapped[int] = mapped_column(Integer, default=1)
@@ -416,6 +417,10 @@ class MediaServer(Base):
     #: Jellyfin: the user the playlists will belong to there (its id and its name as it was chosen).
     user_id: Mapped[str] = mapped_column(String(64), default="", server_default="")
     user_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    #: Music Assistant: the providers of its library whose tracks count (their instance ids; None: none chosen yet),
+    #: and when the token runs out (Music Assistant's long-lived tokens last a year).
+    providers: Mapped[Any] = mapped_column(JSON, nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
 class ServerItem(Base):
@@ -916,6 +921,7 @@ __all__ = [
     "ROLES",
     "SERVER_JELLYFIN",
     "SERVER_KINDS",
+    "SERVER_MA",
     "SERVER_PLEX",
     "SIGN_IN_OIDC",
     "SIGN_IN_PASSWORD",

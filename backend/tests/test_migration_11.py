@@ -57,7 +57,7 @@ def _ten(path: Path) -> None:
 def test_a_database_of_schema_10_keeps_everything_and_has_no_mirror_yet(scratch: Path) -> None:  # noqa: F811
     _ten(scratch)
     database.init_db()
-    assert version_of(scratch) == database.SCHEMA_VERSION == 11
+    assert version_of(scratch) == database.SCHEMA_VERSION >= 11
     with closing(sqlite3.connect(scratch)) as connection:
         rows = connection.execute("SELECT id, playlist_id, server_id, ext_key, base, resume, mirror FROM "
                                   "server_playlists ORDER BY id").fetchall()
@@ -91,4 +91,4 @@ def test_the_step_broken_off_in_the_middle_leaves_schema_10(scratch: Path,  # no
     # Started again with the step whole, it goes through.
     monkeypatch.setattr(database, "_SCHEMA_11", whole)
     database.init_db()
-    assert version_of(scratch) == 11
+    assert version_of(scratch) == database.SCHEMA_VERSION

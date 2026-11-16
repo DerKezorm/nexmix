@@ -96,12 +96,13 @@ With a session or a device token: the account, its profile and what this server 
 
 ### `GET /api/v1/servers`
 
-With a session, a device token or an API key: the media servers nexmix knows, each with `id`, `kind` (`plex` or
-`jellyfin`), `name`, `active` (connected; a server let go of rests with its numbers and the copies of the playlists on
+With a session, a device token or an API key: the media servers nexmix knows, each with `id`, `kind` (`plex`,
+`jellyfin` or `music_assistant`), `name`, `active` (connected; a server let go of rests with its numbers and the copies of the playlists on
 it), `library`, `ready` (its catalogue is there), `primary` (the first one connected, the source of a new playlist
 unless another is named) and `capabilities` (`moods`, `sound`, `smart_playlists`, `duplicates`, `changes`, and
-`playlists`: nexmix keeps its playlists there; Jellyfin has no moods and no sonic analysis). Never an address, a
-token or an id of the server.
+`playlists`: nexmix keeps its playlists there; Jellyfin and Music Assistant have no moods and no sonic analysis;
+`changes` is `events` for Music Assistant, which tells of every change at once). Never an address, a token or an id of
+the server.
 
 `DELETE /api/v1/servers/{id}` (the operator, in a browser) lets go of a server: its token and its catalogue go, the
 server itself stays as it is, and its mirrors are forgotten (the playlists there stay as they are, nexmix no longer
@@ -209,6 +210,20 @@ everything else needs a session or a device token. A playlist the account may no
   starts or cannot be reached it is `waiting` (`jellyfin_starting`, `jellyfin_unreachable`, `jellyfin_timeout`), a
   token Jellyfin no longer takes is `error` `jellyfin_refused` (connect again), a change this user may not make there
   `error` `jellyfin_forbidden`.
+- Music Assistant: a playlist whose source is a Music Assistant is one of its own playlists there (provider `builtin`;
+  its dynamic and read-only playlists are never taken in). Every one of them made in Music Assistant comes to nexmix and
+  belongs to the operator (Music Assistant keeps no owner). Changes made there arrive at once by its events (the list
+  is looked at every minute besides, and every playlist is read again after its websocket was closed). Music Assistant
+  can neither move an entry nor rename a playlist, and takes entries out by their place only: nexmix takes out by the
+  places of a reading of the moment and reads again afterwards; when the playlist changed there meanwhile, whatever was
+  taken by mistake is put back and the sync merges again. A new order takes out everything from the first entry out of
+  place and puts it back in order; a new name makes a new playlist under it, copies every entry over and deletes the
+  old one (its id changes; neither is ever taken in as another playlist). A name another playlist there has already is
+  made unique there (`Sommer (2)`) and stays nexmix's own here. Tracks Music Assistant does not take (unknown, or there
+  already) are offered again later as with Plex. The playlist's `plex` carries `kind` `music_assistant`; while Music
+  Assistant restarts or cannot be reached it is `waiting` (`ma_unreachable`, `ma_timeout`, `ma_starting`), a token it no
+  longer takes (run out after a year, or revoked) is `error` `ma_refused` (connect again), a playlist that kept changing
+  there while nexmix wrote it `error` `playlist_changed_meanwhile` (tried again later).
 - Entries the server lost: before an entry taken out on the server is taken out here, the server is asked whether its
   track is still in its library (one question per sync, Jellyfin 200 tracks, Plex 50 to a request; when the question
   fails nothing is taken, and the sync is tried again). When its track left the library (Jellyfin drops an entry
@@ -338,7 +353,9 @@ With a session or a device token, or the cookie of a guest whose invitation allo
 when it does not; a request with an account's credentials listens as the account): about 30 seconds of a track of the
 catalogue as MP3 (192 kbit/s), from 35 % of its length, converted by its media server (Plex's converter, Jellyfin's
 `stream.mp3`) and passed through the server (no token, no address and no id of the server ever leaves it; Jellyfin
-serves sound to whoever knows an id); at most about 1 MB. One preview at a time per listener (an account or a guest; a new one ends
+serves sound to whoever knows an id); at most about 1 MB. A track of Music Assistant: when another connected server has
+the same track (title, artist, length), its preview as above; else Music Assistant's own, the first 30 seconds as AAC
+(`audio/aac`), fetched with a token good for a minute that never leaves the server. One preview at a time per listener (an account or a guest; a new one ends
 the one before), 120 an hour (`429 preview_too_often`), a few at once on the server (`503 preview_busy`).
 `403 preview_off` while the operator has switched listening in off (setting `preview_allowed`), `404` for anything
 that is not a track of the catalogue. `GET /api/v1/preview` says whether it is on (`allowed`), how long a preview
@@ -348,7 +365,7 @@ When Plex refuses with `400` or a `5xx`, or answers without sound, the server as
 new session (the same preview for the hour). After that, or at once for a refused token or a missing track, the
 answer is `502 plex_refused`, `502 plex_error`, `503 plex_busy`, `502 plex_unreachable`, `504 plex_timeout` or `404`
 (for a track of Jellyfin `jellyfin_refused`, `jellyfin_error`, `jellyfin_starting`, `jellyfin_unreachable`,
-`jellyfin_timeout`); the server's log has one line per refusal with the server's status and the start of its answer.
+`jellyfin_timeout`; of Music Assistant `ma_unreachable`, `ma_timeout`, `ma_refused`, `ma_error`); the server's log has one line per refusal with the server's status and the start of its answer.
 
 Without `Range` (or with `bytes=0-`) the sound comes as Plex sends it, without a length. A request for a part
 (`Range: bytes=0-1`, as Safari sends first, or any part further in) gets `206` with `Content-Range` and
@@ -387,7 +404,8 @@ With a session, a device token or an API key: the cover of an album of the catal
 through the server from the album's media server (no token, no address and no id of the server leaves it) and kept on
 its disk. `ETag` and `If-None-Match` work; the answer may be kept for a week. A few covers are fetched at once; one
 that finds no place within a second, or asks while its server is failing, is `503` with `Retry-After` (the rest of
-the server never waits for covers, and a server in trouble holds up no other server's).
+the server never waits for covers, and a server in trouble holds up no other server's). Music Assistant's pictures
+come at its own sizes (80, 256, 512 for 80, 200, 400), always as JPEG, only by a picture id of the catalogue.
 
 ## Routes of the operator's browser
 
@@ -415,6 +433,19 @@ the playlists stand in that Jellyfin (as `GET /api/v1/plex/playlists` does for P
 per installation and server at Jellyfin (Jellyfin keeps one token per device id). Only the operator, only in a signed-in browser. A sign-in through plex.tv belongs to the
 session that began it: for every other one, even of another operator, it does not exist (`pin_expired`); the same
 holds for a Quick Connect of Jellyfin (`quick_expired`). No answer ever holds a token.
+
+Music Assistant lives under `/api/v1/music-assistant`: `GET` the connected Music Assistant servers, each with its
+`token` (`expires_at`, `days_left`, `warn` from 30 days before, `expired`), `providers` (how many are chosen) and
+`doubled`; `POST /connect` `{"url", "token"}` with a long-lived token made in Music Assistant (profile, tokens; it lasts
+a year). The address is checked first (`/info`; `422 not_ma`, `ma_too_old` for a schema older than nexmix speaks,
+`bad_url`, `address_refused`), then the token on a websocket of its own (`422 bad_token`); `409 no_music_provider` when
+it has none. The answer has the `server` and its music `providers` (`handle` of nexmix's own, `name`, `kind`, `chosen`);
+a single provider is chosen at once. `GET /{id}`, `GET /{id}/providers` (with `doubled`: chosen providers that are a
+Plex or Jellyfin server nexmix also knows directly, whose tracks would stand twice), `PUT /{id}/providers`
+`{"handles"}` (only their tracks count; the catalogue is fetched anew), `GET /{id}/playlists` and `POST
+/{id}/playlists/sync` (as for Jellyfin), `DELETE /{id}` lets go of it (`409 server_is_source` as above). Connecting the
+same server again with a new token takes it up with its numbers. One websocket per Music Assistant carries every
+question and its events.
 
 ## The account, signing in and the setup (a browser, mostly)
 
@@ -450,7 +481,8 @@ Every route here answers `403 operator_only` to a member and `403 browser_only` 
 - `GET` and `PUT /api/v1/settings` (sign-in, public address, second factor for everybody, listening in
   (`preview_allowed`), the defaults of invitations for guests (`guest_preview`, `guest_max`, `guest_hours`), the
   nightly sync (`catalog_full_at`), mail, backups, API keys); `GET /settings/readiness` ("Ready for the internet?",
-  with a point `jellyfin` while one is connected: its token readable, its address inside the own network),
+  with a point `jellyfin` while one is connected: its token readable, its address inside the own network; a point
+  `music_assistant` likewise, which warns from 30 days before its token runs out, with `days`),
   `POST /settings/mail-test` `{"to"}`, `GET` and `PUT /settings/push`, `POST /settings/push/renew`.
 - Accounts: `GET /api/v1/accounts`, `PUT /{id}/role`, `POST /{id}/block` and `/unblock`, `POST /{id}/sign-out`, `POST
   /{id}/totp/reset`, `POST /{id}/reset-link`, `DELETE /{id}`. Invitations of members: `GET`, `POST {"days", "email", "send"}` and

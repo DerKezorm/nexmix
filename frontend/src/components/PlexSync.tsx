@@ -8,11 +8,12 @@ import { useTranslation } from 'react-i18next'
 
 import type { PlexSync } from '../api/playlists'
 import { errorText } from '../lib/errors'
+import { kindName } from '../lib/servers'
 
 /** The name of the playlist's server kind, as the texts say it. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function serverName(kind: string | null | undefined): string {
-  return kind === 'jellyfin' ? 'Jellyfin' : 'Plex'
+  return kindName(kind)
 }
 
 export function SyncMark({ plex }: { plex: PlexSync }) {

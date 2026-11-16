@@ -37,7 +37,7 @@ QUIET_SECONDS = 30
 #: What says that the server itself is in trouble (and not that one cover is missing).
 OUTAGE = frozenset({"plex_busy", "plex_unreachable", "plex_timeout", "plex_error", "plex_refused",
                     "jellyfin_starting", "jellyfin_unreachable", "jellyfin_timeout", "jellyfin_error",
-                    "jellyfin_refused"})
+                    "jellyfin_refused", "ma_unreachable", "ma_timeout", "ma_error"})
 
 _places = threading.BoundedSemaphore(PLACES)
 #: The threads the fetches run in: their own few, never the server's shared pool (one per event loop; a test client

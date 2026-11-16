@@ -6,8 +6,10 @@ The steps, in this order; the first that finds something decides, and says how (
 
 1. ``guid``: the same id of the recording, where both sides have one that names it on every server (a ``guid`` of
    Plex's agents, never a ``local://`` one, which only its own server knows).
-2. ``mbid``: the same MusicBrainz id. Plex's ``mbid://`` is the id of the *track* (measured: it meets Jellyfin's
-   ``MusicBrainzTrack``, never ``…Recording``), so both sides must give the track id.
+2. ``mbid``: the same MusicBrainz id, of the same kind on both sides. Plex's ``mbid://`` is the id of the *track*
+   (measured: it meets Jellyfin's ``MusicBrainzTrack``, never ``…Recording``); Music Assistant knows only the
+   *recording*'s (``musicbrainz_recordingid``), which meets Jellyfin's ``MusicBrainzRecording`` and never Plex's. A
+   track id is compared with track ids, a recording id with recording ids (``recording``), never one with the other.
 3. ``album``: the same title on the same album by the same artist (the artist is the album's or the track's own). Of
    several, the one closest in length, which must then lie within ``TOLERANCE``.
 4. ``edition``: the same, on an album whose name differs only in a note of its edition ("Remastered", "Deluxe
@@ -186,6 +188,8 @@ class Candidate:
     shown: bool = True
     guid: str = ""
     mbid: str = ""
+    #: The MusicBrainz id of the recording (Jellyfin's ``MusicBrainzRecording``, Music Assistant's only one).
+    recording: str = ""
     #: Its place on the album (None: not known).
     number: int | None = None
     disc: int | None = None
@@ -201,6 +205,7 @@ class Wanted:
     duration: int = 0
     guid: str = ""
     mbid: str = ""
+    recording: str = ""
     #: The album's artist, where it is known apart from ``artist``.
     album_artist: str = ""
     #: Its place on its album, and the places and lengths of all tracks of that album (disc, number, milliseconds):
@@ -248,6 +253,7 @@ class Finder:
         self.by_id: dict[int, Candidate] = {}
         self.by_guid: dict[str, list[Candidate]] = {}
         self.by_mbid: dict[str, list[Candidate]] = {}
+        self.by_recording: dict[str, list[Candidate]] = {}
         self.by_title: dict[str, list[Candidate]] = {}
         self.by_song: dict[str, list[Candidate]] = {}
         #: Per track: the names it goes by, its album exactly and written alike.
@@ -265,6 +271,8 @@ class Finder:
                 self.by_guid.setdefault(one.guid, []).append(one)
             if one.mbid:
                 self.by_mbid.setdefault(one.mbid, []).append(one)
+            if one.recording:
+                self.by_recording.setdefault(one.recording, []).append(one)
             self.by_title.setdefault(title_key(one.title), []).append(one)
             if one.song_key and not one.song_key.startswith("#"):
                 self.by_song.setdefault(one.song_key, []).append(one)
@@ -309,6 +317,10 @@ class Finder:
                 return Found(same[0], GUID)
         if wanted.mbid:
             same = free(self.by_mbid.get(wanted.mbid, ()))
+            if same:
+                return Found(_closest(same, wanted.duration, None) or same[0], MBID)
+        if wanted.recording:
+            same = free(self.by_recording.get(wanted.recording, ()))
             if same:
                 return Found(_closest(same, wanted.duration, None) or same[0], MBID)
         title = title_key(wanted.title)

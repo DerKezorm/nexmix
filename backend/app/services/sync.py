@@ -48,6 +48,17 @@ told to have reached it from the ids (``_sent``): there, adding wins. Its list c
 every change, the order too; after a write nexmix takes its own new ``Etag`` before it reads the entries a last time,
 so a change made there right after still shows. Copies of a track made in Jellyfin count as one.
 
+**Music Assistant** names an entry by its place only (``Capabilities.moves`` ``tail``): nexmix names it by its track,
+as for Jellyfin. Entries go out by their places in a reading of the moment, and before that the sync keeps what must
+still be there afterwards (``writing["restore"]``): a step broken off half way is put right at the next sync
+(``_restore``), never read as entries taken out there. When the playlist changed in Music Assistant meanwhile, the
+connector puts back what it may have taken by mistake and the sync merges again (``Raced``) instead of taking out by
+place once more. A new order takes out everything from the first entry out of place and puts it back in order. A new
+name makes a new playlist, copies everything over and deletes the old one (``_rename_copy``); while that runs,
+``writing["renaming"]`` names both, so that neither is ever taken for a playlist deleted there or made there, and a copy
+broken off half way is cleaned up (``_finish_rename``). Changes made there come as events at once (``ma_events``); the
+list is looked at every minute.
+
 **Another server.** Each copy of a playlist on a server has a row of its own (``ServerPlaylist``). When the playlists
 move to another server (``moved``: the operator connected another Plex in the place of the one before), the copies on
 the server before stay there with their common state, and the entries are found on the new server (``match.py``: by
@@ -94,6 +105,7 @@ from ..models import OPERATOR, Account, Job, MediaServer, Playlist, PlaylistItem
 from . import jobs, match, media, merge, mirrors, plex_link, sources
 from .events import hub, playlist_topic
 from .jellyfin import AWAY as JELLYFIN_AWAY
+from .music_assistant import AWAY as MA_AWAY
 from .plex import PlexError
 from .sources.base import PLAYLISTS_NOT_FOUND, Entry, Listed
 from .sources.plex import CHUNK
@@ -107,6 +119,8 @@ KINDS = (ROUND, POLL, mirrors.TRANSFER)
 #: A change in nexmix waits this long for more before it goes to the server.
 GATHER = timedelta(seconds=2)
 POLL_EVERY = timedelta(seconds=15)
+#: A server that tells of every change of a playlist at once (Music Assistant): its list only every minute.
+POLL_EVERY_TOLD = timedelta(seconds=60)
 #: A smart playlist's entries change with the library, not its ``updatedAt``: read again this often.
 SMART_EVERY = timedelta(minutes=15)
 #: A playlist changed this close before the server's clock at the look is looked at again the next time.
@@ -120,10 +134,10 @@ CHECK_PER_LOOK = 10
 #: The waits after failed tries in a row, in seconds; the last one stays.
 BACKOFF = (5, 10, 30, 60, 120, 300, 600)
 #: Codes that mean the server was not reached: the playlist waits for it.
-AWAY = frozenset({"plex_unreachable", "plex_timeout", "plex_busy", *JELLYFIN_AWAY})
+AWAY = frozenset({"plex_unreachable", "plex_timeout", "plex_busy", *JELLYFIN_AWAY, *MA_AWAY})
 #: Codes with which the server says it does not know the playlist (or the entry). A sign only: whether the playlist
 #: is gone there says ``Round._vanished``.
-GONE = frozenset({"plex_not_found", "jellyfin_not_found"})
+GONE = frozenset({"plex_not_found", "jellyfin_not_found", "ma_not_found"})
 #: The server lists the playlist but will not give its entries, or says it still has it: the sync fails with this code,
 #: the playlist stays where it is.
 UNREADABLE = "playlist_unreadable"
@@ -153,12 +167,18 @@ HINT_MISSING = "missing"
 MASS_LOSS = 5
 #: Who added an entry that came through the server, by its kind.
 PLEX_NAME = "Plex"
-VIA_NAMES = {"plex": PLEX_NAME, "jellyfin": "Jellyfin"}
+VIA_NAMES = {"plex": PLEX_NAME, "jellyfin": "Jellyfin", "music_assistant": "Music Assistant"}
 #: What a copy is to settle when the playlist came from another server: every entry, or the ones put in before the
 #: server was connected.
 SETTLE_ALL, SETTLE_SINCE = "all", "since"
 
 SYNCED, PENDING, WAITING, ERROR = "synced", "pending", "waiting", "error"
+#: The playlist changed on the server while nexmix wrote it by place, so many times in a row that the sync gives up
+#: for a while (``Raced``); before that it merges again a second later.
+RACED, RACED_TRIES = "playlist_changed_meanwhile", 5
+#: How long a playlist made under a name nobody else had (``unique_names``) may wait to be taken as the one made when
+#: the answer was lost.
+ADOPT_UNIQUE = 3600
 #: The playlist lives in nexmix only: its source server takes no playlists from nexmix.
 LOCAL = "local"
 #: Why a smart playlist rests on a server it was not made on: its rules live on its own server.
@@ -622,7 +642,8 @@ def tick(db: Session, now: datetime | None = None) -> int:
     queued = len(due)
     for server in ready:
         last = _polled_at.get(server.id)
-        if last is None or not timedelta(0) <= moment - last < POLL_EVERY:
+        every = POLL_EVERY_TOLD if sources.capabilities(server.kind).changes == "events" else POLL_EVERY
+        if last is None or not timedelta(0) <= moment - last < every:
             jobs.enqueue(db, POLL, ref=server.id)
             _polled_at[server.id] = moment
             queued += 1
@@ -669,6 +690,24 @@ def _failed(db: Session, ident: int, code: str) -> None:
     _publish(db, row.playlist_id, row)
 
 
+def _raced(db: Session, ident: int) -> None:
+    """The playlist changed on the server while it was written by place: merged again in a second (the write stays
+    open), unless that happened ``RACED_TRIES`` times in a row."""
+    db.rollback()
+    row = db.get(ServerPlaylist, ident, populate_existing=True)
+    if row is None:
+        return
+    if (row.tries or 0) >= RACED_TRIES:
+        _failed(db, ident, RACED)
+        return
+    row.tries = (row.tries or 0) + 1
+    row.state = PENDING
+    row.due_at = clock.now() + timedelta(seconds=1)
+    db.commit()
+    logger.info("Playlist changed on the server while it was written, merged again playlist=%s server=%s try=%s",
+                row.playlist_id, row.server_id, row.tries)
+
+
 def run_round(db: Session, job: Job) -> None:
     ident = int(job.ref)
     row = db.get(ServerPlaylist, ident, populate_existing=True)
@@ -688,6 +727,8 @@ def run_round(db: Session, job: Job) -> None:
             Round(db, source, server, ident).run()
     except Stale:
         db.rollback()
+    except sources.Raced:
+        _raced(db, ident)
     except plex_link.Unreadable:
         _failed(db, ident, "token_unreadable")
     except PlexError as exc:
@@ -846,6 +887,17 @@ class Round:
     @property
     def via(self) -> str:
         return VIA_NAMES.get(self.kind, PLEX_NAME)
+
+    @property
+    def caps(self) -> sources.Capabilities:
+        return sources.capabilities(self.kind)
+
+    def _same_title(self, wanted: str, there: str) -> bool:
+        """Whether the server's name of the playlist is the one nexmix wants: the same, or (where nexmix makes names
+        unique there) the same made unique."""
+        if self.caps.unique_names:
+            return bool(self.source.same_title(wanted, there))
+        return wanted == there
 
     @property
     def row(self) -> ServerPlaylist:
@@ -1206,24 +1258,30 @@ class Round:
             db.rollback()
             listed = self.source.listing()
             server_now = self.source.clock
+            # A name nobody else had when it was asked for (``unique_names``) says it is the one, without a time.
+            unique = self.caps.unique_names and waited <= ADOPT_UNIQUE
             chosen = [one for one in listed
                       if not one.smart and one.title == asked and one.leaf_count == 0
-                      and one.key not in keys and one.guid not in guids and _made_then(one, server_now, waited)]
+                      and one.key not in keys and one.guid not in guids
+                      and (_made_then(one, server_now, waited) or (unique and not one.created))]
             ours = set(self.source.owned([one.key for one in chosen])) if chosen else set()
             adopted = next((one for one in chosen if one.key in ours), None)
             row = self.fresh_row()
         if adopted is None:
+            title = self.source.unique_title(name) if self.caps.unique_names else name
+            row = self.fresh_row()
             row.creating_at = clock.now()
-            row.creating_title = name[:200]
+            row.creating_title = title[:200]
             db.commit()
-            adopted = self.source.create(name)
+            adopted = self.source.create(title)
             logger.info("Playlist made on the server playlist=%s server=%s", playlist_id, self.server_id)
         else:
             logger.info("Playlist made on the server earlier taken playlist=%s server=%s", playlist_id,
                         self.server_id)
         row = self.row
         row.ext_key, row.guid, row.creating_at, row.creating_title = adopted.key, adopted.guid, None, ""
-        row.base = {"title": adopted.title or name, "items": []}
+        # A name made unique there stands for nexmix's own (``_same_title``).
+        row.base = {"title": name if self.caps.unique_names else (adopted.title or name), "items": []}
         row.writing = None
         self.made = adopted
         db.commit()
@@ -1268,6 +1326,8 @@ class Round:
         db = self.db
         if self.row.ext_key is None:
             self._make(playlist_id)
+        self._finish_rename()
+        self._restore()
         if self.mirror:
             mirrors.prepare(self, playlist_id)
         else:
@@ -1393,7 +1453,8 @@ class Round:
         from . import playlists
 
         row = self.row
-        writing = row.writing if isinstance(row.writing, dict) else None
+        # A write is open when it names what it was to bring (a step by place alone keeps only what must stay).
+        writing = row.writing if isinstance(row.writing, dict) and "items" in row.writing else None
         base = _base_of(writing, row.base)
         local_tracks = snapshot.tracks
         remote_tracks = {entry.track for entry in remote}
@@ -1445,6 +1506,9 @@ class Round:
         stored = writing if writing is not None else (row.base if isinstance(row.base, dict) else {})
         base_title = stored.get("title") if isinstance(stored.get("title"), str) else None
         remote_title = info.title
+        if base_title is not None and remote_title != base_title and self._same_title(base_title, remote_title):
+            # The name made unique there is nexmix's own.
+            remote_title = base_title
         if writing is not None and base_title is not None and remote_title == writing.get("from_title"):
             # The server has the name it had when the open write began: the new one may not have gone yet.
             remote_title = base_title
@@ -1499,7 +1563,8 @@ class Round:
                        or plan.title != snapshot.name or plan.unhint or plan.missing)
         entries_change = bool(merged.local_adds or merged.local_removes or plan.local_order != snapshot.tracks
                               or plan.title != snapshot.name)
-        needs_write = merged.order != [entry.track for entry in remote] or plan.title != info.title
+        needs_write = merged.order != [entry.track for entry in remote] or \
+            not self._same_title(plan.title, info.title)
         now = clock.now()
         new: list[PlaylistItem] = []
         going: list[PlaylistItem] = []
@@ -1574,7 +1639,8 @@ class Round:
         if not held:
             return False
         merged = plan.merged
-        needs_write = merged.order != [entry.track for entry in remote] or plan.title != info.title
+        needs_write = merged.order != [entry.track for entry in remote] or \
+            not self._same_title(plan.title, info.title)
         db.rollback()
         row = self.fresh_row()
         if plan.loss:
@@ -1625,12 +1691,19 @@ class Round:
         target = plan.merged.order
         wanted = set(target)
         wrote = False
-        if plan.title != info.title:
-            source.rename(key, plan.title)
+        by_place = self.caps.moves == "tail"
+        if not self._same_title(plan.title, info.title):
+            if self.caps.rename == "copy":
+                key = self._rename_copy(key, plan.title)
+            else:
+                source.rename(key, plan.title)
             wrote = True
         going = [entry.ref for entry in remote if entry.track not in wanted and entry.item is not None and entry.ref]
         if going:
-            source.remove_many(key, going)
+            if by_place:
+                source.remove_many(key, going, guard=self._guard)
+            else:
+                source.remove_many(key, going)
             wrote = True
         present = {entry.track for entry in remote if entry.track in wanted}
         adding = [track for track in target if track not in present]
@@ -1652,7 +1725,14 @@ class Round:
             # here on means it was taken out there.
             self._narrow({entry.track: entry.item for entry in fresh if entry.track in self.added})
         moved_count = 0
-        for _attempt in range(MOVE_TRIES):
+        if by_place:
+            here = {entry.track for entry in fresh}
+            if [entry.track for entry in fresh] != [track for track in target if track in here]:
+                refs = {entry.track: entry.ref for entry in fresh}
+                source.arrange(key, [refs[track] for track in target if track in refs], guard=self._guard)
+                wrote = True
+                fresh = self._items(key)
+        for _attempt in range(0 if by_place else MOVE_TRIES):
             steps = merge.moves([(entry.item, entry.track) for entry in fresh if entry.item is not None], target)
             if not steps:
                 break
@@ -1672,6 +1752,116 @@ class Round:
             self.seen_after = source.meta(key)
             fresh = self._items(key)
         return fresh, wrote, False
+
+    def _writing_part(self, name: str, value: Any) -> None:
+        """One part of the open write set (None: taken away), in a transaction of its own, committed at once."""
+        db = self.db
+        db.rollback()
+        row = self.fresh_row()
+        writing = dict(row.writing) if isinstance(row.writing, dict) else {}
+        if value is None:
+            if name not in writing:
+                db.rollback()
+                return
+            writing.pop(name, None)
+        else:
+            writing[name] = value
+        row.writing = writing or None
+        db.commit()
+
+    def _guard(self, entries: list[Any] | None) -> None:
+        """What must still be in the server's playlist after a step that takes entries out by place (None: the step is
+        done). Kept with the open write until then, so that a step broken off half way is put right (``_restore``)."""
+        self._writing_part("restore", list(entries) if entries is not None else None)
+
+    def _restore(self) -> None:
+        """A step by place broken off half way: whatever of what had to stay the playlist lacks is put back."""
+        row = self.fresh_row()
+        writing = row.writing if isinstance(row.writing, dict) else None
+        kept = writing.get("restore") if writing is not None else None
+        key = row.ext_key
+        self.db.rollback()
+        if not isinstance(kept, list) or key is None:
+            return
+        put = self.source.restore(key, kept)
+        if put:
+            logger.warning("Entries a broken-off step had taken out put back playlist=%s server=%s count=%s",
+                           row.playlist_id, self.server_id, put)
+        self._guard(None)
+
+    def _rename_copy(self, old: str, title: str) -> str:
+        """A new name where the server cannot rename (Music Assistant): a new playlist under the new name (unique
+        there), everything copied over in order, the copy's key taken, the old one deleted. ``writing["renaming"]``
+        names both meanwhile (``take_in`` takes neither for a new one or a deleted one). Returns the new key."""
+        source = self.source
+        unique = source.unique_title(title)
+        self._writing_part("renaming", {"from": old, "title": unique, "key": None})
+        made = source.create(unique)
+        self._writing_part("renaming", {"from": old, "title": unique, "key": made.key})
+        try:
+            source.copy(old, made.key)
+        except PlexError as exc:
+            if exc.code == "ma_copy":
+                # The copy does not hold the same: it goes, the old one stays, and the sync is tried again later.
+                source.delete(made.key)
+                self._writing_part("renaming", None)
+            raise
+        # Added in Music Assistant to the old one meanwhile: along into the new one, before the old one goes.
+        source.top_up(old, made.key)
+        db = self.db
+        db.rollback()
+        row = self.fresh_row()
+        row.ext_key = made.key
+        writing = dict(row.writing) if isinstance(row.writing, dict) else {}
+        writing["renaming"] = {"from": old, "title": unique, "key": made.key, "swapped": True}
+        row.writing = writing
+        db.commit()
+        self._delete_after_top_up(old, made.key)
+        self._writing_part("renaming", None)
+        logger.info("Playlist renamed on the server by a copy playlist=%s server=%s", row.playlist_id, self.server_id)
+        return made.key
+
+    def _delete_after_top_up(self, going: str, staying: str) -> None:
+        """``going`` deleted on the server, after what it holds that ``staying`` lacks went into ``staying`` (looked at
+        once more right before: somebody may add to it in Music Assistant until it is gone). One gone already is
+        fine."""
+        try:
+            for _try in range(3):
+                if not self.source.top_up(going, staying):
+                    break
+        except PlexError as exc:
+            if exc.code not in GONE:
+                raise
+        self.source.delete(going)
+
+    def _finish_rename(self) -> None:
+        """A new name by copy broken off half way (``_rename_copy``): after the swap, the old playlist goes; before it,
+        the copy goes and the old one stands (the name is written again by this sync). A copy whose key was never
+        heard of goes only when it is empty (it is found by its name, which was nobody else's)."""
+        row = self.fresh_row()
+        writing = row.writing if isinstance(row.writing, dict) else None
+        marker = writing.get("renaming") if writing is not None else None
+        current = row.ext_key
+        known = set(self.db.scalars(select(ServerPlaylist.ext_key).where(
+            ServerPlaylist.server_id == self.server_id, ServerPlaylist.ext_key.is_not(None))))
+        self.db.rollback()
+        if not isinstance(marker, dict):
+            return
+        old, new = str(marker.get("from") or ""), str(marker.get("key") or "")
+        if marker.get("swapped"):
+            if old and old != current and current is not None:
+                self._delete_after_top_up(old, current)
+        elif new and new != current and current is not None:
+            # The old one stands: whatever was added to the half copy in Music Assistant goes into it first.
+            self._delete_after_top_up(new, current)
+        elif not new:
+            title = str(marker.get("title") or "")
+            for one in self.source.listing():
+                if one.title == title and one.key not in known and not self.source.raw(one.key):
+                    self.source.delete(one.key)
+        self._writing_part("renaming", None)
+        logger.info("A new name by copy broken off was finished playlist=%s server=%s", row.playlist_id,
+                    self.server_id)
 
     def _part_added(self, part: list[str], took: int | None) -> None:
         """The server answered a part of the tracks to add. When it says it took all of them, they are there: the open
@@ -1924,8 +2114,8 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
     album_of: dict[int, int] = {}
     for row in db.execute(select(CatalogTrack.id, CatalogTrack.title, CatalogTrack.album_id, CatalogTrack.artist,
                                  CatalogTrack.artist_id, CatalogTrack.duration, CatalogTrack.song_key,
-                                 CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track, CatalogTrack.number,
-                                 CatalogTrack.disc).where(
+                                 CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track,
+                                 CatalogTrack.mbid_recording, CatalogTrack.number, CatalogTrack.disc).where(
             CatalogTrack.server_id == server_id, CatalogTrack.generation == generation)):
         if len(candidates) % 2000 == 0:
             # Made for a preview in the background: a pause now and then (else nothing).
@@ -1936,7 +2126,8 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
             album_artist=str(artists.get(album_artist) or artists.get(row.artist_id) or ""),
             artist=str(row.artist or ""), duration=int(row.duration or 0), song_key=str(row.song_key or ""),
             shown=bool(row.shown), guid=str(row.guid or ""), mbid=str(row.mbid_track or ""),
-            number=int(row.number) if row.number else None, disc=int(row.disc) if row.disc else None))
+            recording=str(row.mbid_recording or ""), number=int(row.number) if row.number else None,
+            disc=int(row.disc) if row.disc else None))
         album_of[int(row.id)] = int(row.album_id or 0)
     found = _Catalogue(candidates, album_of)
     with _whole_lock:
@@ -2080,6 +2271,11 @@ def take_in(db: Session, server: MediaServer, listed: list[Listed], now_server: 
     # The copies playlists left on this server before, and the ones deleted there whose playlist is in nexmix's trash:
     # never taken for new ones; their sync takes them up again (brought back from the trash).
     foreign = {row.ext_key for row in rows if row.ext_key is not None and row.resume}
+    # The two playlists of a new name by copy under way (``Round._rename_copy``): neither new nor deleted.
+    for row in rows:
+        marker = row.writing.get("renaming") if isinstance(row.writing, dict) else None
+        if isinstance(marker, dict):
+            foreign |= {str(marker[name]) for name in ("from", "key") if marker.get(name)}
     # Playlists nexmix asked the server to make whose answer it has not got: the one the server made is theirs (it is
     # empty and has the name it was made with), never a new one of the server.
     making: set[str] = set()
