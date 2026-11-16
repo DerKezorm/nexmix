@@ -31,6 +31,8 @@
     "textReady": "{{tracks}} Titel aus deiner Plex-Mediathek „{{library}}“ · alles landet als Playlist in Plex und ist damit auch in Plexamp und Music Assistant.",
     "textReadyJellyfin": "{{tracks}} Titel aus deiner Jellyfin-Mediathek „{{library}}“ · alles landet als Playlist in Jellyfin.",
     "textReadyMa": "{{tracks}} Titel aus Music Assistant ({{library}}) · alles landet als Playlist in Music Assistant.",
+    "textReadyMany": "Musik von {{servers}} · jede Playlist liegt auf dem Server, von dem sie ihre Titel nimmt, und ist dort auch in seinen Apps.",
+    "serverShort": "{{name}} ({{kind}})",
     "notConnectedMember": "Der Betreiber hat noch keinen Medienserver verbunden. Sobald die Mediathek da ist, geht es hier los.",
     "loading": "Katalog wird geholt …",
     "loadingText": "Einmal die ganze Mediathek, danach kommt nur Neues dazu. Bei großen Mediatheken dauert das ein paar Minuten.",
@@ -61,6 +63,15 @@
     "smartShow": "Smart-Playlisten aus Plex zeigen",
     "more": "Mehr zu {{name}}",
     "hide": "Ausblenden",
+    "menu": {
+      "open": "Öffnen",
+      "rename": "Umbenennen …",
+      "share": "Teilen …",
+      "invite": "Gäste einladen …",
+      "delete": "Löschen …"
+    },
+    "renameTitle": "Playlist umbenennen",
+    "renameText": "Neuer Name für „{{name}}“. Er gilt auch auf dem Server der Playlist.",
     "hidden": {
       "title": "Ausgeblendet",
       "text": "Nur in deiner Übersicht ausgeblendet. In Plex und für alle anderen bleibt alles, wie es ist.",
@@ -146,15 +157,16 @@
     "saved": "Gespeichert.",
     "ownPassword": "Dein eigenes Passwort",
     "parts": {
-      "accounts": "Konten",
+      "servers": "Medienserver",
       "signin": "Anmeldung",
+      "accounts": "Konten",
+      "guests": "Gäste",
       "mail": "Mail",
       "push": "Web Push",
       "backup": "Sicherung",
       "languages": "Sprachen",
       "log": "Log",
-      "api": "API",
-      "plex": "Plex"
+      "api": "API"
     },
     "language": {
       "title": "Sprache",
@@ -468,7 +480,7 @@
     "hours": "Gültig (Stunden)",
     "preview": "Reinhören erlauben",
     "previewHint": "30 Sekunden ab gut einem Drittel des Titels, über nexmix geleitet. Dein Plex-Schlüssel bleibt auf dem Server.",
-    "previewOffServer": "Reinhören ist auf diesem Server ausgeschaltet (Einstellungen › Plex).",
+    "previewOffServer": "Reinhören ist auf diesem Server ausgeschaltet (Einstellungen › Server › Medienserver).",
     "there": "Dabei",
     "added_one": "{{count}} Titel hinzugefügt",
     "added_other": "{{count}} Titel hinzugefügt",
@@ -1718,7 +1730,8 @@
     "disconnect": "Server trennen",
     "disconnectTitle": "„{{name}}“ trennen?",
     "disconnectText": "nexmix vergisst den Schlüssel und den Katalog mit {{tracks}} Titeln. Playlisten, die ihre Titel von diesem Server nehmen, bleiben in nexmix, aber Suche, Vorschläge und Reinhören gehen erst wieder, wenn du ihn neu verbindest. Zurückholen lässt sich das nur durch neues Verbinden. Auf dem Server selbst ändert sich nichts. Spiegel von Playlisten auf diesem Server vergisst nexmix; die Playlisten dort bleiben, wie sie sind.",
-    "addMa": "Music Assistant"
+    "addMa": "Music Assistant",
+    "transferTab": "Alles übernehmen"
   },
   "jellyfin": {
     "title": "Jellyfin",

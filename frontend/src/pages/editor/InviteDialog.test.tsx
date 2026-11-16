@@ -104,7 +104,7 @@ describe('inviting guests', () => {
     const off = switchOf('Reinhören erlauben')!
     expect(off.disabled).toBe(true)
     expect(off.getAttribute('aria-checked')).toBe('false')
-    expect(plain(off.closest('label')!.textContent)).toContain('Reinhören ist auf diesem Server ausgeschaltet (Einstellungen › Plex).')
+    expect(plain(off.closest('label')!.textContent)).toContain('Reinhören ist auf diesem Server ausgeschaltet (Einstellungen › Server › Medienserver).')
     await page.click(off)
     expect(off.getAttribute('aria-checked')).toBe('false')
   })

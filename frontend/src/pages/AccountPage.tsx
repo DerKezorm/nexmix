@@ -1,13 +1,15 @@
 /**
- * The own account, everything personal in one place, as cards one below the other: Profile (picture, display name,
- * name, role), Security (one card: password, second factor, passkeys), the sign-in providers, the signed-in devices
- * and the notice of a new sign-in, then the mail address with its link, the language, how it looks (light or dark),
- * and Devices and apps (device tokens, API keys, Web Push on the devices). A part can be named in the address (`?tab=security`): the page
- * scrolls to it. The settings of the server are the other part of the page, for the operator.
+ * The own account, everything personal in one place, in tabs as in the other nex apps: Profile (picture, display
+ * name, name, role, the mail address with its link, the language), Security (one card: password, second factor,
+ * passkeys; the sign-in providers, the signed-in devices and the notice of a new sign-in), Looks (light or dark) and
+ * Devices and apps (device tokens, API keys, Web Push on the devices). The tab stands in the address
+ * (`?tab=security`); back from a sign-in provider it is Security. The settings of the server are the other part of the
+ * page, for the operator.
  */
 import { Camera, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import { api, authApi, type Me } from '../api/client'
 import { ApiKeys } from '../components/ApiKeys'
@@ -21,40 +23,37 @@ import { useAuth } from '../state/auth'
 import { LanguageCard, LooksCard } from './settings/PersonalCards'
 import { PushDevicesCard } from './settings/PushCards'
 import { DevicesCard, PasskeysCard, SecondFactorCard } from './settings/SecurityCards'
-import { Part, SettingsFrame } from './settings/SettingsFrame'
-import { Button, Card, Feedback, Input, useAction } from './settings/ui'
+import { SettingsFrame } from './settings/SettingsFrame'
+import { ACCOUNT_ICONS, ACCOUNT_TABS, accountTab, type AccountTab } from './settings/tabs'
+import { Button, Card, Feedback, Input, useAction, type Tab } from './settings/ui'
 
 export function AccountPage() {
+  const { t } = useTranslation()
   const { me } = useAuth()
+  const [params] = useSearchParams()
   if (!me) return null
-  // Until the second factor is set up, the server answers nothing else: only the security cards are shown.
+  // Until the second factor is set up, the server answers nothing else: only the security cards are shown, no tabs.
   const restricted = Boolean(me.second_factor_setup_required)
+  const tabs: Tab<AccountTab>[] = ACCOUNT_TABS.filter((value) => !restricted || value === 'security').map((value) => ({ value, label: t(`me.tabs.${value}`), icon: ACCOUNT_ICONS[value] }))
+  const active: AccountTab = restricted ? 'security' : accountTab(params)
   return (
-    <SettingsFrame part="account">
-      {/* As the design: Profile, Security, the sign-in providers; then the mail address, the language and the look,
-          and the devices and apps. */}
-      {!restricted && (
-        <Part name="profile">
+    <SettingsFrame part="account" tabs={tabs} active={active}>
+      {active === 'profile' && (
+        <>
           <Profile me={me} />
-        </Part>
-      )}
-      <Part name="security">
-        <Security me={me} />
-      </Part>
-      {!restricted && (
-        <Part name="personal">
           <MailAddress me={me} />
           <LanguageCard />
-          <LooksCard />
-        </Part>
+        </>
       )}
-      {!restricted && (
-        <Part name="devices">
+      {active === 'security' && <Security me={me} />}
+      {active === 'looks' && <LooksCard />}
+      {active === 'devices' && (
+        <>
           <KeysWait />
           <Devices />
           <ApiKeys />
           <PushDevicesCard me={me} />
-        </Part>
+        </>
       )}
     </SettingsFrame>
   )

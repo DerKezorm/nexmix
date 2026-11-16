@@ -1,7 +1,8 @@
 /**
- * On a phone (390 px wide) no page is wider than the screen: the playlists, both parts of the settings, about, the
- * sign-in page and the invitation, for the operator and for a member, in German and in English (German words are the
- * longer ones). The log is given a line without a single space, the kind that once stretched the settings to 731 px.
+ * On a phone (390 px wide) no page is wider than the screen: the playlists, every tab of both parts of the settings,
+ * about, the sign-in page and the invitation, for the operator and for a member, in German and in English (German
+ * words are the longer ones). The log is given a line without a single space, the kind that once stretched the
+ * settings to 731 px.
  */
 import { expect, request, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
@@ -88,11 +89,13 @@ for (const [language, locale] of [
     const page = await context.newPage()
     expect((await page.request.put('/api/v1/me/language', { data: { language }, headers: TAB })).ok()).toBe(true)
     await fits(page, '/', heading)
-    await fits(page, '/settings', async (p) => {
+    for (const tab of ['servers', 'signin', 'accounts', 'guests', 'mail', 'push', 'backup', 'languages', 'api'])
+      await fits(page, `/settings?tab=${tab}`, async (p) => expect(p.locator(`[data-testid="tabs"] [data-tab="${tab}"]`)).toHaveAttribute('aria-selected', 'true'))
+    await fits(page, '/settings?tab=log', async (p) => {
       await expect(p.locator('#log')).toBeVisible()
       await expect(p.getByRole('log')).toContainText(LONG.slice(0, 30))
     })
-    await fits(page, '/account', heading)
+    for (const tab of ['profile', 'security', 'looks', 'devices']) await fits(page, `/account?tab=${tab}`, heading)
     await fits(page, '/about', async (p) => expect(p.getByTestId('about-facts')).toBeVisible())
     await context.close()
   })
@@ -109,7 +112,7 @@ for (const [language, locale] of [
       await expect(p).toHaveURL(/\/account$/)
       await heading(p)
     })
-    await fits(page, '/account', heading)
+    for (const tab of ['profile', 'security', 'looks', 'devices']) await fits(page, `/account?tab=${tab}`, heading)
     await fits(page, '/about', async (p) => expect(p.getByTestId('about-facts')).toBeVisible())
     await context.close()
   })

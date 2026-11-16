@@ -238,7 +238,7 @@ test('smart playlists of Plex stay out until asked for, and a hidden playlist co
   // Hidden from its menu; back from the list below. Plex and the playlist itself see nothing of it.
   const cell = page.locator('.pcell').filter({ hasText: `Hide me ${browserName}` })
   await cell.getByRole('button', { name: `More for Hide me ${browserName}` }).click()
-  await cell.getByRole('button', { name: 'Hide', exact: true }).click()
+  await cell.getByRole('menuitem', { name: 'Hide', exact: true }).click()
   await expect(card(`Hide me ${browserName}`)).toHaveCount(0)
   const hidden = page.getByTestId('hidden')
   await expect(hidden).toContainText('Hidden from your overview only.')

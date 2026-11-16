@@ -124,6 +124,8 @@ describe('the page of the link', () => {
     await open()
     await until(() => document.querySelector('[data-testid="guest-quota"]'))
     expect(plain(document.querySelector('[data-testid="guest-quota"]')!.textContent)).toBe('Du hast 1 von 3 Titeln beigesteuert')
+    // A guest has the one playlist, no cards and no menu "…" of a card.
+    expect(document.querySelector('[data-testid="card-menu"], [role="menu"], [data-testid="playlist-card"]')).toBeNull()
     expect(listRows().map((row) => plain([...row.querySelector('.by')!.childNodes].at(-1)!.textContent))).toEqual(['Olivia', 'Lena'])
     expect(page.button('„Northern Lights“ entfernen')).toBeUndefined()
     expect(page.button('„Northern Lights“ nach unten')).toBeUndefined()

@@ -179,7 +179,7 @@ describe('the Jellyfin card', () => {
   it('shows the catalogue, what Jellyfin cannot do, and how its playlists stand', async () => {
     server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 2, pending: 0, waiting: 1, error: 0, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: null }
     server.answers['POST /api/v1/jellyfin/2/playlists/sync'] = server.answers['GET /api/v1/jellyfin/2/playlists']
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="2" onSub={() => undefined} />)
     const box = card('jellyfin-2')
     await until(() => box.querySelector('[data-testid="jellyfin-playlists"]'), 'the playlists of Jellyfin')
     const text = plain(box.textContent)
@@ -199,7 +199,7 @@ describe('the Jellyfin card', () => {
 
   it('says when several playlists are missing on the server and why one could not be looked at', async () => {
     server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 1, pending: 0, waiting: 0, error: 2, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: 'jellyfin_user_gone', missing: 2, emptied: 3 }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="2" onSub={() => undefined} />)
     const box = card('jellyfin-2')
     await until(() => box.querySelector('[data-testid="jellyfin-playlists"]'), 'the playlists of Jellyfin')
     const text = plain(box.querySelector('[data-testid="jellyfin-playlists"]')!.textContent)
@@ -210,7 +210,7 @@ describe('the Jellyfin card', () => {
   })
 
   it('asks before disconnecting, says what goes, and sends nothing without the yes', async () => {
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="2" onSub={() => undefined} />)
     await page.click(page.button('Jellyfin trennen', card('jellyfin-2')))
     expect(page.dialog).toBeTruthy()
     const said = plain(page.dialog!.textContent)
@@ -230,7 +230,7 @@ describe('the Jellyfin card', () => {
     server.answers['GET /api/v1/servers'] = { servers: [PLEX, { ...PLEX, id: 3, name: 'Dachboden', primary: false, library: 'Alt' }] }
     server.answers['GET /api/v1/jellyfin'] = { servers: [] }
     server.answers['GET /api/v1/catalog/status?server=3'] = { ...JELLY_READY, counts: { ...JELLY_READY.counts, tracks: 900 } }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     const box = card('plex-3')
     expect(plain(box.querySelector('h2')!.textContent)).toBe('Plex „Dachboden“')
     await page.click(page.button('Server trennen', box))

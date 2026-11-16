@@ -93,8 +93,8 @@ test('Jellyfin is connected by Quick Connect, a playlist takes its tracks from i
   await letGo(page.request)
   const jellyfin = await request.newContext({ baseURL: process.env.E2E_JELLYFIN })
 
-  // The settings: add a server, Jellyfin, the address, Quick Connect.
-  await page.goto('/settings')
+  // The settings: add a server (its own tab once there are two), Jellyfin, the address, Quick Connect.
+  await page.goto('/settings?tab=servers&sub=add')
   const add = page.getByTestId('servers-add')
   await add.getByRole('button', { name: 'Jellyfin', exact: true }).click()
   const box = page.locator('#jellyfin-new')

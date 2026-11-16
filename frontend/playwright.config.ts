@@ -46,12 +46,12 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: 'list',
-  // Every test in Chromium; the playlists, the suggestions, the guests, Jellyfin, the mirrors and Music Assistant also in
-  // Firefox and WebKit.
+  // Every test in Chromium; the playlists, the suggestions, the guests, Jellyfin, the mirrors, Music Assistant and the
+  // menu of a card with the tabs of the settings also in Firefox and WebKit.
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
-    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors|music_assistant).spec.ts/ },
-    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors|music_assistant).spec.ts/ },
+    { name: 'firefox', use: { browserName: 'firefox' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors|music_assistant|cards-and-settings).spec.ts/ },
+    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: /(playlists|suggestions|guests|jellyfin|mirrors|music_assistant|cards-and-settings).spec.ts/ },
   ],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,

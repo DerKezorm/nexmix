@@ -15,7 +15,6 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError } from '../api/client'
 import type { Mirror } from '../api/mirrors'
-import type { MediaServer } from '../api/servers'
 import { applyChange, playlistsApi, type Change, type Entry, type Playlist, type PlexSync } from '../api/playlists'
 import { Mosaic } from '../components/Mosaic'
 import { People } from '../components/People'
@@ -36,6 +35,7 @@ import { check as checkPreview, onProblem, stop as stopPreview } from '../lib/pr
 import { CopyDialog, type CopyMode } from './editor/CopyDialog'
 import { MirrorChips, MirrorDialog, MirrorNotes, SourceChip } from './editor/MirrorStrip'
 import { MoodDialog } from './editor/MoodDialog'
+import { deleteQuestion, placesOf, rightsOf } from './editor/playlistActions'
 import { SearchColumn, type InList } from './editor/SearchColumn'
 import { InviteDialog } from './editor/InviteDialog'
 import { ShareDialog } from './editor/ShareDialog'
@@ -44,16 +44,6 @@ import { TrackList } from './editor/TrackList'
 
 
 type Toast = { text: string; undo?: () => Promise<void> }
-
-/** Where a playlist is and where it could go: its mirrors, the servers it could move to (ready, keeping playlists, not
- * its source), the ones it could be copied to (not mirrored there already), and the name of its source. */
-function placesOf(playlist: Playlist | null, servers: MediaServer[] | null, source: MediaServer | null) {
-  const mirrors = playlist?.mirrors ?? []
-  const elsewhere = (servers ?? []).filter((one) => one.active && one.ready && one.capabilities.playlists && one.id !== playlist?.server)
-  const copyTargets = elsewhere.filter((one) => !mirrors.some((mirror) => mirror.server === one.id && mirror.state !== 'gone'))
-  const sourceName = source ? source.name || kindName(source.kind) : serverName(playlist?.plex?.kind)
-  return { mirrors, elsewhere, copyTargets, sourceName }
-}
 
 const codeOf = (error: unknown) => (error instanceof ApiError ? error.code : 'internal_error')
 
@@ -444,9 +434,7 @@ export function PlaylistEditor() {
     )
   if (!playlist) return null
   const access = playlist.access
-  const smart = Boolean(playlist.smart)
-  const canEdit = !smart && (access === 'owner' || access === 'operator' || access === 'edit')
-  const canManage = access === 'owner' || access === 'operator'
+  const { smart, canEdit, canManage, canCopyOrMove, canDelete } = rightsOf(playlist)
   const mine = playlist.owner?.id === me?.id
   const ownerName = playlist.owner ? playlist.owner.display_name || playlist.owner.name : ''
 
@@ -529,13 +517,13 @@ export function PlaylistEditor() {
                     )}
                   </button>
                 )}
-                {canManage && !smart && copyTargets.length > 0 && (
+                {canCopyOrMove && copyTargets.length > 0 && (
                   <button type="button" className="btn" onClick={() => setCopying('copy')} data-testid="copy-open">
                     <Copy aria-hidden />
                     {t('mirror.copyOpen')}
                   </button>
                 )}
-                {canManage && !smart && elsewhere.length > 0 && (
+                {canCopyOrMove && elsewhere.length > 0 && (
                   <button type="button" className="btn" onClick={() => setCopying('move')} data-testid="move-open">
                     <ArrowRightLeft aria-hidden />
                     {t('mirror.moveOpen')}
@@ -552,7 +540,7 @@ export function PlaylistEditor() {
                     )}
                   </button>
                 )}
-                {canManage && !smart && (
+                {canDelete && (
                   <button
                     type="button"
                     className="round"
@@ -560,12 +548,7 @@ export function PlaylistEditor() {
                     aria-label={t('editor.delete')}
                     onClick={() =>
                       ask({
-                        title: t('editor.deleteTitle'),
-                        text:
-                          (playlist.plex && playlist.plex.state !== 'off' ? t('sync.deleteText', { name: iso(playlist.name), days: 30, server: serverName(playlist.plex.kind) }) : t('editor.deleteText', { name: iso(playlist.name), days: 30 })) +
-                          (mirrors.length ? ' ' + t('mirror.deleteMirrors', { servers: mirrors.map((one) => one.name || kindName(one.kind)).join(', ') }) : ''),
-                        confirm: t('editor.deleteConfirm'),
-                        danger: false,
+                        ...deleteQuestion(t, playlist, mirrors),
                         run: async () => {
                           await playlistsApi.trash(playlistId)
                           navigate('/', { state: { notice: t('editor.trashed', { name: iso(playlist.name) }) } })

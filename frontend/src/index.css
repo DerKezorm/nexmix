@@ -349,6 +349,12 @@
   }
 
   /* Settings: cards one below the other. */
+  /* The tabs of the settings (and the second row of the media servers) above the cards of the tab chosen. */
+  .settings-tabs {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
   .settings {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -922,6 +928,42 @@
     color: #fff;
     backdrop-filter: blur(6px);
     cursor: pointer;
+  }
+  /* The open menu of a card lies over the cards after it. */
+  .pmenu.open {
+    z-index: 30;
+  }
+  .pmenu .menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    display: block;
+    width: 13.5rem;
+    max-width: calc(100vw - 32px);
+    padding: 6px;
+    border: 1px solid var(--line);
+  }
+  .pmenu .menu [role='menuitem'] {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-ink-2);
+    cursor: pointer;
+  }
+  .pmenu .menu [role='menuitem']:hover,
+  .pmenu .menu [role='menuitem']:focus {
+    background: var(--surface-2);
+    outline: none;
+  }
+  .pmenu .menu [role='menuitem'].danger {
+    color: var(--bad);
   }
   .mosaic {
     aspect-ratio: 1;

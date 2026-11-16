@@ -2,7 +2,8 @@
  * Building blocks of the settings, account and about pages: the card, the switch rows, the field, the button and the
  * segments of the design, the same everywhere.
  */
-import { createContext, useCallback, useContext, useId, useState, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import { createContext, useCallback, useContext, useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ApiError } from '../../api/client'
@@ -268,6 +269,51 @@ export function Segment<T extends string>({ options, value, onChange, label }: {
           {option.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+/** A tab of a `TabRow`: its value in the address, its name, its sign; `title` says more where the name alone does not
+ * (the kind of a media server). */
+export type Tab<T extends string> = { value: T; label: string; icon?: LucideIcon; title?: string }
+
+/** A row of round tabs, as in the other nex apps. `under`: a second row below the first, tied to it by a line on the
+ * left. Wraps when narrow. The arrows go from tab to tab, Home and End to the first and the last. */
+export function TabRow<T extends string>({ tabs, active, onChange, under = false, label }: { tabs: Tab<T>[]; active: T; onChange: (value: T) => void; under?: boolean; label?: string }) {
+  const step = (event: KeyboardEvent<HTMLButtonElement>, at: number) => {
+    const to = event.key === 'ArrowRight' ? at + 1 : event.key === 'ArrowLeft' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null
+    if (to === null) return
+    event.preventDefault()
+    const next = tabs[(to + tabs.length) % tabs.length]
+    onChange(next.value)
+    const row = event.currentTarget.parentElement
+    window.setTimeout(() => row?.querySelector<HTMLButtonElement>(`[data-tab="${next.value}"]`)?.focus(), 0)
+  }
+  return (
+    <div role="tablist" aria-label={label} className={`flex flex-wrap items-center gap-2 ${under ? 'border-l-2 border-accent/40 pl-4' : ''}`} data-testid={under ? 'sub-tabs' : 'tabs'}>
+      {tabs.map(({ value, label: name, icon: Icon, title }, at) => {
+        const on = value === active
+        return (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            tabIndex={on ? 0 : -1}
+            title={title}
+            data-tab={value}
+            onClick={() => onChange(value)}
+            onKeyDown={(event) => step(event, at)}
+            className={`inline-flex items-center gap-2 rounded-full border font-semibold transition ${under ? 'px-3.5 py-1.5 text-sm' : 'px-4 py-2 text-sm'} ${
+              on ? 'border-accent/50 bg-accent-soft text-accent' : 'border-line bg-sheet text-ink-2 hover:text-ink'
+            }`}
+          >
+            {Icon && <Icon size={16} aria-hidden />}
+            <span dir="auto">{name}</span>
+            {title && <span className="sr-only">({title})</span>}
+          </button>
+        )
+      })}
     </div>
   )
 }

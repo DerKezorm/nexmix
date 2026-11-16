@@ -1,19 +1,24 @@
 /**
- * The playlists: the title and the line below it; before the catalogue is there what to do about it (the operator is
- * led to the Plex card, a run shows its progress); then the cards of the playlists the account sees, the dashed card
- * for a new one, the ones it hid and the trash below them.
+ * The playlists: the title and the line below it (with more than one media server it says that each playlist lies on
+ * its own); before the catalogue is there what to do about it (the operator is led to the media servers, a run shows
+ * its progress); then the cards of the playlists the account sees, the dashed card for a new one, the ones it hid and
+ * the trash below them.
+ *
+ * The menu "…" of a card holds what the editor offers for the playlist as a whole, with the editor's rights and its
+ * dialogs: open, rename, share, invite guests, copy and move (with a second server), hide, delete (asked first).
  *
  * What the overview leaves out is the account's own view (kept on the server): the playlists it hid one by one (each
  * card's menu, "Show again" below), and the smart playlists Plex makes by itself unless it asks for them (the chip
  * above the cards, off from the start). Nothing of it reaches Plex or anybody else.
  */
-import { EyeOff, MoreHorizontal, Plus, Sparkles, Users } from 'lucide-react'
+import { ArrowRightLeft, Copy, ExternalLink, EyeOff, Pencil, Plus, Share2, Sparkles, Trash2, Users } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { authApi } from '../api/client'
 import { playlistsApi, type Card } from '../api/playlists'
+import { CardMenu, type MenuAction } from '../components/CardMenu'
 import { Dialog } from '../components/Dialog'
 import { Mosaic } from '../components/Mosaic'
 import { PageHead } from '../components/PageHead'
@@ -27,28 +32,24 @@ import { length } from '../lib/music'
 import { iso } from '../lib/say'
 import { kindName, useServers } from '../lib/servers'
 import { useAuth } from '../state/auth'
+import { CopyDialog, type CopyMode } from './editor/CopyDialog'
+import { InviteDialog } from './editor/InviteDialog'
+import { deleteQuestion, placesOf, rightsOf } from './editor/playlistActions'
+import { RenameDialog } from './editor/RenameDialog'
+import { ShareDialog } from './editor/ShareDialog'
 
 /** How often the open page of the playlists looks for changes of others. */
 export const LOOK_MS = 20_000
+/** How long the sentence after an action of a card's menu stays. */
+const TOAST_MS = 5000
 
 const codeOf = (error: unknown) => (error as { code?: string })?.code ?? 'internal_error'
 
-function PlaylistCard({ card, mine, onHide }: { card: Card; mine: boolean; onHide: (card: Card) => void }) {
+/** A dialog opened from the menu of a card. */
+type Open = { what: 'rename' | 'share' | 'invite' | CopyMode; card: Card }
+
+function PlaylistCard({ card, mine, actions }: { card: Card; mine: boolean; actions: MenuAction[] }) {
   const { t } = useTranslation()
-  const [menu, setMenu] = useState(false)
-  useEffect(() => {
-    if (!menu) return
-    const away = (event: MouseEvent) => {
-      if (!(event.target as Element).closest(`[data-card-menu="${card.id}"]`)) setMenu(false)
-    }
-    const escape = (event: KeyboardEvent) => event.key === 'Escape' && setMenu(false)
-    document.addEventListener('mousedown', away)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('mousedown', away)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [menu, card.id])
   const badge = !mine && card.owner ? t('playlists.fromBadge', { name: iso(card.owner.display_name || card.owner.name) }) : card.shares > 0 ? t('playlists.sharedBadge') : null
   return (
     <div className="pcell">
@@ -83,35 +84,7 @@ function PlaylistCard({ card, mine, onHide }: { card: Card; mine: boolean; onHid
           </div>
         </div>
       </Link>
-      <span className="pmenu" data-card-menu={card.id}>
-        <button
-          type="button"
-          className="more"
-          aria-expanded={menu}
-          aria-haspopup="true"
-          aria-label={t('playlists.more', { name: card.name })}
-          onClick={() => setMenu(!menu)}
-          data-testid="card-menu"
-        >
-          <MoreHorizontal size={16} aria-hidden />
-        </button>
-        {menu && (
-          <span className="card rise absolute top-full right-0 z-40 mt-1 block w-48 p-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setMenu(false)
-                onHide(card)
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-ink-2 hover:bg-sheet-2"
-              data-testid="card-hide"
-            >
-              <EyeOff size={15} aria-hidden />
-              {t('playlists.hide')}
-            </button>
-          </span>
-        )}
-      </span>
+      <CardMenu label={t('playlists.more', { name: card.name })} actions={actions} />
     </div>
   )
 }
@@ -230,6 +203,9 @@ export function PlaylistsPage() {
   const servers = useServers()
   const choices = (servers ?? []).filter((one) => one.active && one.ready)
   const [choosing, setChoosing] = useState<number | null>(null)
+  const [open, setOpen] = useState<Open | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const { ask, dialog } = useConfirm()
   const operator = me?.role === 'operator'
   const ready = Boolean(status?.ready)
   const reload = useCallback(async () => {
@@ -246,6 +222,11 @@ export function PlaylistsPage() {
   useEffect(() => {
     if (ready) void reload()
   }, [ready, reload])
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [toast])
   // What others change (a new playlist shared, entries from Plex or from guests) comes in while the page is open: a
   // look every LOOK_MS while it is in view, and at once when it comes back into view.
   useEffect(() => {
@@ -302,15 +283,49 @@ export function PlaylistsPage() {
       setProblem(errorText(codeOf(error)))
     }
   }
+  /** A card changed by a dialog of its menu, until the next look at the server. */
+  const patch = (id: number, change: Partial<Card>) => setCards((current) => current?.map((one) => (one.id === id ? { ...one, ...change } : one)) ?? current)
+  const placesOfCard = (card: Card) => placesOf(card, servers, servers?.find((one) => one.id === card.server) ?? null)
+  // The menu of a card: what the editor offers for the whole playlist, with the same rights.
+  const actionsOf = (card: Card): MenuAction[] => {
+    const { canEdit, canShare, canCopyOrMove, canDelete } = rightsOf(card)
+    const { mirrors, elsewhere, copyTargets } = placesOfCard(card)
+    const actions: MenuAction[] = [{ key: 'open', label: t('playlists.menu.open'), icon: ExternalLink, run: () => navigate(`/playlists/${card.id}`) }]
+    if (canEdit) actions.push({ key: 'rename', label: t('playlists.menu.rename'), icon: Pencil, run: () => setOpen({ what: 'rename', card }) })
+    if (canShare) actions.push({ key: 'share', label: t('playlists.menu.share'), icon: Share2, run: () => setOpen({ what: 'share', card }) })
+    if (canEdit) actions.push({ key: 'invite', label: t('playlists.menu.invite'), icon: Users, run: () => setOpen({ what: 'invite', card }) })
+    if (canCopyOrMove && copyTargets.length > 0) actions.push({ key: 'copy', label: t('mirror.copyOpen'), icon: Copy, run: () => setOpen({ what: 'copy', card }) })
+    if (canCopyOrMove && elsewhere.length > 0) actions.push({ key: 'move', label: t('mirror.moveOpen'), icon: ArrowRightLeft, run: () => setOpen({ what: 'move', card }) })
+    actions.push({ key: 'hide', label: t('playlists.hide'), icon: EyeOff, run: () => void setHidden(card, true) })
+    if (canDelete)
+      actions.push({
+        key: 'delete',
+        label: t('playlists.menu.delete'),
+        icon: Trash2,
+        run: () =>
+          ask({
+            ...deleteQuestion(t, card, mirrors),
+            run: async () => {
+              await playlistsApi.trash(card.id)
+              setToast(t('editor.trashed', { name: iso(card.name) }))
+              await reload()
+            },
+          }),
+      })
+    return actions
+  }
   const smartCount = cards?.filter((card) => card.smart).length ?? 0
   const shown = cards?.filter((card) => !card.hidden && (showSmart || !card.smart)) ?? null
   const hidden = cards?.filter((card) => card.hidden && (showSmart || !card.smart)) ?? []
-  const settings = <Link to="/settings?tab=plex" />
+  const settings = <Link to="/settings?tab=servers" />
   const tracks = (status?.counts.tracks ?? 0).toLocaleString(i18n.language)
   const library = iso(status?.library_title ?? '')
-  // The catalogue is the first server's: its kind names where the playlists end up.
+  // With one server the catalogue is its own, and its kind names where the playlists end up; with more, each playlist
+  // lies on the server it takes its tracks from, and the line says so.
   const readyKey = status?.kind === 'jellyfin' ? 'playlists.textReadyJellyfin' : status?.kind === 'music_assistant' ? 'playlists.textReadyMa' : 'playlists.textReady'
-  const head = ready ? t(readyKey, { tracks, library }) : t('playlists.text')
+  // A server named after its kind ("Music Assistant") is named once.
+  const named = choices.map((one) => (!one.name || one.name === kindName(one.kind) ? kindName(one.kind) : t('playlists.serverShort', { name: iso(one.name), kind: kindName(one.kind) })))
+  const head = !ready ? t('playlists.text') : choices.length > 1 ? t('playlists.textReadyMany', { servers: new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(named) }) : t(readyKey, { tracks, library })
   let body
   if (!status) body = null
   else if (!status.connected || !status.library)
@@ -367,7 +382,7 @@ export function PlaylistsPage() {
         {shown && (
           <div className="grid" data-testid="playlist-grid">
             {shown.map((card) => (
-              <PlaylistCard key={card.id} card={card} mine={card.owner?.id === me?.id} onHide={(one) => void setHidden(one, true)} />
+              <PlaylistCard key={card.id} card={card} mine={card.owner?.id === me?.id} actions={actionsOf(card)} />
             ))}
             <button type="button" className="newcard" onClick={() => void make()} disabled={busy}>
               <span>
@@ -430,6 +445,50 @@ export function PlaylistsPage() {
           </form>
         </Dialog>
       )}
+      {open?.what === 'rename' && (
+        <RenameDialog
+          playlistId={open.card.id}
+          name={open.card.name}
+          onClose={() => setOpen(null)}
+          onDone={(name) => {
+            patch(open.card.id, { name })
+            setOpen(null)
+          }}
+        />
+      )}
+      {open?.what === 'share' && <ShareDialog playlistId={open.card.id} name={open.card.name} onClose={() => setOpen(null)} onChanged={(count) => patch(open.card.id, { shares: count })} />}
+      {open?.what === 'invite' && (
+        <InviteDialog
+          playlistId={open.card.id}
+          name={open.card.name}
+          operator={operator}
+          refreshKey={0}
+          onClose={() => setOpen(null)}
+          onChanged={(guests) => patch(open.card.id, { guests })}
+          onToast={setToast}
+        />
+      )}
+      {(open?.what === 'copy' || open?.what === 'move') && (
+        <CopyDialog
+          playlistId={open.card.id}
+          name={open.card.name}
+          mode={open.what}
+          targets={open.what === 'copy' ? placesOfCard(open.card).copyTargets : placesOfCard(open.card).elsewhere}
+          sourceName={placesOfCard(open.card).sourceName}
+          onClose={() => setOpen(null)}
+          onDone={(text) => {
+            setOpen(null)
+            setToast(text)
+            void reload()
+          }}
+        />
+      )}
+      {toast && (
+        <div className="toast" role="status" data-testid="toast">
+          <span>{toast}</span>
+        </div>
+      )}
+      {dialog}
     </div>
   )
 }

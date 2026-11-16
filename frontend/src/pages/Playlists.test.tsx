@@ -80,7 +80,7 @@ describe('the playlists while the catalogue comes', () => {
     await page.show(<PlaylistsPage />)
     const failed = document.querySelector('[data-testid="playlists-failed"]')!
     expect(plain(failed.textContent)).toBe('Der Katalog konnte nicht geholt werden: Plex hat den Schlüssel abgelehnt. Verbinde Plex neu. Mehr unter Einstellungen.')
-    expect(failed.querySelector('a')!.getAttribute('href')).toBe('/settings?tab=plex')
+    expect(failed.querySelector('a')!.getAttribute('href')).toBe('/settings?tab=servers')
   })
 
   it('tell a member without links', async () => {

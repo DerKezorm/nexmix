@@ -74,7 +74,7 @@ describe('the role', () => {
   })
 
   it('names the server part as the operator\'s in the head of the settings', async () => {
-    await page.show(<SettingsFrame part="server">{null}</SettingsFrame>, '/settings')
+    await page.show(<SettingsFrame part="server" tabs={[]} active="servers">{null}</SettingsFrame>, '/settings')
     expect(document.querySelector('.lead p')?.textContent).toBe('Server: nur für Betreiber.')
   })
 })

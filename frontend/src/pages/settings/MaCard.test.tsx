@@ -117,7 +117,7 @@ describe('the Music Assistant card', () => {
   })
 
   it('shows the catalogue, the token, what Music Assistant cannot do, and its playlists', async () => {
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     const box = card('ma-3')
     await until(() => box.querySelector('[data-testid="music_assistant-playlists"]'), 'the playlists')
     const text = plain(box.textContent)
@@ -134,37 +134,37 @@ describe('the Music Assistant card', () => {
 
   it('warns 30 days before the token runs out, and says when it ran out', async () => {
     server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, token: { ...TOKEN, days_left: 12, warn: true } }] }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     await until(() => document.querySelector('[data-testid="ma-token"]'), 'the warning')
     expect(plain(document.querySelector('[data-testid="ma-token"]')!.textContent)).toContain('Der Token läuft in 12 Tagen ab')
     page.close()
     server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, token: { ...TOKEN, days_left: 0, warn: true, expired: true } }] }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     await until(() => document.querySelector('[data-testid="ma-token"]'), 'the alert')
     expect(plain(document.querySelector('[data-testid="ma-token"]')!.textContent)).toContain('abgelaufen')
   })
 
   it('names a provider that brings the tracks twice', async () => {
     server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, doubled: ['Plex'] }] }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     await until(() => document.querySelector('[data-testid="ma-doubled"]'), 'the hint')
     expect(plain(document.querySelector('[data-testid="ma-doubled"]')!.textContent)).toContain('Plex bringt Titel, die nexmix auch direkt kennt')
   })
 
   it('says when the token is not an admin token any more', async () => {
     server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, not_admin: true }] }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     await until(() => document.querySelector('[data-testid="ma-not-admin"]'), 'the alert')
     expect(plain(document.querySelector('[data-testid="ma-not-admin"]')!.textContent)).toContain('Der Token gehört keinem Admin mehr')
     page.close()
     server.answers['GET /api/v1/music-assistant'] = { servers: [{ ...MA_VIEW, not_admin: false }] }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     await until(() => document.querySelector('[data-testid="ma-connected"]'), 'the card')
     expect(document.querySelector('[data-testid="ma-not-admin"]')).toBeNull()
   })
 
   it('asks before other providers replace the catalogue, and sends nothing without', async () => {
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     const box = card('ma-3')
     await until(() => box.querySelector('[data-testid="ma-connected"]'), 'the card')
     await page.click(page.button('Andere Anbieter wählen', box))
@@ -177,7 +177,7 @@ describe('the Music Assistant card', () => {
   })
 
   it('asks before disconnecting and says what goes', async () => {
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     const box = card('ma-3')
     await until(() => box.querySelector('[data-testid="ma-connected"]'), 'the card')
     await page.click(page.button('Music Assistant trennen', box))
@@ -189,7 +189,7 @@ describe('the Music Assistant card', () => {
 
   it('names the tracks that go even before the card knew the catalogue', async () => {
     server.fails['GET /api/v1/catalog/status?server=3'] = { status: 503, code: 'busy' }
-    await page.show(<MediaServers />)
+    await page.show(<MediaServers sub="3" onSub={() => undefined} />)
     const box = card('ma-3')
     await until(() => box.querySelector('[data-testid="ma-connected"]'), 'the card')
     delete server.fails['GET /api/v1/catalog/status?server=3']

@@ -1,10 +1,16 @@
 /**
- * Settings, Server: the media servers. The Plex card as it always was (the first Plex server); a card for each Plex
+ * Settings, Server, Media servers. The Plex card as it always was (the first Plex server); a card for each Plex
  * server connected beside it, for each Jellyfin server and for each Music Assistant; and "Add a server" with the choice
  * of Plex, Jellyfin or Music Assistant.
  * Disconnecting asks first and says what goes. With nothing connected yet, the Plex card stands first as before. With
  * more than one server, each ready one has "take all playlists over" (``TransferCard``).
+ *
+ * With more than one server a second row of tabs shows one of them at a time: a tab per server (its name, its kind as
+ * a sign), "Add a server" and "Take all over". Its value is the `sub` of the address (the server's number, `add`,
+ * `transfer`); an unknown one is the first server. With one server or none there is no row, and the cards stand one
+ * below the other as before.
  */
+import { Disc3, MonitorPlay, Plus, Repeat, Speaker } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -13,11 +19,15 @@ import { jellyfinApi, maApi, serversApi, type JellyfinServer, type MaServer, typ
 import { useConfirm } from '../../components/useConfirm'
 import { tracksOf, useCatalogStatus } from '../../lib/catalogStatus'
 import { iso } from '../../lib/say'
+import { kindName } from '../../lib/servers'
 import { JellyfinCard, JellyfinConnect, ServerCatalog } from './JellyfinCard'
 import { MaCard, MaConnect } from './MaCard'
 import { PlexCard } from './PlexCard'
 import { TransferCard } from './TransferCard'
-import { Button, Card, Feedback, useAction } from './ui'
+import { Button, Card, Feedback, TabRow, useAction, type Tab } from './ui'
+
+/** The sign of a kind of server in the second row. */
+const KIND_ICON = { plex: Disc3, jellyfin: MonitorPlay, music_assistant: Speaker }
 
 /** A Plex server connected beside the first one: its catalogue, sync now, disconnect. */
 function OtherPlexCard({ server, onChanged }: { server: MediaServer; onChanged: () => Promise<void> }) {
@@ -72,8 +82,12 @@ function OtherPlexCard({ server, onChanged }: { server: MediaServer; onChanged: 
 
 type Adding = 'choose' | 'plex' | 'jellyfin' | 'music_assistant' | null
 
-export function MediaServers() {
+export function MediaServers({ sub = null, onSub }: { sub?: string | null; onSub?: (sub: string) => void }) {
   const { t } = useTranslation()
+  // Without an address to keep it (a card shown by itself), the second row keeps its choice here.
+  const [ownSub, setOwnSub] = useState<string | null>(null)
+  const asked = onSub ? sub : ownSub
+  const choose = onSub ?? setOwnSub
   const [servers, setServers] = useState<MediaServer[] | null>(null)
   const [jellyfins, setJellyfins] = useState<JellyfinServer[]>([])
   const [assistants, setAssistants] = useState<MaServer[]>([])
@@ -81,17 +95,20 @@ export function MediaServers() {
   // The Plex card reads its server anew when a server comes or goes.
   const [round, setRound] = useState(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<MediaServer[]> => {
     try {
       // A Music Assistant that cannot be listed leaves the other cards as they are.
       const [all, jelly, ma] = await Promise.all([serversApi.list(), jellyfinApi.list(), maApi.list().catch(() => null)])
-      setServers(Array.isArray(all?.servers) ? all.servers : [])
+      const found = Array.isArray(all?.servers) ? all.servers : []
+      setServers(found)
       setJellyfins(Array.isArray(jelly?.servers) ? jelly.servers : [])
       setAssistants(Array.isArray(ma?.servers) ? ma.servers : [])
+      return found
     } catch {
       setServers([])
       setJellyfins([])
       setAssistants([])
+      return []
     }
   }, [])
   useEffect(() => {
@@ -99,8 +116,19 @@ export function MediaServers() {
   }, [load])
 
   const changed = async () => {
-    await load()
+    const found = await load()
     setRound((now) => now + 1)
+    return found
+  }
+  const refresh = async () => {
+    await changed()
+  }
+  // A server just connected: its tab is the one shown, its card goes on with what it still needs (a user, providers).
+  const connected = async () => {
+    const before = new Set((servers ?? []).filter((one) => one.active).map((one) => one.id))
+    setAdding(null)
+    const fresh = (await changed()).find((one) => one.active && !before.has(one.id))
+    if (fresh) choose(String(fresh.id))
   }
 
   const active = (servers ?? []).filter((one) => one.active)
@@ -111,49 +139,46 @@ export function MediaServers() {
   // "Take all over" where a playlist could come from another server.
   const targets = active.length > 1 ? active.filter((one) => one.ready && one.capabilities.playlists) : []
 
+  // The second row, with more than one server: what it offers, and the one shown (an unknown value is the first
+  // server).
+  const row: Tab<string>[] =
+    active.length > 1
+      ? [
+          ...active.map((one) => ({ value: String(one.id), label: one.name || kindName(one.kind), icon: KIND_ICON[one.kind] ?? Disc3, title: kindName(one.kind) })),
+          { value: 'add', label: t('servers.addTitle'), icon: Plus },
+          ...(targets.length > 0 ? [{ value: 'transfer', label: t('servers.transferTab'), icon: Repeat }] : []),
+        ]
+      : []
+  const shown = row.length === 0 ? null : row.some((tab) => tab.value === asked) ? (asked as string) : row[0].value
+  const all = shown === null
+  const shows = (id: number) => all || shown === String(id)
+  const firstPlex = plexes[0]
+
   return (
     <>
-      {plexCard && <PlexCard key={round} />}
-      {others.map((server) => (
-        <OtherPlexCard key={server.id} server={server} onChanged={changed} />
+      {row.length > 0 && <TabRow under tabs={row} active={shown as string} onChange={(value) => value !== shown && choose(value)} label={t('servers.part')} />}
+      {plexCard && (all || (firstPlex && shown === String(firstPlex.id))) && <PlexCard key={round} />}
+      {others.filter((server) => shows(server.id)).map((server) => (
+        <OtherPlexCard key={server.id} server={server} onChanged={refresh} />
       ))}
-      {jellyfins.map((server) => (
-        <JellyfinCard key={server.id} server={server} onChanged={changed} />
+      {jellyfins.filter((server) => shows(server.id)).map((server) => (
+        <JellyfinCard key={server.id} server={server} onChanged={refresh} />
       ))}
-      {assistants.map((server) => (
-        <MaCard key={server.id} server={server} onChanged={changed} />
+      {assistants.filter((server) => shows(server.id)).map((server) => (
+        <MaCard key={server.id} server={server} onChanged={refresh} />
       ))}
-      {targets.map((server) => (
-        <TransferCard key={`transfer-${server.id}`} target={server} others={active.filter((one) => one.id !== server.id)} />
-      ))}
-      {adding === 'plex' && (
-        <PlexCard
-          alongside
-          onDone={() => {
-            setAdding(null)
-            void changed()
-          }}
-        />
+      {(all || shown === 'transfer') &&
+        targets.map((server) => <TransferCard key={`transfer-${server.id}`} target={server} others={active.filter((one) => one.id !== server.id)} />)}
+      {(all || shown === 'add') && adding === 'plex' && (
+        <PlexCard alongside onDone={() => void connected()} />
       )}
-      {adding === 'jellyfin' && (
-        <JellyfinConnect
-          onConnected={async () => {
-            setAdding(null)
-            await changed()
-          }}
-          onCancel={() => setAdding(null)}
-        />
+      {(all || shown === 'add') && adding === 'jellyfin' && (
+        <JellyfinConnect onConnected={connected} onCancel={() => setAdding(null)} />
       )}
-      {adding === 'music_assistant' && (
-        <MaConnect
-          onConnected={async () => {
-            setAdding(null)
-            await changed()
-          }}
-          onCancel={() => setAdding(null)}
-        />
+      {(all || shown === 'add') && adding === 'music_assistant' && (
+        <MaConnect onConnected={connected} onCancel={() => setAdding(null)} />
       )}
-      {servers !== null && adding !== 'plex' && adding !== 'jellyfin' && adding !== 'music_assistant' && (
+      {servers !== null && (all || shown === 'add') && adding !== 'plex' && adding !== 'jellyfin' && adding !== 'music_assistant' && (
         <Card id="servers-add" title={t('servers.addTitle')} text={t('servers.addText')}>
           <div className="flex flex-wrap gap-2" data-testid="servers-add">
             <Button onClick={() => setAdding('plex')}>{t('servers.addPlex')}</Button>

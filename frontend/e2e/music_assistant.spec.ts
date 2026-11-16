@@ -59,8 +59,9 @@ test('Music Assistant is connected by its token, a playlist takes its tracks fro
   await letGo(page.request)
   const ma = await request.newContext({ baseURL: process.env.E2E_MA })
 
-  // The settings: add a server, Music Assistant, the address and the token, then the provider.
-  await page.goto('/settings')
+  // The settings: add a server (its own tab once there are two), Music Assistant, the address and the token, then the
+  // provider.
+  await page.goto('/settings?tab=servers&sub=add')
   await page.getByTestId('servers-add').getByRole('button', { name: 'Music Assistant', exact: true }).click()
   const box = page.locator('#ma-new')
   await box.getByLabel('Address').fill(process.env.E2E_MA!)
@@ -108,7 +109,7 @@ test('a token of a user without full rights in Music Assistant is refused, and n
   const ma = await request.newContext({ baseURL: process.env.E2E_MA })
   const weak = (await (await ma.get('/fake/token?role=user')).json()).token as string
   await ma.dispose()
-  await page.goto('/settings')
+  await page.goto('/settings?tab=servers&sub=add')
   await page.getByTestId('servers-add').getByRole('button', { name: 'Music Assistant', exact: true }).click()
   const box = page.locator('#ma-new')
   await box.getByLabel('Address').fill(process.env.E2E_MA!)

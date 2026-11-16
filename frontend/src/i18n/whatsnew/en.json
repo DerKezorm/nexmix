@@ -1,11 +1,30 @@
 {
+  "0.2.1": {
+    "lead": "nexmix 0.2.1 tidies up: what you do with a playlist in the editor now works from the menu “…” of its card too, and the settings are split into tabs as in the other nex apps.",
+    "sections": [
+      {
+        "title": "Everything from the menu of the card",
+        "body": "The menu “…” on every playlist card now has Open, Rename, Share, Invite guests, Copy to and Move to, Hide and Delete. It shows only what you may do with that playlist, with the same dialogs as the editor, and Delete asks first. Copy and Move are there as soon as a second server is connected. With the keyboard you go through it with the arrows, Esc closes it.",
+        "where": "Playlists, the menu “…” on a card"
+      },
+      {
+        "title": "Settings in tabs",
+        "body": "Instead of every card one below the other, each part has its tab: Media servers, Sign-in, Accounts, Guests, Mail, Web Push, Backup, Languages, Log and API. With several media servers each one has its own tab below, with “Add a server” and “Take all over”. “Ready for the internet?” is at the top of Sign-in. My account is split the same way into Profile, Security, Look and Devices and apps. The tab is in the address, and old links lead to the right place.",
+        "where": "Settings and My account"
+      }
+    ],
+    "smallTitle": "Also",
+    "small": [
+      "With several media servers, the line under “Playlists” says that each playlist lies on its own server, instead of naming Plex only."
+    ]
+  },
   "0.2.0": {
     "lead": "This is nexmix 0.2: beside Plex you now connect Jellyfin and Music Assistant too, and playlists move between the servers. What 0.1 had stays as it was.",
     "sections": [
       {
         "title": "Jellyfin and Music Assistant",
         "body": "Beside Plex, Jellyfin and Music Assistant join as media servers, several of one kind as well. Jellyfin is connected by Quick Connect or an API key, and you choose the user the playlists belong to there. For Music Assistant you enter a long-lived token of a user with full rights and choose the providers whose tracks count.",
-        "where": "Settings › Server › Add a server"
+        "where": "Settings › Server › Media servers › Add a server"
       },
       {
         "title": "One source per playlist",
@@ -20,7 +39,7 @@
       {
         "title": "Take everything over at once",
         "body": "For a change of server, “Take all over …” brings every playlist of the other servers along, as mirrors or moved, with the same preview. It runs in the background and can let go of the old server afterwards without losing a playlist.",
-        "where": "Settings › Server, the card of the new server"
+        "where": "Settings › Server › Media servers › Take all over"
       },
       {
         "title": "In step while you watch",
@@ -67,7 +86,7 @@
       {
         "title": "In Plex, both ways",
         "body": "The operator connects Plex by signing in at plex.tv. What happens in nexmix reaches Plex two seconds later. What is added, renamed or taken out in Plex or Plexamp arrives in nexmix, and the playlists Plex already has show up here. When both sides change at once, no track gets lost.",
-        "where": "Settings › Plex"
+        "where": "Settings › Server › Media servers"
       },
       {
         "title": "Guests by a link",
@@ -77,7 +96,7 @@
       {
         "title": "Accounts and signing in",
         "body": "Members get an invitation and an account of their own, with a password or through a sign-in provider such as authentik, Pocket ID or Microsoft Entra ID. A second factor and passkeys come with it. Nobody needs a Plex account but the operator.",
-        "where": "Settings › Sign-in"
+        "where": "Settings › Server › Sign-in"
       }
     ],
     "smallTitle": "Also",

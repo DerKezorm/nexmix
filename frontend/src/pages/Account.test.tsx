@@ -1,12 +1,13 @@
 /**
- * My account in the interface, against a stand-in of the server: the cards in their order and the part named in the
- * address, the mail address with the link it waits for (the password asked again, the old address standing until the link is
- * opened, withdrawn on request), device tokens (shown once, then only their first characters, removed after asking),
- * API keys (off until the operator allows them, the key shown once) and the choice of light or dark.
+ * My account in the interface, against a stand-in of the server: the tabs in their order with the cards of each, the
+ * tab named in the address (an old or unknown one leads to the right one), the mail address with the link it waits
+ * for (the password asked again, the old address standing until the link is opened, withdrawn on request), device
+ * tokens (shown once, then only their first characters, removed after asking), API keys (off until the operator
+ * allows them, the key shown once) and the choice of light or dark.
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type { Me } from '../api/client'
 import '../i18n'
@@ -48,12 +49,33 @@ function serve(): void {
 let root: Root
 let box: HTMLDivElement
 
+/** The address the page stands at, for the tests to read. */
+function Where() {
+  const location = useLocation()
+  return <output data-testid="where">{location.pathname + location.search}</output>
+}
+const where = () => document.querySelector('[data-testid="where"]')!.textContent
+const tabs = () => [...box.querySelectorAll('[data-testid="tabs"] [role="tab"]')].map((item) => [item.textContent?.trim(), item.getAttribute('aria-selected')])
+const cardTitles = () => [...box.querySelectorAll('.card h2')].map((item) => item.textContent?.trim())
+const leave = () => {
+  act(() => root.unmount())
+  box.remove()
+}
+const tab = (name: string) => [...box.querySelectorAll<HTMLButtonElement>('[data-testid="tabs"] [role="tab"]')].find((item) => item.textContent?.trim() === name)
+
 async function show(at = '/account'): Promise<void> {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   box = document.createElement('div')
   document.body.appendChild(box)
   root = createRoot(box)
-  await act(async () => root.render(<MemoryRouter initialEntries={[at]}><AccountPage /></MemoryRouter>))
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={[at]}>
+        <AccountPage />
+        <Where />
+      </MemoryRouter>,
+    ),
+  )
   await idle()
 }
 
@@ -108,31 +130,40 @@ afterEach(() => {
 })
 
 describe('the parts', () => {
-  it('are one page of cards, in their order, under the title of the settings and the part for the account', async () => {
+  it('are tabs in their order under the title of the settings and the part for the account, each with its own cards', async () => {
     await show()
     expect(box.querySelector('h1')!.textContent).toBe('Einstellungen')
     // The operator has both parts in one segment, and this one is on.
     const parts = [...box.querySelectorAll('.seg [role="tab"]')].map((item) => [item.textContent?.trim(), item.getAttribute('aria-selected')])
     expect(parts).toEqual([['Server', 'false'], ['Mein Konto', 'true']])
-    const cards = [...box.querySelectorAll('.card h2')].map((item) => item.textContent?.trim())
-    const at = (title: string) => cards.indexOf(title)
-    for (const title of ['Profil', 'Sicherheit', 'Angemeldete Geräte', 'Mailadresse', 'Gerätetoken']) expect(at(title), title).toBeGreaterThan(-1)
-    // As the design: Profile, then Security, then the rest.
-    expect(at('Profil')).toBe(0)
-    expect(at('Sicherheit')).toBe(1)
-    expect(at('Sicherheit')).toBeLessThan(at('Angemeldete Geräte'))
-    expect(at('Angemeldete Geräte')).toBeLessThan(at('Mailadresse'))
-    expect(at('Mailadresse')).toBeLessThan(at('Gerätetoken'))
+    // As in the other nex apps: a row of round tabs, each with its sign; Profile first.
+    expect(tabs()).toEqual([['Profil', 'true'], ['Sicherheit', 'false'], ['Aussehen', 'false'], ['Geräte und Apps', 'false']])
+    expect(box.querySelectorAll('[data-testid="tabs"] [role="tab"] svg').length).toBe(4)
+    expect(cardTitles()).toEqual(['Profil', 'Mailadresse', 'Sprache'])
+    await click(tab('Sicherheit'))
+    expect(where()).toBe('/account?tab=security')
+    expect(tabs()[1]).toEqual(['Sicherheit', 'true'])
+    const cards = cardTitles()
+    expect(cards[0]).toBe('Sicherheit')
+    expect(cards).toContain('Angemeldete Geräte')
+    expect(cards).not.toContain('Profil')
+    expect(cards).not.toContain('Gerätetoken')
     // One card "Security" holds the password, the second factor and the passkeys, each a part of it, not a card.
     const security = box.querySelector('#security-card')!
     expect([...security.querySelectorAll('.card-part > h3')].map((item) => item.textContent?.trim())).toEqual(['Passwort', 'Zweiter Faktor', 'Passkeys'])
     for (const title of ['Passwort', 'Zweiter Faktor', 'Passkeys']) expect(cards, title).not.toContain(title)
+    await click(tab('Aussehen'))
+    expect(cardTitles()).toEqual(['Hell oder dunkel'])
+    await click(tab('Geräte und Apps'))
+    expect(where()).toBe('/account?tab=devices')
+    expect(cardTitles()).toContain('Gerätetoken')
+    expect(cardTitles()).not.toContain('Sicherheit')
   })
 
   it('put the sign-in providers in a card of their own right after Security', async () => {
     answers['GET /api/v1/oidc/me'] = [{ slug: 'authentik', label: 'authentik', linked: false, address: null }]
-    await show()
-    const cards = [...box.querySelectorAll('.card h2')].map((item) => item.textContent?.trim())
+    await show('/account?tab=security')
+    const cards = cardTitles()
     expect(cards.indexOf('Anmeldeanbieter')).toBe(cards.indexOf('Sicherheit') + 1)
     expect(box.querySelector('#security-card [data-testid="my-providers"]')).toBeNull()
     // Each row as the design: the key, the name, the state as a quiet mark ("Verknüpft" in the accent).
@@ -142,21 +173,58 @@ describe('the parts', () => {
     expect(box.querySelector('[data-testid="my-providers"] li svg')).toBeTruthy()
   })
 
-  it('can be named in the address, and the page scrolls there', async () => {
-    const scrolled: string[] = []
-    Element.prototype.scrollIntoView = function (this: Element) {
-      scrolled.push(this.id)
-    }
+  it('can be named in the address; an old or unknown name leads to the right tab, and the address says so', async () => {
     await show('/account?tab=devices')
-    expect(scrolled).toEqual(['part-devices'])
+    expect(tabs()[3]).toEqual(['Geräte und Apps', 'true'])
     expect(box.textContent).toContain('Gerätetoken anlegen')
+    leave()
+    // Before the tabs, mail, language and the look were one part "personal": the mail address and the language are
+    // under Profile now.
+    await show('/account?tab=personal')
+    expect(tabs()[0]).toEqual(['Profil', 'true'])
+    expect(where()).toBe('/account?tab=profile')
+    expect(cardTitles()).toContain('Mailadresse')
+    leave()
+    for (const nonsense of ['nonsense', 'constructor', '']) {
+      await show(`/account?tab=${nonsense}`)
+      expect(tabs()[0], nonsense).toEqual(['Profil', 'true'])
+      expect(where(), nonsense).toBe('/account?tab=profile')
+      leave()
+    }
+    // Back from linking a sign-in provider: the providers are under Security.
+    await show('/account?linked=authentik')
+    expect(tabs()[1]).toEqual(['Sicherheit', 'true'])
   })
 
   it('leave the server part to the operator: a member sees the account only, without the segment', async () => {
     auth.me = { ...baseMe, role: 'member' }
     await show()
-    expect(box.querySelector('[role="tablist"]')).toBeNull()
+    expect(box.querySelector('.seg[role="tablist"]')).toBeNull()
+    expect(tabs().map(([name]) => name)).toEqual(['Profil', 'Sicherheit', 'Aussehen', 'Geräte und Apps'])
+    await click(tab('Geräte und Apps'))
     expect(box.textContent).toContain('Gerätetoken anlegen')
+  })
+
+  it('shows only Security, without tabs, while the second factor waits to be set up', async () => {
+    auth.me = { ...baseMe, second_factor_setup_required: true } as Me
+    await show('/account?tab=devices')
+    expect(box.querySelector('[data-testid="tabs"]')).toBeNull()
+    expect(box.querySelector('#security-card')).toBeTruthy()
+    expect(box.textContent).not.toContain('Gerätetoken anlegen')
+    expect(where()).toBe('/account?tab=security')
+  })
+
+  it('go with the arrow keys from tab to tab', async () => {
+    await show()
+    await act(async () => tab('Profil')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    await idle()
+    expect(where()).toBe('/account?tab=security')
+    await act(async () => tab('Sicherheit')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    await idle()
+    expect(where()).toBe('/account?tab=devices')
+    await act(async () => tab('Geräte und Apps')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    await idle()
+    expect(where()).toBe('/account?tab=profile')
   })
 
   it('come in English too', async () => {
@@ -333,7 +401,7 @@ describe('devices and apps', () => {
 describe('the look', () => {
   it('keeps light or dark with the account', async () => {
     answers['PUT /api/v1/me/preferences'] = { ...baseMe.profile, theme: 'dark' }
-    await show()
+    await show('/account?tab=looks')
     expect(box.textContent).toContain('Hell oder dunkel')
     await click(button('Dunkel'))
     expect(calls.find((call) => call.url === '/api/v1/me/preferences')!.body).toEqual({ theme: 'dark' })

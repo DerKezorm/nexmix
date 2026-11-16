@@ -136,7 +136,7 @@ describe('the playlists', () => {
     expect(document.querySelector('.lead p')!.textContent).toBe('Gemeinsam gebaut aus deiner Musikmediathek.')
     const empty = document.querySelector('[data-testid="playlists-empty"]')!
     expect(empty.textContent).toBe('Noch kein Medienserver verbunden. Verbinde unter Einstellungen Plex, Jellyfin oder Music Assistant.')
-    expect(empty.querySelector('a')!.getAttribute('href')).toBe('/settings?tab=plex')
+    expect(empty.querySelector('a')!.getAttribute('href')).toBe('/settings?tab=servers')
     expect(empty.className).toBe('empty')
   })
 

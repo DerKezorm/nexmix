@@ -1,11 +1,30 @@
 {
+  "0.2.1": {
+    "lead": "nexmix 0.2.1 räumt auf: Was du im Editor mit einer Playlist machst, geht jetzt auch über das Menü „…“ ihrer Karte, und die Einstellungen sind in Reiter geteilt wie in den anderen nex-Apps.",
+    "sections": [
+      {
+        "title": "Alles über das Menü der Karte",
+        "body": "Das Menü „…“ auf jeder Playlist-Karte hat jetzt Öffnen, Umbenennen, Teilen, Gäste einladen, Kopieren nach und Verschieben nach, Ausblenden und Löschen. Es zeigt nur, was du an dieser Playlist darfst, mit denselben Dialogen wie im Editor, und Löschen fragt vorher. Kopieren und Verschieben stehen dort, sobald ein zweiter Server verbunden ist. Mit der Tastatur gehst du mit den Pfeilen durch, Esc schließt es.",
+        "where": "Playlisten, Menü „…“ auf einer Karte"
+      },
+      {
+        "title": "Einstellungen in Reitern",
+        "body": "Statt aller Karten untereinander hat jeder Teil seinen Reiter: Medienserver, Anmeldung, Konten, Gäste, Mail, Web Push, Sicherung, Sprachen, Log und API. Mit mehreren Medienservern hat jeder seinen eigenen Unterreiter, dazu „Server hinzufügen“ und „Alles übernehmen“. „Bereit fürs Internet?“ steht oben unter Anmeldung. Mein Konto ist genauso geteilt in Profil, Sicherheit, Aussehen sowie Geräte und Apps. Der Reiter steht in der Adresse, alte Links führen an die richtige Stelle.",
+        "where": "Einstellungen und Mein Konto"
+      }
+    ],
+    "smallTitle": "Außerdem",
+    "small": [
+      "Mit mehreren Medienservern sagt der Satz unter „Playlisten“, dass jede Playlist auf ihrem eigenen Server liegt, statt nur Plex zu nennen."
+    ]
+  },
   "0.2.0": {
     "lead": "Das ist nexmix 0.2: Neben Plex verbindest du jetzt auch Jellyfin und Music Assistant, und Playlisten ziehen zwischen den Servern um. Was es in 0.1 gab, bleibt, wie es war.",
     "sections": [
       {
         "title": "Jellyfin und Music Assistant",
         "body": "Neben Plex kommen Jellyfin und Music Assistant als Medienserver dazu, auch mehrere vom selben Typ. Jellyfin verbindest du mit Quick Connect oder einem API-Schlüssel und wählst den Benutzer, dem die Playlisten dort gehören. Für Music Assistant gibst du einen langlebigen Admin-Token ein und wählst die Anbieter, deren Titel zählen.",
-        "where": "Einstellungen › Server › Server hinzufügen"
+        "where": "Einstellungen › Server › Medienserver › Server hinzufügen"
       },
       {
         "title": "Eine Quelle je Playlist",
@@ -20,7 +39,7 @@
       {
         "title": "Alle auf einmal übernehmen",
         "body": "Für den Umstieg nimmt „Alle übernehmen …“ alle Playlisten der anderen Server mit, als Spiegel oder verschoben, mit derselben Vorschau. Es läuft im Hintergrund und kann den alten Server danach trennen, ohne dass eine Playlist verloren geht.",
-        "where": "Einstellungen › Server, Karte des neuen Servers"
+        "where": "Einstellungen › Server › Medienserver › Alles übernehmen"
       },
       {
         "title": "Abgleich, während du zusiehst",
@@ -67,7 +86,7 @@
       {
         "title": "In Plex, in beide Richtungen",
         "body": "Der Betreiber verbindet Plex über die Anmeldung bei plex.tv. Was in nexmix passiert, landet zwei Sekunden später in Plex. Was in Plex oder Plexamp hinzukommt, umbenannt oder entfernt wird, kommt in nexmix an, und vorhandene Playlisten von Plex erscheinen hier. Ändern beide Seiten zugleich, gehen keine Titel verloren.",
-        "where": "Einstellungen › Plex"
+        "where": "Einstellungen › Server › Medienserver"
       },
       {
         "title": "Gäste per Link",
@@ -77,7 +96,7 @@
       {
         "title": "Konten und Anmeldung",
         "body": "Mitglieder bekommen eine Einladung und ein eigenes Konto, mit Passwort oder über einen Anmeldeanbieter wie authentik, Pocket ID oder Microsoft Entra ID. Dazu ein zweiter Faktor und Passkeys. Ein Plex-Konto braucht niemand außer dem Betreiber.",
-        "where": "Einstellungen › Anmeldung"
+        "where": "Einstellungen › Server › Anmeldung"
       }
     ],
     "smallTitle": "Außerdem",

@@ -31,6 +31,8 @@
     "textReady": "{{tracks}} tracks from your Plex library “{{library}}” · everything ends up as a playlist in Plex, and so in Plexamp and Music Assistant too.",
     "textReadyJellyfin": "{{tracks}} tracks from your Jellyfin library “{{library}}” · everything ends up as a playlist in Jellyfin.",
     "textReadyMa": "{{tracks}} tracks from Music Assistant ({{library}}) · everything ends up as a playlist in Music Assistant.",
+    "textReadyMany": "Music from {{servers}} · each playlist lies on the server it takes its tracks from, and is in that server's apps too.",
+    "serverShort": "{{name}} ({{kind}})",
     "notConnectedMember": "The operator has not connected a media server yet. As soon as the library is in, you can start here.",
     "loading": "Fetching the catalogue …",
     "loadingText": "The whole library once, after that only what is new. With a large library this takes a few minutes.",
@@ -61,6 +63,15 @@
     "smartShow": "Show smart playlists from Plex",
     "more": "More for {{name}}",
     "hide": "Hide",
+    "menu": {
+      "open": "Open",
+      "rename": "Rename …",
+      "share": "Share …",
+      "invite": "Invite guests …",
+      "delete": "Delete …"
+    },
+    "renameTitle": "Rename playlist",
+    "renameText": "A new name for “{{name}}”. It holds on the playlist's server too.",
     "hidden": {
       "title": "Hidden",
       "text": "Hidden from your overview only. In Plex and for everybody else, everything stays as it is.",
@@ -146,15 +157,16 @@
     "saved": "Saved.",
     "ownPassword": "Your own password",
     "parts": {
-      "accounts": "Accounts",
+      "servers": "Media servers",
       "signin": "Sign-in",
+      "accounts": "Accounts",
+      "guests": "Guests",
       "mail": "Mail",
       "push": "Web Push",
       "backup": "Backup",
       "languages": "Languages",
       "log": "Log",
-      "api": "API",
-      "plex": "Plex"
+      "api": "API"
     },
     "language": {
       "title": "Language",
@@ -468,7 +480,7 @@
     "hours": "Valid (hours)",
     "preview": "Allow listening in",
     "previewHint": "30 seconds from a good third into the track, passed through nexmix. Your Plex key stays on the server.",
-    "previewOffServer": "Listening in is switched off on this server (Settings › Plex).",
+    "previewOffServer": "Listening in is switched off on this server (Settings › Server › Media servers).",
     "there": "Joined",
     "added_one": "added {{count}} track",
     "added_other": "added {{count}} tracks",
@@ -1718,7 +1730,8 @@
     "disconnect": "Disconnect server",
     "disconnectTitle": "Disconnect \"{{name}}\"?",
     "disconnectText": "nexmix forgets the token and the catalogue with {{tracks}} tracks. Playlists that take their tracks from this server stay in nexmix, but search, suggestions and listening in only work again once you connect it again. Only connecting again brings this back. Nothing changes on the server itself. nexmix forgets the mirrors of playlists on this server; the playlists there stay as they are.",
-    "addMa": "Music Assistant"
+    "addMa": "Music Assistant",
+    "transferTab": "Take all over"
   },
   "jellyfin": {
     "title": "Jellyfin",

@@ -39,7 +39,8 @@ another into a few clicks.
 - **Mirrors, copying and moving.** "Copy to …" puts a playlist on another server as well, as a mirror kept in step
   both ways or once as a playlist of its own; "Move to …" makes another server its source. A preview says first how
   many tracks were found there, and what is missing or unsure is matched by hand or left out. "Take all over" does
-  it for every playlist at once.
+  it for every playlist at once. Copying, moving, sharing, inviting guests, renaming and deleting work from the
+  editor and from the menu "…" of the playlist's card alike.
 - **Guests by a link or a QR code.** A guest types a name, with no account and no app, and sees only that one
   playlist. The invitation says whether guests may add, sort and listen in, how many tracks each may bring and how
   long it lasts; ending it or taking a guest out works at once.
@@ -92,8 +93,8 @@ docker compose up -d
 ```
 
 Open `http://127.0.0.1:8620`. The first account is the operator; it needs the setup code from `docker logs nexmix`.
-Then, in **Settings, Server**, connect a media server ([below](#media-servers)) and wait for its first catalogue (a
-library of 50,000 tracks takes a minute or a few).
+Then, in **Settings, Server, Media servers**, connect a media server ([below](#media-servers)) and wait for its first
+catalogue (a library of 50,000 tracks takes a minute or a few).
 A second factor is not required from the start; for a server on the internet, turn it on in **Settings, Sign-in**
 ("Ready for the internet?" says so).
 `docker-compose.yml` in this repository builds from source and explains every option.
@@ -113,11 +114,12 @@ old state is made first and kept in `data/backups/` (**Settings, Backup** restor
 ## Media servers
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/servers-dark.webp"><img src="docs/screenshots/servers.webp" alt="The media servers in the settings: Plex, Jellyfin and Music Assistant" width="760"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/servers-dark.webp"><img src="docs/screenshots/servers.webp" alt="The media servers in the settings: a tab for each of Plex, Jellyfin and Music Assistant, the Plex card open" width="760"></picture>
 </p>
 
-Every server is connected in **Settings, Server**; the first one is the source of a new playlist unless another is
-chosen. Give nexmix an address it reaches directly, best one inside your own network.
+Every server is connected in **Settings, Server, Media servers**; with more than one, each has a tab of its own there,
+beside "Add a server" and "Take all over". The first one is the source of a new playlist unless another is chosen.
+Give nexmix an address it reaches directly, best one inside your own network.
 
 ### Plex
 
@@ -226,7 +228,7 @@ providers, mail, Web Push, backups, the log, API keys.
 nexmix speaks plain HTTP on port 8000 inside the container. For anything beyond your own machine, put a reverse proxy
 with https in front, set `NEXMIX_PUBLIC_URL` (or **Settings, Sign-in, Public address**) and name the proxy in
 `NEXMIX_TRUSTED_PROXIES`, so that the brakes against guessing see the real sender and cookies are marked secure.
-**Settings, Ready for the internet?** checks all of it.
+**Settings, Sign-in, Ready for the internet?** checks all of it.
 
 The live updates of an open playlist and listening in are long answers: the proxy must pass them on as they come and
 not cut them after a few seconds. Caddy does that as it is:
