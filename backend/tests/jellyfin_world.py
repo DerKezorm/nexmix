@@ -30,9 +30,10 @@ def quick_connect(client: TestClient, fake: FakeJellyfin, url: str = ADDRESS, us
     return connected.json()
 
 
-def connect(client: TestClient, fake: FakeJellyfin, *, user: str = "Erika", run: bool = True) -> int:
+def connect(client: TestClient, fake: FakeJellyfin, *, user: str = "Erika", run: bool = True,
+            url: str = ADDRESS) -> int:
     """Connected by Quick Connect, the music library and the user chosen, the catalogue fetched. Returns the server."""
-    found = quick_connect(client, fake)
+    found = quick_connect(client, fake, url)
     server = int(found["server"]["id"])
     if found["server"]["library"] is None:
         assert client.put(f"/api/v1/jellyfin/{server}/library",

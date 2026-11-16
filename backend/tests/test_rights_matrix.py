@@ -77,6 +77,7 @@ BODIES: dict[tuple[str, str], Any] = {
     ("POST", "/api/v1/playlists/{playlist_id}/move"): {"server": 2},
     ("PUT", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}"): {"track": None},
     ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take"): {"track": 301},
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/emptied"): {"empty": False},
 }
 #: What one who may only see a playlist reaches of it.
 VIEW = {("GET", "/api/v1/playlists/{playlist_id}"), ("GET", "/api/v1/playlists/{playlist_id}/events"),

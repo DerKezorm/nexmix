@@ -221,38 +221,6 @@
         "title": "ChoiceIn",
         "type": "object"
       },
-      "ChoicesIn": {
-        "properties": {
-          "choices": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "maximum": 1000000000000.0,
-                  "minimum": 1.0,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "maxProperties": 50000,
-            "title": "Choices",
-            "type": "object"
-          },
-          "server": {
-            "maximum": 1000000000.0,
-            "minimum": 1.0,
-            "title": "Server",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "server"
-        ],
-        "title": "ChoicesIn",
-        "type": "object"
-      },
       "CodeIn": {
         "properties": {
           "code": {
@@ -386,6 +354,19 @@
           "email"
         ],
         "title": "EmailIn",
+        "type": "object"
+      },
+      "EmptiedIn": {
+        "properties": {
+          "empty": {
+            "title": "Empty",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "empty"
+        ],
+        "title": "EmptiedIn",
         "type": "object"
       },
       "ForgotIn": {
@@ -867,6 +848,43 @@
           "new"
         ],
         "title": "PasswordChangeIn",
+        "type": "object"
+      },
+      "PreviewIn": {
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 50000,
+            "title": "Choices",
+            "type": "object"
+          },
+          "move": {
+            "default": false,
+            "title": "Move",
+            "type": "boolean"
+          },
+          "server": {
+            "maximum": 1000000000.0,
+            "minimum": 1.0,
+            "title": "Server",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "PreviewIn",
         "type": "object"
       },
       "ProfileIn": {
@@ -8976,7 +8994,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChoicesIn"
+                "$ref": "#/components/schemas/PreviewIn"
               }
             }
           },
@@ -9065,6 +9083,78 @@
           }
         ],
         "summary": "Let go of a mirror: the playlist on that server stays as it is, nexmix no longer keeps it in step",
+        "tags": [
+          "mirrors"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/emptied": {
+      "post": {
+        "operationId": "answer_emptied_api_v1_playlists__playlist_id__mirrors__server_id__emptied_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "maximum": 4611686018427387904,
+              "minimum": 1,
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptiedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Answer Emptied Api V1 Playlists  Playlist Id  Mirrors  Server Id  Emptied Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Answer a mirror emptied on its server: empty the playlist everywhere too, or keep it (the mirror is filled again)",
         "tags": [
           "mirrors"
         ]
@@ -10960,6 +11050,55 @@
       }
     },
     "/api/v1/servers/{server_id}/transfer/preview": {
+      "get": {
+        "operationId": "transfer_preview_state_api_v1_servers__server_id__transfer_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000,
+              "minimum": 1,
+              "title": "Server Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transfer Preview State Api V1 Servers  Server Id  Transfer Preview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Take all over: how the last preview to this server stands (``running`` with how many playlists are done, ``done`` with its result, ``stopped``, ``failed``; null: none)",
+        "tags": [
+          "servers"
+        ]
+      },
       "post": {
         "operationId": "transfer_preview_api_v1_servers__server_id__transfer_preview_post",
         "parameters": [
@@ -10986,7 +11125,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -11014,7 +11153,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Take all over: what copying or moving every playlist of the other servers here would find. Nothing is written",
+        "summary": "Take all over: begin finding out, in the background, what copying or moving every playlist of the other servers here would find. Nothing is written; its progress and result come from ``GET``",
         "tags": [
           "servers"
         ]

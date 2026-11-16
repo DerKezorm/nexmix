@@ -14,7 +14,7 @@ import { useConfirm } from '../../components/useConfirm'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
 import { kindName } from '../../lib/servers'
-import { chosen } from '../../lib/choices'
+import { chosen, withChoices } from '../../lib/choices'
 import { PreviewCount, PreviewRows } from './MirrorParts'
 
 export type CopyMode = 'copy' | 'move'
@@ -48,18 +48,20 @@ export function CopyDialog({
   const server = targets.find((one) => one.id === target) ?? null
   const label = server ? `${server.name} (${kindName(server.kind)})` : ''
 
+  // Asked once per target; choices by hand are counted here (`withChoices`), not by a new preview, and belong to the
+  // target they were made for (a new target starts without).
   useEffect(() => {
     if (target === null) return
     let gone = false
     setProblem(null)
     mirrorsApi
-      .preview(playlistId, target, chosen(choices))
+      .preview(playlistId, target, {}, mode === 'move')
       .then((found) => !gone && setPreview(found))
       .catch((error) => !gone && setProblem(errorText(error?.code ?? 'internal_error')))
     return () => {
       gone = true
     }
-  }, [playlistId, target, choices])
+  }, [playlistId, target, mode])
 
   const choose = useCallback((track: number, choice: number | null | undefined) => {
     setChoices((now) => {
@@ -108,7 +110,10 @@ export function CopyDialog({
         <span className="text-sm font-semibold">{t('mirror.target')}</span>
         <div className="seg small" role="group" aria-label={t('mirror.target')} data-testid="mirror-targets">
           {targets.map((one) => (
-            <button key={one.id} type="button" className={one.id === target ? 'on' : ''} aria-pressed={one.id === target} onClick={() => setTarget(one.id)}>
+            <button key={one.id} type="button" className={one.id === target ? 'on' : ''} aria-pressed={one.id === target} onClick={() => {
+                if (one.id !== target) setChoices({})
+                setTarget(one.id)
+              }}>
               {one.name} ({kindName(one.kind)})
             </button>
           ))}
@@ -138,7 +143,7 @@ export function CopyDialog({
       </p>
       {preview && preview.server === target && (
         <div className="mt-3">
-          <PreviewCount preview={preview} />
+          <PreviewCount preview={withChoices(preview, choices)} />
           <PreviewRows preview={preview} target={preview.server} choices={choices} onChoose={choose} />
         </div>
       )}

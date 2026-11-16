@@ -78,6 +78,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import threading
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -279,7 +280,8 @@ def restored(db: Session, playlist_id: int) -> None:
 def dropping(db: Session, playlist_id: int) -> None:
     """The playlist goes for good: a copy still on a server is deleted there first (the row stays without the playlist
     until then, so the server's list never brings it back as a new one). A copy on a server that rests goes once that
-    server is back and still lists it (``Round.run``)."""
+    server is back and still lists it (``Round.run``). A mirror let go of (``mirrors.LET_GO``) is never deleted
+    there."""
     for row in db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id)
                           .execution_options(populate_existing=True)).all():
         if row.ext_key is None or (row.gone_there and row.resume):
@@ -516,6 +518,12 @@ def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
     result = _poll_result.get(ident, {})
     at = result.get("at")
     missing = _missing_note.get(ident)
+    # Mirrors on this server emptied there and waiting for an answer: several at once say more of the server than of
+    # the playlists (a library made anew), the server's card says so.
+    emptied = sum(1 for note in db.scalars(select(ServerPlaylist.note).join(
+        Playlist, Playlist.id == ServerPlaylist.playlist_id).where(
+        ServerPlaylist.server_id == ident, ServerPlaylist.mirror.is_(True), Playlist.deleted_at.is_(None),
+        ServerPlaylist.note.is_not(None))) if isinstance(note, dict) and note.get("emptied"))
     # A server whose list carries a mark of every change (Jellyfin's ``Etag``) shows an order changed there at the next
     # look; Plex's only when the playlist is read again.
     marked = server is not None and sources.capabilities(server.kind).entries == "track"
@@ -530,6 +538,8 @@ def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
         "poll_error": result.get("error"),
         # Several playlists missing from the server's list at once: none went to the trash, the list is looked at on.
         "missing": int(missing.get("count") or 0) if missing else 0,
+        # Mirrors here emptied there, waiting for an answer at their playlist (none taken over).
+        "emptied": emptied,
     }
 
 
@@ -871,6 +881,13 @@ class Round:
             self._resume(row)
             db.commit()
         if playlist is None:
+            if row.settle == mirrors.LET_GO and not row.mirror:
+                # A mirror let go of, its playlist gone for good: the copy there is the server's, never deleted ("it
+                # stays there as it is"). The row stays without the playlist, so that the server's list never brings
+                # the copy in as a new playlist.
+                row.due_at, row.state = None, SYNCED
+                db.commit()
+                return
             if row.ext_key is not None:
                 self.source.delete(row.ext_key)
                 logger.info("Playlist deleted on the server server=%s", self.server_id)
@@ -1253,6 +1270,9 @@ class Round:
             self._make(playlist_id)
         if self.mirror:
             mirrors.prepare(self, playlist_id)
+        else:
+            # Tracks dropped from a mirror that became the source before they were taken out there.
+            mirrors.drop_discarded(self, playlist_id)
         found = self._read(playlist_id)
         if found is None:
             return
@@ -1260,6 +1280,8 @@ class Round:
         if info.smart and self.mirror:
             # Made a smart playlist on the mirror's server meanwhile: no mirror can be kept there.
             raise PlexError("mirror_smart")
+        if self.mirror and self._emptied(playlist_id):
+            return
         if info.smart:
             # Made a smart playlist on the server meanwhile: read only from now on.
             self.row.smart = True
@@ -1299,6 +1321,47 @@ class Round:
             self._go_on(plan, remote, fresh)
             return
         self._keep(plan, fresh, info, wrote)
+
+    def _emptied(self, playlist_id: int) -> bool:
+        """A mirror emptied on its server (it holds nothing, the state both sides last agreed on held entries nexmix
+        still has): never taken over by itself, neither into nexmix nor to the source or the other mirrors. The mirror
+        waits with its note (``emptied``) until somebody answers "empty it here too" or "keep" (``mirrors.emptied``);
+        meanwhile nothing is written there. A mirror filled again there goes on as before. Returns whether it waits."""
+        from . import playlists
+
+        db = self.db
+        row = self.fresh_row()
+        note = dict(row.note) if isinstance(row.note, dict) else {}
+        if self.raw_tracks:
+            if note.pop("emptied", None) is not None:
+                row.note = note or None
+                db.commit()
+                logger.info("Mirror filled again on its server playlist=%s server=%s", playlist_id, self.server_id)
+                mirrors._tell(db, playlist_id, "mirror_filled")
+            return False
+        new = note.get("emptied") is None
+        if new:
+            writing = row.writing if isinstance(row.writing, dict) else None
+            agreed = {kept.track for kept in _base_of(None, row.base)} - _unwritten(writing)
+            items = playlists.live_items(db, playlist_id)
+            playlist = db.get(Playlist, playlist_id)
+            source = int(playlist.source_server_id or 0) if playlist is not None else 0
+            side = mirrors.side(db, self.ident, items, source)
+            here = {track for track in side.track_of.values() if track is not None}
+            lost = len(agreed & here)
+            db.rollback()
+            if not lost:
+                return False
+            row = self.fresh_row()
+            note["emptied"] = {"at": clock.now().isoformat(), "count": lost}
+            row.note = note
+            logger.warning("Mirror emptied on its server, nothing taken over playlist=%s server=%s count=%s",
+                           playlist_id, self.server_id, lost)
+        row.state, row.error, row.tries, row.due_at, row.synced_at = SYNCED, "", 0, None, clock.now()
+        db.commit()
+        if new:
+            mirrors._tell(db, playlist_id, "mirror_emptied")
+        return True
 
     def _held_back(self, snapshot: Snapshot, remote_tracks: set[int]) -> set[int]:
         """Tracks of nexmix not offered to the server this time: refused by it and not due to be tried again, refused
@@ -1807,22 +1870,51 @@ class _Catalogue(match.Finder):
     """The live catalogue of a server as ``match.py`` searches it, with each track's album."""
 
     def __init__(self, candidates: list[match.Candidate], albums: dict[int, int]) -> None:
-        super().__init__(candidates)
+        super().__init__(candidates, pause=mirrors.breathe)
         self.albums = albums
 
 
-#: The catalogue of each server's live generation, kept while it is the live one (another server: every playlist asks
-#: the same). ``{server: (generation, catalogue)}``.
-_whole: dict[int, tuple[int, _Catalogue]] = {}
+#: The catalogue of each server's live generation, kept while it is the live one and in use (another server: every
+#: playlist of a move or a preview asks the same), and let go of ``KEEP_IDLE`` after its last use: with 50,000 tracks
+#: it holds some 50 MB. ``{server: (generation, catalogue, last use on clock.monotonic)}``.
+_whole: dict[int, tuple[int, _Catalogue, float]] = {}
+KEEP_IDLE = 120.0
+_whole_lock = threading.Lock()
+
+
+def forget_catalogue(server_id: int) -> None:
+    """The catalogue kept for ``server_id`` goes (a partial run keeps its generation, so it may be older)."""
+    with _whole_lock:
+        _whole.pop(server_id, None)
+
+
+def release_idle(now: float | None = None) -> int:
+    """The catalogues not used for ``KEEP_IDLE`` go (asked at every look at a server's list, and before a catalogue
+    is made). Returns how many went."""
+    moment = clock.monotonic() if now is None else now
+    with _whole_lock:
+        idle = [server for server, (_generation, _found, used) in _whole.items() if moment - used >= KEEP_IDLE]
+        for server in idle:
+            del _whole[server]
+        empty = not _whole
+    if idle and empty:
+        # The names ``match.py`` made comparable go with the last catalogue (they are made again on the next use).
+        match.forget_keys()
+    return len(idle)
 
 
 def _catalogue(db: Session, server_id: int) -> _Catalogue:
     from ..models import CatalogAlbum, CatalogArtist, CatalogTrack
 
     generation = media.generation_of(db, server_id)
-    kept = _whole.get(server_id)
-    if kept is not None and kept[0] == generation:
-        return kept[1]
+    now = clock.monotonic()
+    with _whole_lock:
+        kept = _whole.get(server_id)
+        if kept is not None and kept[0] == generation:
+            _whole[server_id] = (generation, kept[1], now)
+            return kept[1]
+        _whole.pop(server_id, None)
+    release_idle(now)
     albums = {row.id: (row.title, row.artist_id) for row in db.execute(
         select(CatalogAlbum.id, CatalogAlbum.title, CatalogAlbum.artist_id).where(
             CatalogAlbum.server_id == server_id, CatalogAlbum.generation == generation))}
@@ -1835,6 +1927,9 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
                                  CatalogTrack.shown, CatalogTrack.guid, CatalogTrack.mbid_track, CatalogTrack.number,
                                  CatalogTrack.disc).where(
             CatalogTrack.server_id == server_id, CatalogTrack.generation == generation)):
+        if len(candidates) % 2000 == 0:
+            # Made for a preview in the background: a pause now and then (else nothing).
+            mirrors.breathe()
         album_title, album_artist = albums.get(row.album_id, ("", row.artist_id))
         candidates.append(match.Candidate(
             id=int(row.id), title=str(row.title or ""), album=str(album_title or ""),
@@ -1844,7 +1939,8 @@ def _catalogue(db: Session, server_id: int) -> _Catalogue:
             number=int(row.number) if row.number else None, disc=int(row.disc) if row.disc else None))
         album_of[int(row.id)] = int(row.album_id or 0)
     found = _Catalogue(candidates, album_of)
-    _whole[server_id] = (generation, found)
+    with _whole_lock:
+        _whole[server_id] = (generation, found, clock.monotonic())
     return found
 
 
@@ -1932,6 +2028,8 @@ def run_poll(db: Session, job: Job) -> None:
         return
     _poll_result[server.id] = {"at": clock.now(), "error": None}
     _remember(server.id, listed)
+    # A catalogue kept for finding entries on another server goes when nobody used it for a while.
+    release_idle()
     take_in(db, server, listed, now_server, owned)
     # The looks leave no trail in the list of jobs (one every 15 seconds per server).
     db.execute(delete(Job).where(Job.kind == POLL, Job.state == "done", Job.id != job.id))

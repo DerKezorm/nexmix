@@ -31,9 +31,9 @@ def test_each_step_in_its_order() -> None:
         candidate(1, guid="plex://track/abc", title="Something Else", album="Other", artist="Nobody"),
         candidate(2, mbid="mb-1", title="Something Else", album="Other", artist="Nobody"),
         candidate(3),
-        candidate(4, album="Live at the Barn", duration=201_000),
-        # The album under another name: its places hold tracks of the same lengths.
-        candidate(5, title="Rafters (Barn Mix)", album="Barn Sessions", number=1, disc=1, duration=201_000),
+        candidate(4, album="Greatest Barns", duration=201_000),
+        # The album under another name: its places hold tracks of the same lengths, the title spelt nearly alike.
+        candidate(5, title="Rafter", album="Barn Sessions", number=1, disc=1, duration=201_000),
         candidate(6, title="Second", album="Barn Sessions", number=2, disc=1, duration=181_000),
         candidate(7, title="Third", album="Barn Sessions", number=3, disc=1, duration=239_000),
         candidate(8, album="Live at the Barn", artist="Lumen Crane", duration=260_000,
@@ -52,7 +52,7 @@ def test_each_step_in_its_order() -> None:
     assert order == [(1, "guid"), (2, "mbid"), (3, "album"), (4, "length"), (5, "renamed"), (8, "song"),
                      (9, "title")]
     assert [match.Found(every[0], how).sure for how in match.STEPS] == [True, True, True, True, True, True, False,
-                                                                        False]
+                                                                        False, False, False]
 
 
 def test_a_guid_only_its_own_server_knows_is_no_proof() -> None:

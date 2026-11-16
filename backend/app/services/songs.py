@@ -55,6 +55,8 @@ _SIDE = re.compile(
     r"\b(?:instrumentals?|karaoke|a cappella|acappella|a capella|acapella|live|remix(?:es|ed)?|mix|demo|"
     r"acoustic|akustik|edit|clean|take|sped up|slowed)\b"
 )
+#: The same, for other modules (``match.similar``).
+SIDE = _SIDE
 #: An album that holds nothing but side versions.
 _SIDE_ALBUM = re.compile(r"\b(?:karaoke|instrumentals?)\b")
 #: Where a name list of performers is cut for the first name.

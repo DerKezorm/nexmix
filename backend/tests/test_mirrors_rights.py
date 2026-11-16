@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models import OPERATOR
+from app.services import mirrors
 
 from .conftest import make_account, new_client
 from .fakejellyfin import FakeJellyfin
@@ -50,6 +51,8 @@ def _routes(playlist: int, jelly: int, entry: int, extra: int) -> list[tuple[str
         ("POST", f"{base}/mirrors/preview", {"server": jelly}, "manage"),
         ("PUT", f"{base}/mirrors/{jelly}/entries/{entry}", {"track": None}, "edit"),
         ("DELETE", f"{base}/mirrors/{jelly}/extras/{extra}", None, "edit"),
+        # Nothing emptied there: whoever may change the playlist hears "not found", the others are refused before.
+        ("POST", f"{base}/mirrors/{jelly}/emptied", {"empty": False}, "answer"),
         ("POST", f"{base}/move", {"server": jelly}, "manage"),
         ("DELETE", f"{base}/mirrors/{jelly}", None, "manage"),
     ]
@@ -77,7 +80,7 @@ def test_every_new_route_asks_for_the_right_right(setting: dict[str, Any], fake_
             status = setting[who].request(method, url, json=body).status_code
             wanted = {"stranger": (404,),
                       "reader": (200,) if need == "view" else (403,),
-                      "editor": (200, 204) if need in ("view", "edit") else (403,)}[who]
+                      "editor": (200, 204) if need in ("view", "edit") else (404,) if need == "answer" else (403,)}[who]
             if status not in wanted:
                 odd.append(f"{who} {method} {url} -> {status}")
         if guest.request(method, url, json=body).status_code not in (401, 403):
@@ -91,7 +94,13 @@ def test_every_new_route_asks_for_the_right_right(setting: dict[str, Any], fake_
                                  json={"mode": "mirror"}).status_code == 403
         assert setting[who].delete("/api/v1/servers/1").status_code == 403
     assert setting["operator"].post(f"/api/v1/servers/{jelly}/transfer/preview",
-                                    json={"mode": "move"}).status_code == 200
+                                    json={"mode": "move"}).status_code == 202
+    mirrors.wait_look(jelly)
+    for who in ("owner", "editor", "reader"):
+        assert setting[who].get(f"/api/v1/servers/{jelly}/transfer/preview").status_code == 403
+    assert guest.get(f"/api/v1/servers/{jelly}/transfer/preview").status_code in (401, 403)
+    looked = setting["operator"].get(f"/api/v1/servers/{jelly}/transfer/preview")
+    assert looked.status_code == 200 and looked.json()["preview"]["state"] == "done"
     assert setting["operator"].get(f"/api/v1/servers/{jelly}/transfer").status_code == 200
     assert setting["owner"].post(f"/api/v1/playlists/{playlist}/move", json={"server": jelly}).status_code == 200
     # Not one of Jellyfin's ids, its address or a token in any answer.

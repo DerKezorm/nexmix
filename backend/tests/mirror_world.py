@@ -104,6 +104,21 @@ def plex_tracks_here(playlist_id: int) -> list[int]:
     return [int(keys[track]) for track in local_tracks(playlist_id) if track in keys]
 
 
+def look(client: TestClient, server: int, body: dict[str, Any]) -> dict[str, Any]:
+    """The preview of "take all over" to ``server``, begun as the interface does and read at its end."""
+    from app.services import mirrors
+
+    begun = client.post(f"/api/v1/servers/{server}/transfer/preview", json=body)
+    assert begun.status_code == 202, begun.text
+    assert begun.json()["preview"]["state"] in ("running", "done")
+    mirrors.wait_look(server)
+    answer = client.get(f"/api/v1/servers/{server}/transfer/preview")
+    assert answer.status_code == 200, answer.text
+    state = answer.json()["preview"]
+    assert state["state"] == "done" and state["done"] == state["total"], state
+    return state["result"]
+
+
 def detail(client: TestClient, playlist_id: int) -> dict[str, Any]:
     answer = client.get(f"/api/v1/playlists/{playlist_id}")
     assert answer.status_code == 200, answer.text
@@ -121,6 +136,7 @@ __all__ = [
     "key_of",
     "keys_of",
     "local_titles",
+    "look",
     "mapping",
     "mirror_key",
     "plex_numbers",

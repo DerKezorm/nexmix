@@ -9,18 +9,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { transferApi, type Choices, type Preview, type Transfer } from '../../api/mirrors'
+import { transferApi, type Choices, type Looking, type Preview, type Transfer } from '../../api/mirrors'
 import type { MediaServer } from '../../api/servers'
 import { Dialog } from '../../components/Dialog'
 import { useConfirm } from '../../components/useConfirm'
 import { errorText } from '../../lib/errors'
 import { iso } from '../../lib/say'
 import { kindName } from '../../lib/servers'
-import { chosen } from '../../lib/choices'
+import { chosen, withChoices } from '../../lib/choices'
 import { PreviewCount, PreviewRows } from '../editor/MirrorParts'
 import { Button, Card, useAction } from './ui'
 
 const POLL_MS = 2000
+/** How often the dialog asks how far the preview got. */
+const LOOK_MS = 500
 
 function TransferDialog({ target, others, startWith, onClose, onStarted }: { target: MediaServer; others: MediaServer[]; startWith?: number | null; onClose: () => void; onStarted: (row: Transfer) => void }) {
   const { t } = useTranslation()
@@ -29,23 +31,37 @@ function TransferDialog({ target, others, startWith, onClose, onStarted }: { tar
   const [letGo, setLetGo] = useState<number | null>(startWith ?? null)
   const [choices, setChoices] = useState<Choices>({})
   const [preview, setPreview] = useState<Preview | null>(null)
+  const [progress, setProgress] = useState<Looking | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
   const { ask, dialog } = useConfirm()
   const name = `${target.name} (${kindName(target.kind)})`
 
+  // The preview is worked out on the server in the background (over every playlist it takes seconds): asked once per
+  // mode and server let go of, then read until it is done. Choices by hand are counted here (`withChoices`).
   useEffect(() => {
     let gone = false
+    let timer = 0
     setPreview(null)
+    setProgress(null)
     setProblem(null)
-    transferApi
-      .preview(target.id, mode, chosen(choices), mode === 'move' ? letGo : null)
-      .then((found) => !gone && setPreview(found))
-      .catch((error) => !gone && setProblem(errorText(error?.code ?? 'internal_error')))
+    const fail = (error: { code?: string } | undefined) => !gone && setProblem(errorText(error?.code ?? 'internal_error'))
+    const take = (found: Looking | null) => {
+      if (gone) return
+      if (found?.state === 'done' && found.result) {
+        setPreview(found.result)
+        setProgress(null)
+      } else if (found?.state === 'running') {
+        setProgress(found)
+        timer = window.setTimeout(() => transferApi.looking(target.id).then((now) => take(now.preview), fail), LOOK_MS)
+      } else fail({ code: found?.error ?? 'internal_error' })
+    }
+    transferApi.look(target.id, mode, mode === 'move' ? letGo : null).then((begun) => take(begun.preview), fail)
     return () => {
       gone = true
+      window.clearTimeout(timer)
     }
-  }, [target.id, mode, choices, letGo])
+  }, [target.id, mode, letGo])
 
   const choose = useCallback((track: number, choice: number | null | undefined) => {
     setChoices((now) => {
@@ -120,11 +136,20 @@ function TransferDialog({ target, others, startWith, onClose, onStarted }: { tar
             {t('transfer.playlists', { count: preview.playlists ?? 0 })}
             {(preview.smart ?? 0) > 0 && ` ${t('transfer.smart', { count: preview.smart ?? 0 })}`}
           </p>
-          <PreviewCount preview={preview} />
+          <PreviewCount preview={withChoices(preview, choices)} />
           <PreviewRows preview={preview} target={target.id} choices={choices} onChoose={choose} />
         </div>
       )}
-      {!preview && !problem && <p className="mt-3 text-sm text-muted">{t('mirror.looking')}</p>}
+      {!preview && !problem && (
+        <div className="mt-3" data-testid="transfer-looking">
+          <p className="text-sm text-muted">{progress && progress.total > 0 ? t('transfer.looking', { done: progress.done, total: progress.total }) : t('mirror.looking')}</p>
+          {progress && progress.total > 0 && (
+            <span className="meter mt-2" role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-label={t('mirror.looking')}>
+              <i style={{ width: `${Math.round((100 * progress.done) / progress.total)}%` }} />
+            </span>
+          )}
+        </div>
+      )}
       {problem && (
         <p role="alert" className="mt-3 text-sm text-bad">
           {problem}

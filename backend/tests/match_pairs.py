@@ -3,7 +3,7 @@ with the differences two servers really show, at fixed shares, and the truth kno
 syllables, nothing is real.
 
 What the second library does differently: some tracks are missing, some albums carry another name (with their tracks
-at the same places), some titles carry an edition note ("- Remastered 2011", "(Deluxe Edition)") or their guest in
+at the same places, some of their titles spelt a little otherwise), some titles carry an edition note ("- Remastered 2011", "(Deluxe Edition)") or their guest in
 another spelling, some lengths lie up to two seconds apart, some artists lose or gain a leading "The", and each library
 has versions of its own (a live album) that are no match for anything."""
 
@@ -72,8 +72,9 @@ def made_up_pair(tracks: int = 50_000, seed: int = 11) -> Pair:
                 there = title.upper()
             elif roll < 0.07:
                 there = f"{title} (feat. {_word(rng)})"
-            elif renamed and roll < 0.5:
-                there = f"{title} ({_word(rng)} Mix)"
+            elif renamed and roll < 0.5 and len(title) >= 9:
+                # On an album under another name, the title in another spelling too (one letter more).
+                there = f"{title}s"
             jitter = rng.randint(-2000, 2000) if rng.random() < 0.1 else 0
             ident = next_id
             next_id += 1

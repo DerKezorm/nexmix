@@ -21,6 +21,7 @@ from .mirror_world import (
     detail,
     jelly_titles,
     local_titles,
+    look,
     mapping,
     mirror_key,
     plex_numbers,
@@ -182,9 +183,8 @@ def test_take_all_over_in_the_background_stops_and_goes_on_after_a_restart(
         client: TestClient, world: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_plex, fake, jelly, _twins = world
     ids = [on_plex(client, fake_plex, f"Liste {number}", PLAYLIST[number:number + 3]) for number in range(4)]
-    found = client.post(f"/api/v1/servers/{jelly}/transfer/preview", json={"mode": "move"})
-    assert found.status_code == 200, found.text
-    assert (found.json()["playlists"], found.json()["entries"], found.json()["missing"]) == (4, 12, 1)
+    found = look(client, jelly, {"mode": "move"})
+    assert (found["playlists"], found["entries"], found["missing"]) == (4, 12, 1)
     # One playlist per slice.
     monkeypatch.setattr(mirrors, "TRANSFER_SLICE", 0.0)
     started = client.post(f"/api/v1/servers/{jelly}/transfer", json={"mode": "move"})
@@ -227,7 +227,7 @@ def test_take_all_over_stopped_ends_cleanly(client: TestClient, world: tuple,
         assert db.scalar(select(Transfer.state)) == "stopped"
         assert len(list(db.scalars(select(ServerPlaylist).where(ServerPlaylist.mirror.is_(True))))) == 1
     # A new one may start; it takes the two left (one is mirrored already).
-    again = client.post(f"/api/v1/servers/{jelly}/transfer/preview", json={"mode": "mirror"}).json()
+    again = look(client, jelly, {"mode": "mirror"})
     assert again["playlists"] == 2
 
 

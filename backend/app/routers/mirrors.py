@@ -33,6 +33,11 @@ class ChoicesIn(BaseModel):
     choices: dict[Track, Track | None] = Field(default_factory=dict, max_length=MAX_CHOICES)
 
 
+class PreviewIn(ChoicesIn):
+    #: For moving: entries found only by an unsure step are not taken unless chosen (copying takes them).
+    move: bool = False
+
+
 class CopyIn(ChoicesIn):
     #: Copy once: a new playlist with the target as its source, no tie to this one. Else a mirror kept in step.
     once: bool = False
@@ -72,12 +77,12 @@ def read_mirrors(playlist_id: PlaylistId, reader: Reader, db: DbSession) -> dict
 @router.post("/{playlist_id}/mirrors/preview",
              summary="What copying or moving the playlist to a server would find: the counts, and every entry not "
                      "found or found by an unsure step. Nothing is written")
-def preview(playlist_id: PlaylistId, payload: ChoicesIn, account: Account, db: DbSession) -> dict[str, Any]:
+def preview(playlist_id: PlaylistId, payload: PreviewIn, account: Account, db: DbSession) -> dict[str, Any]:
     playlist, _level = playlists.load(db, account, playlist_id, "manage")
     target = mirrors._target(db, payload.server)
     if playlist.source_server_id == target.id:
         raise error("same_server", "The playlist takes its tracks from this server already.", 409)
-    return mirrors.preview(db, [playlist_id], target.id, payload.choices)
+    return mirrors.preview(db, [playlist_id], target.id, payload.choices, preselect=not payload.move)
 
 
 @router.post("/{playlist_id}/mirrors", status_code=201,
@@ -134,6 +139,22 @@ def take_extra(playlist_id: PlaylistId, server_id: ServerId, extra_id: EntryId, 
                db: DbSession) -> dict[str, Any]:
     playlists.load(db, account, playlist_id, "edit")
     return mirrors.take_extra(db, account, playlist_id, server_id, extra_id, payload.track)
+
+
+class EmptiedIn(BaseModel):
+    #: True: empty the playlist everywhere too (asked first in the interface). False: keep it, the mirror is filled
+    #: again.
+    empty: bool
+
+
+@router.post("/{playlist_id}/mirrors/{server_id}/emptied",
+             summary="Answer a mirror emptied on its server: empty the playlist everywhere too, or keep it (the mirror "
+                     "is filled again)")
+def answer_emptied(playlist_id: PlaylistId, server_id: ServerId, payload: EmptiedIn, account: Account,
+                   db: DbSession) -> dict[str, Any]:
+    playlists.load(db, account, playlist_id, "edit")
+    mirrors.emptied(db, account, playlist_id, server_id, payload.empty)
+    return _view(db, playlist_id)
 
 
 @router.delete("/{playlist_id}/mirrors/{server_id}/extras/{extra_id}", status_code=204,

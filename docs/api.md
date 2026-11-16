@@ -249,14 +249,17 @@ good, the playlist takes its mirrors from their servers too. Cards and the playl
 
 - `GET /{id}/mirrors` (whoever sees the playlist): `{"mirrors": [{"server", "kind", "name", "state" (`synced`,
   `pending`, `waiting`, `error`, `gone`, `off`), "error", "synced_at", "absent" (entries without a track there),
-  "extras": [{"id", "title", "artist", "album", "duration"}]}]}`.
-- `POST /{id}/mirrors/preview` `{"server", "choices"}` (the owner and the operator): what copying or moving to the
-  server would find, nothing written: `entries`, `found`, `unsure`, `missing`, and `rows` for every entry not found or
+  "extras": [{"id", "title", "artist", "album", "duration"}], "emptied" (`{"at", "count"}` when the mirror was
+  emptied on its server and waits for an answer, else null)}]}`.
+- `POST /{id}/mirrors/preview` `{"server", "choices", "move"}` (the owner and the operator): what copying or moving to
+  the server would find, nothing written: `entries`, `found`, `unsure`, `missing`, `preselect`, and `rows` for every entry not found or
   found by an unsure step (by its `track`, the same track of several entries once, with `count`): `title`, `artist`,
   `album`, `duration`, `how`, `found` (the track of the target, `{"track", "title", "artist", "album", "duration"}`,
   or null), at most 2,000 (`more` says how many beyond). `choices` maps an entry's track to a track of the target
   (`hand`) or null (`skip`); a track of another server is not taken. Search the target's catalogue for a choice with
-  `GET /api/v1/catalog/search?server=`.
+  `GET /api/v1/catalog/search?server=`. Copying takes an entry found by an unsure step (`preselect` true, it counts as
+  found); moving (`"move": true`) and taking all over only offer it (`preselect` false): it counts as found once its
+  track is chosen, else the entry keeps its own track and says it is not on the new source.
 - `POST /{id}/mirrors` `{"server", "choices", "once"}` (the owner and the operator, `201`): a mirror on the server,
   synced at once (`409 already_mirrored`, `same_server`, `smart_stays`: a smart playlist stays on its own server,
   `in_trash`, `server_not_ready`). With `"once": true` instead a new playlist with the server as its source and the
@@ -274,11 +277,20 @@ good, the playlist takes its mirrors from their servers too. Cards and the playl
 - `POST /{id}/mirrors/{server}/extras/{extra}/take` `{"track"}`: a track only in the mirror taken over as a track of
   the source, a new entry at the end standing for the mirror's track (the answer is the change, as for `items`).
   `DELETE /{id}/mirrors/{server}/extras/{extra}`: dropped; it is taken out of the mirror at its next sync.
+- `POST /{id}/mirrors/{server}/emptied` `{"empty"}` (whoever may change the playlist): the answer to a mirror emptied
+  on its server, which nexmix never takes over by itself. `true` empties the playlist everywhere (in nexmix, on the
+  source and every mirror), `false` keeps it and fills the mirror again (`404` when nothing waits for an answer). The
+  sync summary of a server (`GET /api/v1/plex/playlists`, `GET /api/v1/jellyfin/{id}/playlists`) counts the mirrors
+  there that wait (`emptied`).
 
 **Take all over** (the operator, in a browser): `POST /api/v1/servers/{id}/transfer/preview` `{"mode", "source",
-"choices"}` is the same preview over every playlist of the other servers (`source`: of that one) not in the trash,
-with `playlists` (how many) and `smart` (smart playlists stay where they are); `mode` `mirror` leaves out the ones
-mirrored there already. `POST /api/v1/servers/{id}/transfer` `{"mode", "old", "choices", "source", "disconnect"}`
+"choices"}` (`202`) begins the same preview over every playlist of the other servers (`source`: of that one) not in the
+trash, in the background (over a large library it takes seconds; the same one asked again while it runs is not begun
+twice). `GET /api/v1/servers/{id}/transfer/preview` says how it stands: `{"preview": {"state" (`running`, `done`,
+`stopped`, `failed`), "done", "total" (playlists), "error", "result"}}`, null when none was asked for; `result` (once
+`done`) is the preview as above with `playlists` (how many) and `smart` (smart playlists stay where they are); `mode`
+`mirror` leaves out the ones mirrored there already. Choices by hand need no new preview: a row chosen a track counts
+as found and sure, one left out as not found. `POST /api/v1/servers/{id}/transfer` `{"mode", "old", "choices", "source", "disconnect"}`
 (`202`) starts it in the background, one playlist after another between the syncs; `disconnect` (with `mode` `move`)
 lets go of that server once none of its playlists is left on it. `GET /api/v1/servers/{id}/transfer` says how it
 stands (`state` `running`, `done`, `stopped`, `failed`; `total`, `done`, `skipped`; `error` `still_source` when the

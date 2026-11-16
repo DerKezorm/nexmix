@@ -61,7 +61,7 @@ def after_run(db: Session, server_id: int) -> int:
             continue
         if catalogue is None:
             # A partial run keeps the generation: the catalogue kept for it may be older than this run.
-            sync._whole.pop(server_id, None)
+            sync.forget_catalogue(server_id)
             catalogue = sync._catalogue(db, server_id)
             db.rollback()
         found_in_all += _relink(db, playlist_id, server_id, catalogue)

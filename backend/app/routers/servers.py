@@ -60,15 +60,22 @@ class TransferIn(TransferPreviewIn):
     disconnect: Annotated[int, Field(ge=1, le=10**9)] | None = None
 
 
-@router.post("/{server_id}/transfer/preview",
-             summary="Take all over: what copying or moving every playlist of the other servers here would find. "
-                     "Nothing is written")
+@router.post("/{server_id}/transfer/preview", status_code=202,
+             summary="Take all over: begin finding out, in the background, what copying or moving every playlist of "
+                     "the other servers here would find. Nothing is written; its progress and result come from "
+                     "``GET``")
 def transfer_preview(server_id: ServerId, payload: TransferPreviewIn, _operator: OperatorAccount,
                      db: DbSession) -> dict[str, Any]:
-    target = mirrors._target(db, server_id)
-    chosen, smart = mirrors.candidates(db, target.id, payload.mode, payload.source)
-    found = mirrors.preview(db, chosen, target.id, payload.choices)
-    return {**found, "playlists": len(chosen), "smart": smart}
+    return {"preview": mirrors.start_look(db, server_id, payload.mode, payload.source, payload.choices)}
+
+
+@router.get("/{server_id}/transfer/preview",
+            summary="Take all over: how the last preview to this server stands (``running`` with how many playlists "
+                    "are done, ``done`` with its result, ``stopped``, ``failed``; null: none)")
+def transfer_preview_state(server_id: ServerId, _operator: OperatorAccount, db: DbSession) -> dict[str, Any]:
+    if media.get(db, server_id) is None:
+        raise error("not_found", "Not found.", 404)
+    return {"preview": mirrors.look_of(server_id)}
 
 
 @router.post("/{server_id}/transfer", status_code=202,

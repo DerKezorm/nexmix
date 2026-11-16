@@ -82,7 +82,13 @@ def test_a_renamed_album_needs_most_of_its_places_to_agree() -> None:
     assert match.Finder(few).find(wanted) is None
     more = few + [candidate(20 + number, title=f"Other {number}", album="Barn Sessions", number=number, disc=1,
                             duration=200_000 + number * 10_000) for number in range(5, 7)]
+    # Another title at the entry's place: worth a look only (another song, or a remix).
     found = match.Finder(more).find(wanted)
+    assert found is not None and (found.track.id, found.how) == (11, "place") and not found.sure
+    # The title there spelt nearly alike: the same track.
+    alike = [candidate(11, title="Rafter", album="Barn Sessions", number=1, disc=1, duration=210_000),
+             *more[1:]]
+    found = match.Finder(alike).find(wanted)
     assert found is not None and (found.track.id, found.how) == (11, "renamed") and found.sure
     # Never without the places of the album, and never two seconds beyond the tolerance.
     assert match.Finder(more).find(Wanted(title="Rafters", artist="Lumen Crane", album="Attic Tapes",

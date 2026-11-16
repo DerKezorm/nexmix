@@ -151,12 +151,40 @@ export function MirrorNotes({ playlistId, name, mirrors, source, canEdit, canMan
       setProblem(errorText((error as { code?: string }).code ?? 'internal_error'))
     }
   }
-  const notes = mirrors.filter((mirror) => mirror.state === 'gone' || mirror.extras.length > 0)
+  const notes = mirrors.filter((mirror) => mirror.state === 'gone' || mirror.extras.length > 0 || mirror.emptied)
   if (!notes.length && !problem) return null
   return (
     <>
       {notes.map((mirror) => {
         const server = mirror.name || kindName(mirror.kind)
+        if (mirror.emptied)
+          return (
+            <div className="note" role="status" key={`emptied-${mirror.server}`} data-testid="mirror-emptied">
+              <b>{t('mirror.emptiedTitle', { server: iso(server) })}</b>
+              {t('mirror.emptiedText', { server: iso(server), name: iso(name), count: mirror.emptied.count })}
+              {canEdit && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      ask({
+                        title: t('mirror.emptyTooTitle'),
+                        text: t('mirror.emptyTooText', { name: iso(name) }),
+                        confirm: t('mirror.emptyToo'),
+                        run: () => run(() => mirrorsApi.emptied(playlistId, mirror.server, true), t('mirror.emptyTooDone')),
+                      })
+                    }
+                  >
+                    {t('mirror.emptyToo')}
+                  </button>
+                  <button type="button" className="btn ghost" onClick={() => void run(() => mirrorsApi.emptied(playlistId, mirror.server, false), t('mirror.keptFull', { server: iso(server) }))}>
+                    {t('mirror.keepFull')}
+                  </button>
+                </div>
+              )}
+            </div>
+          )
         if (mirror.state === 'gone')
           return (
             <div className="note" role="status" key={`gone-${mirror.server}`} data-testid="mirror-gone">

@@ -1,7 +1,8 @@
 /**
  * What the dialogs of copying and moving share: the count of the preview ("N of M found, K of them worth a look"), the
  * list of the entries not found or found unsure, each with "match otherwise" (a search in the target's catalogue) and
- * "leave out", and the search itself. Choices are kept by the entry's track; the preview is asked anew after each.
+ * "leave out", and the search itself. Choices are kept by the entry's track and counted here (`withChoices`). When
+ * moving and taking all over, an unsure finding is only offered: "take it" one by one, or "take every unsure one".
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
 import type { Choices, Preview, PreviewRow } from '../../api/mirrors'
 import type { TrackHit, TrackResult } from '../../lib/catalogSearch'
+import { isUnsure, takeUnsure } from '../../lib/choices'
 import { clock } from '../../lib/music'
 import { iso } from '../../lib/say'
 
@@ -63,11 +65,14 @@ export function TrackPicker({ server, start, onPick, onCancel, label }: { server
 export function PreviewCount({ preview }: { preview: Preview }) {
   const { t, i18n } = useTranslation()
   const number = (value: number) => value.toLocaleString(i18n.language)
+  // Offered only (moving, taking all over): the unsure ones are neither found nor missing until chosen.
+  const offered = preview.preselect === false
+  const missing = preview.missing - (offered ? Math.max(0, preview.unsure) : 0)
   return (
     <p className="previewcount" data-testid="mirror-count" role="status">
       <b>{t('mirror.found', { found: number(preview.found), count: number(preview.entries) })}</b>
-      {preview.unsure > 0 && <span>{t('mirror.unsure', { count: preview.unsure, number: number(preview.unsure) })}</span>}
-      {preview.missing > 0 && <span>{t('mirror.missingCount', { count: preview.missing, number: number(preview.missing) })}</span>}
+      {preview.unsure > 0 && <span>{t(offered ? 'mirror.unsureOpen' : 'mirror.unsure', { count: preview.unsure, number: number(preview.unsure) })}</span>}
+      {missing > 0 && <span>{t('mirror.missingCount', { count: missing, number: number(missing) })}</span>}
     </p>
   )
 }
@@ -78,11 +83,32 @@ export function PreviewRows({ preview, target, choices, onChoose }: { preview: P
   const [picking, setPicking] = useState<number | null>(null)
   const [named, setNamed] = useState<Record<number, TrackHit>>({})
   if (!preview.rows.length) return <p className="text-sm text-muted">{t('mirror.allFound')}</p>
+  const offering = preview.preselect === false
+  const open = offering ? preview.rows.filter((row) => isUnsure(row) && choices[row.track] === undefined) : []
   return (
     <div className="previewrows soft-scroll" data-testid="mirror-rows">
+      {offering && preview.rows.some(isUnsure) && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="mirror-offered">
+          <p className="grow text-sm text-muted">{t('mirror.offeredHint')}</p>
+          {open.length > 0 && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                const all = takeUnsure(preview, choices)
+                for (const row of open) onChoose(row.track, all[row.track])
+              }}
+            >
+              {t('mirror.takeAll')}
+            </button>
+          )}
+        </div>
+      )}
       {preview.rows.map((row: PreviewRow) => {
         const chosen = choices[row.track]
-        const hand = chosen !== undefined && chosen !== null ? named[row.track] : null
+        const accepted = offering && isUnsure(row) && chosen !== undefined && chosen !== null && chosen === row.found?.track && !named[row.track]
+        const offered = offering && isUnsure(row) && chosen === undefined
+        const hand = chosen !== undefined && chosen !== null && !accepted ? named[row.track] : null
         const left = chosen === null || row.how === 'skip'
         const unsure = row.found !== null && row.how !== 'none' && row.how !== 'skip'
         return (
@@ -98,15 +124,24 @@ export function PreviewRows({ preview, target, choices, onChoose }: { preview: P
                   ? t('mirror.byHand', { title: iso(hand.title) })
                   : left
                     ? t('mirror.left')
-                    : unsure && row.found
-                      ? t('mirror.unsureMatch', { title: iso(row.found.title), artist: iso(row.found.artist) })
-                      : t('mirror.notFound')}
+                    : accepted && row.found
+                      ? t('mirror.unsureTaken', { title: iso(row.found.title), artist: iso(row.found.artist) })
+                      : offered && row.found
+                        ? t('mirror.unsureOffered', { title: iso(row.found.title), artist: iso(row.found.artist) })
+                        : unsure && row.found
+                          ? t('mirror.unsureMatch', { title: iso(row.found.title), artist: iso(row.found.artist) })
+                          : t('mirror.notFound')}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn ghost" onClick={() => setPicking(picking === row.track ? null : row.track)} aria-label={t('mirror.otherLabel', { title: row.title })}>
                 {t('mirror.other')}
               </button>
+              {offered && row.found && (
+                <button type="button" className="btn ghost" onClick={() => row.found && onChoose(row.track, row.found.track)} aria-label={t('mirror.takeUnsureLabel', { title: row.found.title, artist: row.found.artist })}>
+                  {t('mirror.takeUnsure')}
+                </button>
+              )}
               {!left ? (
                 <button type="button" className="btn ghost" onClick={() => onChoose(row.track, null)} aria-label={t('mirror.leaveLabel', { title: row.title })}>
                   {t('mirror.leave')}

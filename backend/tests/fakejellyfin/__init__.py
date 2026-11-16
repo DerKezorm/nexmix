@@ -179,6 +179,8 @@ class FakeJellyfin(Playlists):
     """The stand-in. ``now`` is its clock (the ``Date`` of its answers); the tests move it."""
 
     name: str = "Probe"
+    #: The server's own id (a second stand-in beside the first needs another one).
+    server_id: str = SERVER_ID
     now: datetime = field(default_factory=lambda: datetime(2026, 11, 15, 12, 0, tzinfo=UTC))
     #: So many requests from now on answer 503, as while Jellyfin starts.
     starting: int = 0
@@ -359,7 +361,7 @@ class FakeJellyfin(Playlists):
         if method == "GET" and path == "/System/Info/Public":
             return self._answer(200, {"LocalAddress": "http://127.0.0.1:8096", "ServerName": self.name,
                                       "Version": "12.4.0", "ProductName": "Jellyfin Server", "OperatingSystem": "",
-                                      "Id": SERVER_ID, "StartupWizardCompleted": True})
+                                      "Id": self.server_id, "StartupWizardCompleted": True})
         if path.startswith("/Audio/") and path.endswith("/stream.mp3") and method == "GET":
             return self._sound(path, params)
         if path.startswith("/Items/") and path.endswith("/Images/Primary") and method == "GET":
@@ -409,7 +411,7 @@ class FakeJellyfin(Playlists):
 
     def _user(self, ident: str) -> dict[str, Any]:
         one = next(user for user in self.users if user.id == ident)
-        return {"Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "HasPassword": True,
+        return {"Name": one.name, "ServerId": self.server_id, "Id": one.id, "HasPassword": True,
                 "Policy": {"IsAdministrator": one.admin, "EnableContentDeletion": False}, "Configuration": {}}
 
     def _quick(self, method: str, path: str, params: dict[str, str], request: httpx.Request,
@@ -443,7 +445,7 @@ class FakeJellyfin(Playlists):
             user = self._user(entry["user"])
             return self._answer(200, {"User": user, "SessionInfo": {"UserId": entry["user"],
                                                                      "DeviceId": fields["DeviceId"]},
-                                      "AccessToken": token, "ServerId": SERVER_ID})
+                                      "AccessToken": token, "ServerId": self.server_id})
         return self._answer(404, text=ERROR)
 
     def _quick_view(self, secret: str) -> dict[str, Any]:
@@ -474,7 +476,7 @@ class FakeJellyfin(Playlists):
 
     def _album(self, one: Album) -> dict[str, Any]:
         artist = {"Name": one.artist, "Id": make_id("artist", one.artist)}
-        entry: dict[str, Any] = {"Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "IsFolder": True,
+        entry: dict[str, Any] = {"Name": one.name, "ServerId": self.server_id, "Id": one.id, "IsFolder": True,
                                  "Type": "MusicAlbum", "AlbumArtist": one.artist, "AlbumArtists": [artist],
                                  "Genres": list(one.genres), "ProviderIds": {}, "MediaType": "Unknown",
                                  "DateCreated": _stamp(one.created)}
@@ -490,7 +492,7 @@ class FakeJellyfin(Playlists):
         if one.mbid_track:
             ids = {"MusicBrainzTrack": one.mbid_track, "MusicBrainzRecording": one.mbid_recording}
         entry: dict[str, Any] = {
-            "Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "DateCreated": _stamp(one.created),
+            "Name": one.name, "ServerId": self.server_id, "Id": one.id, "DateCreated": _stamp(one.created),
             "HasLyrics": False, "Container": "flac", "Genres": list(one.genres), "RunTimeTicks": one.seconds * TICKS,
             "IndexNumber": one.number, "ParentIndexNumber": one.disc, "ProviderIds": ids, "IsFolder": False,
             "ParentId": owner.id, "Type": "Audio", "Artists": list(one.artists),

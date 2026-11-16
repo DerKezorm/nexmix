@@ -70,6 +70,7 @@ from .services import (
     jobs,
     locales,
     logs,
+    mirrors,
     mounts,
     notices,
     oidc_store,
@@ -175,6 +176,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        # A preview of "take all over" under way ends with the server.
+        await asyncio.to_thread(mirrors.forget_looks)
         await asyncio.to_thread(notices.settle, 10)
         logger.info("nexmix stopped")
 

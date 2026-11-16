@@ -12,15 +12,21 @@ The steps, in this order; the first that finds something decides, and says how (
    several, the one closest in length, which must then lie within ``TOLERANCE``.
 4. ``edition``: the same, on an album whose name differs only in a note of its edition ("Remastered", "Deluxe
    Edition"). Not the same file (``relink.py`` does not take it), but the same recording for a playlist.
-5. ``length``: the same title by the same artist, within ``TOLERANCE`` of the length; the closest.
+5. ``length``: the same title by the same artist, within ``TOLERANCE`` of the length; the closest. Not for a title
+   that names no song of its own ("Intro", "Interlude", "Track 3": ``generic``), nor from a live album to one that is
+   none (or back), nor when only the first of several performers is the same ("A & B" and "A"): such a finding is
+   kept as ``loose``.
 6. ``renamed``: the album under another name (a server's own matching renames albums): an album of the same album
    artist whose tracks lie at the same places with the same lengths as the tracks of the entry's album, for most of
-   them (``SHAPE_SHARE``, at least ``SHAPE_LEAST``); the track at the entry's place there, within ``TOLERANCE``.
+   them (``SHAPE_SHARE``, at least ``SHAPE_LEAST``); the track at the entry's place there, within ``TOLERANCE``, when
+   its title is the entry's (written alike, or nearly: ``SIMILAR``, never another version). Another title at that
+   place (another song, a remix) is kept as ``place``.
 7. ``song``: a version of the same song (``songs.song_key``: core of the title and artist), the version shown first,
    then the closest in length.
 8. ``title``: the same title alone, within ``TITLE_TOLERANCE``; the closest.
+9. ``loose``, then ``place``: what steps 5 and 6 kept.
 
-Steps 1 to 6 count as sure, 7 and 8 as worth a look (``UNSURE``): measured on 52,600 tracks from Plex to Jellyfin, the
+Steps 1 to 6 count as sure, 7 to 9 as worth a look (``UNSURE``): measured on 52,600 tracks from Plex to Jellyfin, the
 steps without ``renamed`` found 84.6 % sure, another 12.6 % worth a look, 2.8 % nothing. No track of the other server is
 ever given to two entries (``used``). Every finding names its step (``Found.how``, ``Found.sure``): the caller decides
 what it takes; the sync takes the sure ones only, the unsure ones are for a person to confirm.
@@ -36,8 +42,9 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from functools import lru_cache
 
 from . import songs
@@ -50,13 +57,15 @@ TITLE_TOLERANCE = 2000
 #: ``SHAPE_LEAST`` tracks, lie at the same places with the same lengths.
 SHAPE_SHARE = 0.6
 SHAPE_LEAST = 3
+#: Two titles written nearly alike (``SequenceMatcher`` ratio of their ``title_key``) count as one at ``renamed``.
+SIMILAR = 0.9
 
-GUID, MBID, ALBUM, EDITION, LENGTH, RENAMED, SONG, TITLE = (
-    "guid", "mbid", "album", "edition", "length", "renamed", "song", "title")
+GUID, MBID, ALBUM, EDITION, LENGTH, RENAMED, SONG, TITLE, LOOSE, PLACE = (
+    "guid", "mbid", "album", "edition", "length", "renamed", "song", "title", "loose", "place")
 #: The steps in their order.
-STEPS = (GUID, MBID, ALBUM, EDITION, LENGTH, RENAMED, SONG, TITLE)
+STEPS = (GUID, MBID, ALBUM, EDITION, LENGTH, RENAMED, SONG, TITLE, LOOSE, PLACE)
 #: Found, but by a rule that may take another version: worth a look.
-UNSURE = frozenset({SONG, TITLE})
+UNSURE = frozenset({SONG, TITLE, LOOSE, PLACE})
 #: Not by a rule: chosen by a person, or taken as it was (``hand``), and nothing found (``none``).
 HAND, NONE = "hand", "none"
 
@@ -71,6 +80,10 @@ _GUEST_INSIDE = re.compile(r"^(?:feat|ft|featuring|with)\b")
 _BRACKETS = re.compile(r"\s*[(\[]([^()\[\]]*)[)\]]")
 _DASH = re.compile(r"\s+[-‐–—]\s+")
 _GUEST_AFTER = re.compile(r"\s+(?:feat\.?|ft\.|featuring)\s.*\Z", re.IGNORECASE | re.DOTALL)
+#: A title that is a number only, or "Track 3" and the like.
+_NUMBERED = re.compile(r"^(?:track|titel|title|piste|pista|song|nr|no)?\s*\d+$")
+#: An album of a concert.
+_LIVE = re.compile(r"\b(?:live|unplugged|in concert|concert|konzert)\b")
 
 
 def _strip_notes(text: str, *, guests: bool) -> str:
@@ -99,6 +112,34 @@ def title_key(title: str) -> str:
     return found or songs.norm(title)
 
 
+def generic(title: str) -> bool:
+    """Whether a title names no song of its own ("Intro", "Interlude", "Untitled", "Track 3", "07")."""
+    found = title_key(title)
+    return not found or found in songs.GENERIC or bool(_NUMBERED.match(found))
+
+
+def similar(one: str, other: str) -> bool:
+    """Whether two titles are one (written alike, or nearly), never two versions ("Live", "Remix" in one only)."""
+    first, second = title_key(one), title_key(other)
+    if first == second:
+        return bool(first)
+    if bool(songs.SIDE.search(first)) != bool(songs.SIDE.search(second)):
+        return False
+    return SequenceMatcher(None, first, second).ratio() >= SIMILAR
+
+
+def live(album: str) -> bool:
+    """Whether an album is one of a concert."""
+    return bool(_LIVE.search(songs.norm(album)))
+
+
+@lru_cache(maxsize=65_536)
+def lead_keys(*names: str) -> frozenset[str]:
+    """The names a track goes by without its guests, each list of performers whole ("A & B" stays "A & B")."""
+    found = {person_key(_GUEST_AFTER.sub("", _BRACKETS.sub(" ", name))) for name in names if name}
+    return frozenset(name for name in found if name and name not in songs.COMPILATIONS)
+
+
 @lru_cache(maxsize=65_536)
 def album_key(album: str) -> str:
     """An album written alike: without the note of its edition."""
@@ -118,6 +159,14 @@ def people_keys(*names: str) -> frozenset[str]:
     found |= {person_key(songs.first_name(name)) for name in names if name}
     # "Various Artists" names nobody: two tracks of two compilations are not by the same artist for it.
     return frozenset(name for name in found if name and name not in songs.COMPILATIONS)
+
+
+def forget_keys() -> None:
+    """The names made comparable so far go (they are made again when asked)."""
+    album_key.cache_clear()
+    person_key.cache_clear()
+    people_keys.cache_clear()
+    lead_keys.cache_clear()
 
 
 @dataclass(frozen=True)
@@ -194,7 +243,8 @@ def _place(disc: int | None, number: int | None) -> tuple[int, int] | None:
 class Finder:
     """The catalogue searched in, with its indexes made once."""
 
-    def __init__(self, candidates: Iterable[Candidate]) -> None:
+    def __init__(self, candidates: Iterable[Candidate], pause: Callable[[], None] | None = None) -> None:
+        """``pause`` is called every few thousand tracks (a caller in the background lets others go first there)."""
         self.by_id: dict[int, Candidate] = {}
         self.by_guid: dict[str, list[Candidate]] = {}
         self.by_mbid: dict[str, list[Candidate]] = {}
@@ -207,7 +257,9 @@ class Finder:
         self._albums: dict[str, dict[str, dict[tuple[int, int], list[Candidate]]]] = {}
         #: The album found for an album of the entries under another name (``_renamed``), by what was asked.
         self._shapes: dict[tuple[str, str, tuple[tuple[int, int, int], ...]], str | None] = {}
-        for one in candidates:
+        for count, one in enumerate(candidates):
+            if pause is not None and count % 2000 == 0:
+                pause()
             self.by_id[one.id] = one
             if lasting(one.guid):
                 self.by_guid.setdefault(one.guid, []).append(one)
@@ -271,9 +323,13 @@ class Finder:
             found = _closest(on_album, wanted.duration, TOLERANCE)
             if found is not None:
                 return Found(found, how)
+        # Kept for the end, worth a look: found by length, or at the place of a renamed album, but doubtful.
+        kept: list[Found] = []
         found = _closest(by_them, wanted.duration, TOLERANCE)
         if found is not None:
-            return Found(found, LENGTH)
+            if not self._doubtful(wanted, found):
+                return Found(found, LENGTH)
+            kept.append(Found(found, LOOSE))
         place = _place(wanted.disc, wanted.number)
         owner = person_key(wanted.album_artist or wanted.artist)
         if place is not None and wanted.shape and owner and owner in self._albums:
@@ -281,7 +337,9 @@ class Finder:
             if name is not None:
                 found = _closest(free(self._albums[owner][name].get(place, ())), wanted.duration, TOLERANCE)
                 if found is not None:
-                    return Found(found, RENAMED)
+                    if similar(found.title, wanted.title):
+                        return Found(found, RENAMED)
+                    kept.append(Found(found, PLACE))
         keys = {songs.song_key(0, wanted.title, wanted.album_artist or wanted.artist, wanted.artist),
                 songs.song_key(0, wanted.title, wanted.artist),
                 songs.song_key(0, wanted.title, songs.first_name(wanted.artist))} - {"#0"}
@@ -292,7 +350,17 @@ class Finder:
         found = _closest(named, wanted.duration, TITLE_TOLERANCE)
         if found is not None:
             return Found(found, TITLE)
-        return None
+        return kept[0] if kept else None
+
+    @staticmethod
+    def _doubtful(wanted: Wanted, found: Candidate) -> bool:
+        """Whether a finding by title, artist and length may be another recording: a title of no song of its own, a
+        live album against one that is none, or the same performer only as the first of a list."""
+        if generic(wanted.title):
+            return True
+        if wanted.album and found.album and live(wanted.album) != live(found.album):
+            return True
+        return not lead_keys(wanted.artist, wanted.album_artist) & lead_keys(found.album_artist, found.artist)
 
 
 def assign(wanted: Sequence[Wanted], candidates: Iterable[Candidate] | Finder,

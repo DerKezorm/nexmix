@@ -109,6 +109,7 @@ def clean_db(schema: None) -> Iterator[None]:
     jellyfin_link.forget()
     server_sync.forget()
     mirrors.forget_asked()
+    mirrors.forget_looks()
     catalog.forget()
     covers.forget_all()
     catalog_view.forget()

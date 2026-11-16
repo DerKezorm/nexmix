@@ -7,7 +7,7 @@
 import { Route, Routes } from 'react-router-dom'
 
 import type { Me } from '../../api/client'
-import type { Mirror, Transfer } from '../../api/mirrors'
+import type { Looking, Mirror, Preview, Transfer } from '../../api/mirrors'
 import type { Entry, Playlist } from '../../api/playlists'
 import type { MediaServer } from '../../api/servers'
 import { changeLanguage } from '../../i18n'
@@ -30,7 +30,7 @@ const entry = (id: number, track: number, title: string, absent: number[] = []):
   id, track, title, artist: 'Someone', album: 'Some Album', album_id: 201, cover: false, year: 1984, duration: 200,
   song: track, missing: false, added_by: jule, added_by_name: 'Jule', added_at: '2026-11-13T10:00:00Z', absent,
 })
-const mirror = (over: Partial<Mirror> = {}): Mirror => ({ server: 2, kind: 'jellyfin', name: 'Probe', state: 'synced', error: null, synced_at: null, absent: 1, extras: [], ...over })
+const mirror = (over: Partial<Mirror> = {}): Mirror => ({ server: 2, kind: 'jellyfin', name: 'Probe', state: 'synced', error: null, synced_at: null, absent: 1, extras: [], emptied: null, ...over })
 
 function playlist(over: Partial<Playlist> = {}): Playlist {
   return {
@@ -134,11 +134,12 @@ describe('mirrors in the editor', () => {
 })
 
 describe('take all over', () => {
+  const looked = (result: Preview, over: Partial<Looking> = {}): { preview: Looking } => ({ preview: { state: 'done', done: result.playlists ?? 0, total: result.playlists ?? 0, error: null, result, ...over } })
   const run = (over: Partial<Transfer> = {}): Transfer => ({ id: 1, server: 2, mode: 'move', old: 'keep', state: 'running', total: 4, done: 1, skipped: 0, stopping: false, error: null, disconnect: null, started_at: '2026-11-15T10:00:00Z', finished_at: null, ...over })
 
   it('shows the preview of every playlist, starts, shows the progress and stops', async () => {
     server.answers['GET /api/v1/servers/2/transfer'] = { transfer: null }
-    server.answers['POST /api/v1/servers/2/transfer/preview'] = { server: 2, entries: 12, found: 11, unsure: 0, missing: 1, rows: [], more: 0, playlists: 4, smart: 1 }
+    server.answers['POST /api/v1/servers/2/transfer/preview'] = looked({ server: 2, entries: 12, found: 11, unsure: 0, missing: 1, rows: [], more: 0, playlists: 4, smart: 1 })
     server.answers['POST /api/v1/servers/2/transfer'] = { transfer: run() }
     server.answers['DELETE /api/v1/servers/2/transfer'] = { transfer: run({ stopping: true }) }
     await page.show(<TransferCard target={probe} others={[studio]} />)
@@ -146,7 +147,7 @@ describe('take all over', () => {
     await until(() => document.querySelector('[data-testid="transfer-playlists"]'))
     expect(plain(document.querySelector('[data-testid="transfer-playlists"]')!.textContent)).toBe('4 Playlisten. 1 Smart-Playlist bleibt auf ihrem Server.')
     expect(plain(document.querySelector('[data-testid="mirror-count"]')!.textContent)).toBe('11 von 12 gefunden1 nicht gefunden')
-    expect(server.called('POST', '/api/v1/servers/2/transfer/preview')!.body).toEqual({ mode: 'mirror', choices: {} })
+    expect(server.called('POST', '/api/v1/servers/2/transfer/preview')!.body).toEqual({ mode: 'mirror' })
     await page.click(page.button('Verschieben', page.dialog!))
     await until(() => server.calls.filter((call) => call.url === '/api/v1/servers/2/transfer/preview').length === 2)
     await page.click(document.querySelector<HTMLButtonElement>('[data-testid="transfer-go"]'))
@@ -158,9 +159,48 @@ describe('take all over', () => {
     expect(server.changes()).toContain('DELETE /api/v1/servers/2/transfer')
   })
 
+  it('shows how far the preview got while the server works it out, then its result', async () => {
+    const result: Preview = { server: 2, entries: 12, found: 11, unsure: 0, missing: 1, rows: [], more: 0, playlists: 4, smart: 0 }
+    server.answers['GET /api/v1/servers/2/transfer'] = { transfer: null }
+    server.answers['POST /api/v1/servers/2/transfer/preview'] = looked(result, { state: 'running', done: 1, result: null })
+    server.answers['GET /api/v1/servers/2/transfer/preview'] = looked(result, { state: 'running', done: 3, result: null })
+    await page.show(<TransferCard target={probe} others={[studio]} />)
+    await page.click(page.button('Alle übernehmen …'))
+    await until(() => document.querySelector('[data-testid="transfer-looking"]'))
+    expect(plain(document.querySelector('[data-testid="transfer-looking"]')!.textContent)).toBe('Sucht die Titel: 1 von 4 Playlisten …')
+    await until(() => plain(document.querySelector('[data-testid="transfer-looking"]')?.textContent ?? '') === 'Sucht die Titel: 3 von 4 Playlisten …')
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="transfer-go"]')!.disabled).toBe(true)
+    server.answers['GET /api/v1/servers/2/transfer/preview'] = looked(result)
+    await until(() => document.querySelector('[data-testid="mirror-count"]'))
+    expect(plain(document.querySelector('[data-testid="mirror-count"]')!.textContent)).toBe('11 von 12 gefunden1 nicht gefunden')
+    expect(server.calls.filter((call) => call.method === 'POST' && call.url === '/api/v1/servers/2/transfer/preview')).toHaveLength(1)
+  })
+
+  it('counts a row left out at once, without a new preview of every playlist', async () => {
+    const result: Preview = {
+      server: 2,
+      entries: 12,
+      found: 11,
+      unsure: 1,
+      missing: 1,
+      more: 0,
+      playlists: 4,
+      smart: 0,
+      rows: [{ track: 3017, title: 'Fever Glass', artist: 'Mira Solenne', album: 'Copper Sky', duration: 200, how: 'song', found: { track: 9017, title: 'Fever Glass (Live)', artist: 'Mira Solenne', album: 'Live', duration: 230 }, count: 3 }],
+    }
+    server.answers['GET /api/v1/servers/2/transfer'] = { transfer: null }
+    server.answers['POST /api/v1/servers/2/transfer/preview'] = looked(result)
+    await page.show(<TransferCard target={probe} others={[studio]} />)
+    await page.click(page.button('Alle übernehmen …'))
+    await until(() => document.querySelector('[data-testid="mirror-count"]'))
+    await page.click(page.button('„Fever Glass“ weglassen'))
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '8 von 12 gefunden4 nicht gefunden')
+    expect(server.calls.filter((call) => call.url === '/api/v1/servers/2/transfer/preview')).toHaveLength(1)
+  })
+
   it('asks before moving with the old copies deleted and a server let go of', async () => {
     server.answers['GET /api/v1/servers/2/transfer'] = { transfer: run({ state: 'done', done: 4 }) }
-    server.answers['POST /api/v1/servers/2/transfer/preview'] = { server: 2, entries: 3, found: 3, unsure: 0, missing: 0, rows: [], more: 0, playlists: 1, smart: 0 }
+    server.answers['POST /api/v1/servers/2/transfer/preview'] = looked({ server: 2, entries: 3, found: 3, unsure: 0, missing: 0, rows: [], more: 0, playlists: 1, smart: 0 })
     await page.show(<TransferCard target={probe} others={[studio]} />)
     expect(plain(document.querySelector('[data-testid="transfer-state"]')!.textContent)).toBe('Fertig: 4 von 4 übernommen, 0 übersprungen.')
     await page.click(page.button('Alle übernehmen …'))

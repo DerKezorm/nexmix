@@ -67,6 +67,8 @@ export type PlaylistSync = {
   poll_error: string | null
   /** Several playlists missing from the server's list at once: none went to the trash, nexmix keeps looking. */
   missing?: number
+  /** Mirrors on the server emptied there, each waiting for an answer at its playlist (none taken over). */
+  emptied?: number
 }
 
 export const plexApi = {

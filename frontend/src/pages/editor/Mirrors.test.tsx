@@ -1,7 +1,7 @@
 /**
  * Copying and moving a playlist to another server, against a stand-in server: the preview says how many were found
  * and how many are unsure; an entry not found is matched by hand through a search of the target, or left out, and the
- * preview is asked again with the choice; copying sends the choices, "copy once" too. Moving with the old copy deleted
+ * counts follow the choice without a new preview; copying sends the choices, "copy once" too. Moving with the old copy deleted
  * asks first and sends nothing without the answer. The notes of a mirror: deleted there ("make anew"), tracks only
  * there ("take over as …" through a search of the source, "drop", asked first).
  */
@@ -93,10 +93,11 @@ describe('copying to another server', () => {
     await until(() => page.button('„Opus Drei“ nehmen'))
     expect(server.calls.some((call) => call.url.startsWith('/api/v1/catalog/search') && call.url.includes('server=2'))).toBe(true)
     await page.click(page.button('„Opus Drei“ nehmen'))
-    await until(() => server.calls.filter((call) => call.url === '/api/v1/playlists/7/mirrors/preview').length === 2)
+    // Counted here: the choice needs no new preview of the whole playlist.
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '6 von 6 gefundendavon 1 unsicher')
     await page.click(page.button('„Fever Glass“ weglassen'))
-    await until(() => server.calls.filter((call) => call.url === '/api/v1/playlists/7/mirrors/preview').length === 3)
-    expect(server.calls.filter((call) => call.url === '/api/v1/playlists/7/mirrors/preview').at(-1)!.body).toEqual({ server: 2, choices: { 3021: 9021, 3017: null } })
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '5 von 6 gefunden1 nicht gefunden')
+    expect(server.calls.filter((call) => call.url === '/api/v1/playlists/7/mirrors/preview')).toHaveLength(1)
     await page.click(page.button('Kopieren'))
     await until(() => done.length === 1)
     expect(server.called('POST', '/api/v1/playlists/7/mirrors')!.body).toEqual({ server: 2, choices: { 3021: 9021, 3017: null }, once: false })
@@ -136,6 +137,36 @@ describe('moving to another server', () => {
     expect(server.called('POST', '/api/v1/playlists/7/move')!.body).toEqual({ server: 2, choices: {}, old: 'delete' })
   })
 
+  it('offers an unsure finding without taking it, and takes it once chosen', async () => {
+    server.answers['POST /api/v1/playlists/7/mirrors/preview'] = preview({ found: 4, preselect: false })
+    await open('move')
+    expect(server.called('POST', '/api/v1/playlists/7/mirrors/preview')!.body).toEqual({ server: 2, choices: {}, move: true })
+    expect(plain(document.querySelector('[data-testid="mirror-count"]')!.textContent)).toBe('4 von 6 gefunden1 unsicher, nicht gewählt1 nicht gefunden')
+    const rows = () => [...document.querySelectorAll('[data-testid="mirror-row-state"]')].map((one) => plain(one.textContent))
+    expect(rows()).toEqual(['Nicht gefunden', 'Unsicher, nicht gewählt: „Fever Glass (Live)“ von Mira Solenne'])
+    expect(page.text).toContain('Nicht gewählte bleiben Einträge mit Hinweis')
+    // Not chosen: the move sends no choice for it.
+    await page.click(page.button('„Fever Glass (Live)“ von Mira Solenne übernehmen'))
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '5 von 6 gefunden1 nicht gefunden')
+    expect(rows()[1]).toBe('Übernommen: „Fever Glass (Live)“ von Mira Solenne')
+    await page.click(page.button('Verschieben'))
+    await until(() => done.length === 1)
+    expect(server.called('POST', '/api/v1/playlists/7/move')!.body).toEqual({ server: 2, choices: { 3017: 9017 }, old: 'keep' })
+  })
+
+  it('takes every unsure finding with one button, and moves without them when nobody chose', async () => {
+    server.answers['POST /api/v1/playlists/7/mirrors/preview'] = preview({ found: 4, preselect: false })
+    await open('move')
+    await page.click(page.button('Alle unsicheren übernehmen'))
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '5 von 6 gefunden1 nicht gefunden')
+    expect(page.button('Alle unsicheren übernehmen')).toBeUndefined()
+    await page.click(page.button('„Fever Glass“ weglassen'))
+    await until(() => plain(document.querySelector('[data-testid="mirror-count"]')!.textContent) === '4 von 6 gefunden2 nicht gefunden')
+    await page.click(page.button('Verschieben'))
+    await until(() => done.length === 1)
+    expect(server.called('POST', '/api/v1/playlists/7/move')!.body).toEqual({ server: 2, choices: { 3017: null }, old: 'keep' })
+  })
+
   it('says why it failed', async () => {
     server.fails['POST /api/v1/playlists/7/move'] = { status: 409, code: 'smart_stays' }
     await open('move')
@@ -146,7 +177,7 @@ describe('moving to another server', () => {
 })
 
 describe('the notes of a mirror', () => {
-  const mirror = (over: Partial<Mirror> = {}): Mirror => ({ server: 2, kind: 'jellyfin', name: 'Probe', state: 'synced', error: null, synced_at: null, absent: 0, extras: [], ...over })
+  const mirror = (over: Partial<Mirror> = {}): Mirror => ({ server: 2, kind: 'jellyfin', name: 'Probe', state: 'synced', error: null, synced_at: null, absent: 0, extras: [], emptied: null, ...over })
   let changed = 0
   let toasts: string[] = []
   async function notes(mirrors: Mirror[]): Promise<void> {
@@ -162,6 +193,28 @@ describe('the notes of a mirror', () => {
     await page.click(page.button('Wieder anlegen'))
     await until(() => changed === 1)
     expect(server.changes()).toEqual(['POST /api/v1/playlists/7/mirrors/2/remake'])
+  })
+
+  it('asks before a mirror emptied on its server empties the playlist everywhere, or keeps it', async () => {
+    server.answers['POST /api/v1/playlists/7/mirrors/2/emptied'] = { mirrors: [] }
+    await notes([mirror({ emptied: { at: '2026-11-16T01:00:00Z', count: 5 } })])
+    expect(plain(document.querySelector('[data-testid="mirror-emptied"]')!.textContent)).toContain('In Probe geleert')
+    expect(plain(document.querySelector('[data-testid="mirror-emptied"]')!.textContent)).toContain('hier und auf den anderen Servern sind die 5 Titel noch da. Hier auch leeren?')
+    await page.click(page.button('Hier auch leeren'))
+    expect(plain(page.dialog!.textContent)).toContain('Alle Titel von „Sommerfest“ verschwinden in nexmix, auf der Quelle und auf jedem Spiegel. Das lässt sich nicht zurückholen.')
+    await page.inDialog('Abbrechen')
+    expect(server.changes()).toEqual([])
+    await page.click(page.button('Hier auch leeren'))
+    await page.inDialog('Hier auch leeren')
+    await until(() => changed === 1)
+    expect(server.called('POST', '/api/v1/playlists/7/mirrors/2/emptied')!.body).toEqual({ empty: true })
+    expect(toasts.map(plain)).toEqual(['Überall geleert.'])
+    await notes([mirror({ emptied: { at: '2026-11-16T01:00:00Z', count: 5 } })])
+    server.calls = []
+    await page.click(page.button('Behalten'))
+    await until(() => changed === 1)
+    expect(server.called('POST', '/api/v1/playlists/7/mirrors/2/emptied')!.body).toEqual({ empty: false })
+    expect(toasts.map(plain)).toEqual(['Bleibt. Der Spiegel auf Probe wird neu befüllt.'])
   })
 
   it('takes a track only in the mirror over through a search of the source', async () => {

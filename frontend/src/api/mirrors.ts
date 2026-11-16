@@ -22,6 +22,8 @@ export type Mirror = {
   absent: number
   /** Tracks put in there that the source has no match for. */
   extras: Extra[]
+  /** Emptied on its server, waiting for "empty it here too" or "keep" (nothing taken over meanwhile). */
+  emptied: { at: string | null; count: number } | null
 }
 
 export type FoundTrack = { track: number; title: string; artist: string; album: string; duration: number }
@@ -47,6 +49,9 @@ export type Preview = {
   missing: number
   rows: PreviewRow[]
   more: number
+  /** Whether an entry found by an unsure step counts as found (copying), or is only offered until chosen (moving,
+   * taking all over). */
+  preselect?: boolean
   /** Take all over: how many playlists, and how many smart ones stay where they are. */
   playlists?: number
   smart?: number
@@ -75,7 +80,8 @@ const base = (id: number) => `/api/v1/playlists/${id}`
 
 export const mirrorsApi = {
   list: (id: number) => api<{ mirrors: Mirror[] }>(`${base(id)}/mirrors`),
-  preview: (id: number, server: number, choices: Choices = {}) => api<Preview>(`${base(id)}/mirrors/preview`, { method: 'POST', body: { server, choices } }),
+  preview: (id: number, server: number, choices: Choices = {}, move = false) =>
+    api<Preview>(`${base(id)}/mirrors/preview`, { method: 'POST', body: { server, choices, ...(move ? { move } : {}) } }),
   copy: (id: number, server: number, choices: Choices, once: boolean) =>
     api<{ playlist: number; mirrors: Mirror[] }>(`${base(id)}/mirrors`, { method: 'POST', body: { server, choices, once } }),
   move: (id: number, server: number, choices: Choices, old: 'keep' | 'delete') =>
@@ -87,11 +93,23 @@ export const mirrorsApi = {
   takeExtra: (id: number, server: number, extra: number, track: number) =>
     api<Change>(`${base(id)}/mirrors/${server}/extras/${extra}/take`, { method: 'POST', body: { track } }),
   dropExtra: (id: number, server: number, extra: number) => api<void>(`${base(id)}/mirrors/${server}/extras/${extra}`, { method: 'DELETE' }),
+  /** The answer to a mirror emptied on its server: empty the playlist everywhere too, or keep it (filled again). */
+  emptied: (id: number, server: number, empty: boolean) => api<{ mirrors: Mirror[] }>(`${base(id)}/mirrors/${server}/emptied`, { method: 'POST', body: { empty } }),
+}
+
+/** The preview of "take all over", worked out in the background: how far it got, and its result once `done`. */
+export type Looking = {
+  state: 'running' | 'done' | 'stopped' | 'failed'
+  done: number
+  total: number
+  error: string | null
+  result: Preview | null
 }
 
 export const transferApi = {
-  preview: (server: number, mode: 'mirror' | 'move', choices: Choices = {}, source?: number | null) =>
-    api<Preview>(`/api/v1/servers/${server}/transfer/preview`, { method: 'POST', body: { mode, choices, ...(source ? { source } : {}) } }),
+  look: (server: number, mode: 'mirror' | 'move', source?: number | null) =>
+    api<{ preview: Looking }>(`/api/v1/servers/${server}/transfer/preview`, { method: 'POST', body: { mode, ...(source ? { source } : {}) } }),
+  looking: (server: number) => api<{ preview: Looking | null }>(`/api/v1/servers/${server}/transfer/preview`),
   start: (server: number, body: { mode: 'mirror' | 'move'; old: 'keep' | 'delete'; choices: Choices; source?: number | null; disconnect?: number | null }) =>
     api<{ transfer: Transfer }>(`/api/v1/servers/${server}/transfer`, { method: 'POST', body }),
   state: (server: number) => api<{ transfer: Transfer | null }>(`/api/v1/servers/${server}/transfer`),

@@ -198,12 +198,13 @@ describe('the Jellyfin card', () => {
   })
 
   it('says when several playlists are missing on the server and why one could not be looked at', async () => {
-    server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 1, pending: 0, waiting: 0, error: 2, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: 'jellyfin_user_gone', missing: 2 }
+    server.answers['GET /api/v1/jellyfin/2/playlists'] = { active: true, kind: 'jellyfin', playlists: 3, synced: 1, pending: 0, waiting: 0, error: 2, smart: 0, order_minutes: 1, polled_at: '2026-11-15T12:00:00Z', poll_error: 'jellyfin_user_gone', missing: 2, emptied: 3 }
     await page.show(<MediaServers />)
     const box = card('jellyfin-2')
     await until(() => box.querySelector('[data-testid="jellyfin-playlists"]'), 'the playlists of Jellyfin')
     const text = plain(box.querySelector('[data-testid="jellyfin-playlists"]')!.textContent)
     expect(text).toContain('2 Playlisten auf Jellyfin nicht gefunden. nexmix legt nichts in den Papierkorb und sieht weiter nach.')
+    expect(text).toContain('3 Spiegel auf Jellyfin auf einmal geleert. nexmix übernimmt nichts davon, jede Playlist fragt nach.')
     expect(plain(box.querySelector('[data-testid="jellyfin-playlists-looked"]')!.textContent)).toContain('Den Jellyfin-Benutzer der Playlisten gibt es nicht mehr. Verbinde Jellyfin neu')
     expect(plain(box.textContent)).not.toMatch(/[–—]/)
   })

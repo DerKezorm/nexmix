@@ -3,7 +3,8 @@ nexmix, in Plex and in Jellyfin at random times, syncs in between, Jellyfin away
 (before or after doing it), and nexmix stopped in the middle and started again. Every track is added or taken out at
 most once (by one side, or by several the same way), so the end is known: untouched and added ones are there, taken-out
 ones are not, nothing twice anywhere, and all three alike, but the tracks Jellyfin does not have, which stay in nexmix
-and Plex and are marked as not on Jellyfin.
+and Plex and are marked as not on Jellyfin. Jellyfin never takes out its last track here: a mirror emptied there is
+never taken over by itself (``test_mirrors_decisions.py``).
 
 ``NEXMIX_MIRROR_RUNS`` sets how many runs (40 by default), ``NEXMIX_MIRROR_SEED`` where the seeds start."""
 
@@ -160,7 +161,8 @@ def test_random_changes_on_the_source_the_mirror_and_in_nexmix(
         elif roll < 0.61:
             key = copy_row(playlist_id, jelly).ext_key
             old = [t for t in on_jelly() if touched.get(t, "remove") == "remove"]
-            if old and key in fake.lists:
+            # Never the last one: a mirror emptied there waits for a person (``test_mirrors_decisions.py``).
+            if old and key in fake.lists and len(on_jelly()) > 1:
                 t = rng.choice(old)
                 touched[t] = "remove"
                 fake.list_remove(key, [twins[t]])

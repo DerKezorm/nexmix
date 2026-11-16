@@ -130,11 +130,9 @@ class Playlists:
             return True
         return one.owner == user or one.shares.get(user, False)
 
-    def _playlist_entry(self, one: List) -> dict[str, Any]:
-        from . import SERVER_ID
-
+    def _playlist_entry(self: FakeJellyfin, one: List) -> dict[str, Any]:
         kind = "Audio" if one.entries else "Unknown"
-        entry = {"Name": one.name, "ServerId": SERVER_ID, "Id": one.id, "Etag": one.etag, "IsFolder": True,
+        entry = {"Name": one.name, "ServerId": self.server_id, "Id": one.id, "Etag": one.etag, "IsFolder": True,
                  "Type": "Playlist", "ChildCount": len(one.entries), "MediaType": kind, "LocationType": "FileSystem"}
         if one.created:
             entry["DateCreated"] = one.created

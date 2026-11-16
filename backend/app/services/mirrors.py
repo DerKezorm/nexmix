@@ -15,7 +15,9 @@ says so ("not on <server>"); it never counts as taken out there.
   without, and is looked for again after each run of that server's catalogue.
 * A mirror deleted on its server stays a row that says so (``MIRROR_GONE``); the playlist is untouched. A mirror of a
   playlist in the trash rests until the playlist is brought back; deleted for good, the playlist takes its mirrors
-  with it from their servers.
+  with it from their servers. A mirror let go of ("it stays there as it is", ``LET_GO``) is never deleted there.
+* Never one track of a mirror for an entry and "only in <server>" at once: an entry matched by hand to such a track,
+  or found as it, takes it over.
 
 **Copy** ("copy to …") makes a mirror, after a preview: "N of M found, K of them worth a look", with every entry not
 found or found by an unsure step, each to be matched by hand or left out. "Copy once" instead makes a new playlist
@@ -36,7 +38,9 @@ the playlists' sync, with progress, stopped on request after the playlist under 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+import threading
+import time
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -72,6 +76,8 @@ logger = logging.getLogger("nexmix.mirrors")
 MIRROR_GONE = "mirror_gone"
 #: An entry left out of a mirror on purpose.
 SKIP = "skip"
+#: A mirror let go of (``ServerPlaylist.settle``): the copy there is never deleted by nexmix.
+LET_GO = "let_go"
 #: An entry that was its own track before (the copy on the server it came from, when the playlist moved).
 SAME = "same"
 #: Mirror hints: the mirror's server refused the track, or lost it while it left its library.
@@ -104,6 +110,7 @@ def describe(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, ma
                 CatalogTrack.server_id == server_id, CatalogTrack.generation == generation,
                 CatalogTrack.id.in_(wanted[start:start + 500]))):
             rows[int(row.id)] = row
+        breathe()
     album_ids = sorted({int(row.album_id or 0) for row in rows.values()} - {0})
     albums: dict[int, tuple[str, int]] = {}
     shapes: dict[int, list[tuple[int, int, int]]] = {}
@@ -120,6 +127,7 @@ def describe(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, ma
                     CatalogTrack.album_id.in_(part))):
             if number:
                 shapes.setdefault(int(album), []).append((int(disc or 1), int(number), int(duration or 0)))
+        breathe()
     people = sorted(({artist for _title, artist in albums.values()}
                      | {int(row.artist_id or 0) for row in rows.values()}) - {0})
     names: dict[int, str] = {}
@@ -129,7 +137,9 @@ def describe(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, ma
                 CatalogArtist.server_id == server_id, CatalogArtist.generation == generation,
                 CatalogArtist.id.in_(people[start:start + 500])))})
     found: dict[int, match.Wanted] = {}
-    for ident, row in rows.items():
+    for count, (ident, row) in enumerate(rows.items()):
+        if count % 2000 == 0:
+            breathe()
         album_title, album_artist = albums.get(int(row.album_id or 0), ("", int(row.artist_id or 0)))
         owner = str(names.get(album_artist) or names.get(int(row.artist_id or 0)) or "")
         found[ident] = match.Wanted(
@@ -266,6 +276,12 @@ def decide(db: Session, items: Sequence[PlaylistItem], source_id: int, target_id
     return found
 
 
+def taken(one: Decision, unsure: bool) -> bool:
+    """Whether a decision gives the entry a track: a sure finding, a choice by hand, and an unsure finding only when
+    ``unsure`` (copying one playlist takes those, moving and taking all over only offer them)."""
+    return one.track is not None and (unsure or one.sure or one.how == match.HAND)
+
+
 def _track_view(db: Session, server_id: int, tracks: Iterable[int]) -> dict[int, dict[str, Any]]:
     from . import playlists
 
@@ -329,31 +345,40 @@ def kept_of(db: Session, copy_id: int) -> dict[int, Decision]:
 
 
 def preview(db: Session, playlist_ids: Sequence[int], target_id: int,
-            choices: dict[int, int | None] | None = None) -> dict[str, Any]:
+            choices: dict[int, int | None] | None = None,
+            progress: Callable[[int], None] | None = None, *, preselect: bool = True) -> dict[str, Any]:
     """What copying or moving the playlists to ``target_id`` would find: how many entries, how many found, how many of
     them by an unsure step, and the entries not found or found unsure (by their track, the same track in several
-    playlists once), each with what was found. Nothing is written."""
+    playlists once), each with what was found. Nothing is written. ``progress`` hears how many playlists are done
+    after each one (it may raise to stop). ``preselect``: an unsure finding counts as found (copying a mirror); else
+    (moving, taking all over) it is only offered, and counts once chosen (``choices``)."""
     from . import playlists
 
     total = found_count = unsure = 0
+    done = 0
     rows: dict[int, dict[str, Any]] = {}
     by_source: dict[int, list[tuple[Playlist, list[PlaylistItem]]]] = {}
     for playlist_id in playlist_ids:
         playlist = db.get(Playlist, playlist_id)
         if playlist is None or playlist.source_server_id is None:
+            done += 1
             continue
         by_source.setdefault(int(playlist.source_server_id), []).append(
             (playlist, playlists.live_items(db, playlist_id)))
+        breathe()
     for source_id, group in by_source.items():
         described = describe(db, source_id, (item.track_id for _p, items in group for item in items))
         for playlist, items in group:
+            if progress is not None:
+                progress(done)
+            done += 1
             existing = mirror_row(db, playlist.id, target_id)
             kept = kept_of(db, existing.id) if existing is not None else None
             decided = decide(db, items, source_id, target_id, choices, kept=kept, described=described, ask=True)
             for item in items:
                 one = decided[item.id]
                 total += 1
-                if one.track is not None:
+                if taken(one, preselect):
                     found_count += 1
                 if one.track is not None and one.how in match.UNSURE:
                     unsure += 1
@@ -374,7 +399,139 @@ def preview(db: Session, playlist_ids: Sequence[int], target_id: int,
     listed.sort(key=lambda row: (row["how"] != match.NONE, row["artist"].casefold(), row["title"].casefold()))
     db.rollback()
     return {"server": target_id, "entries": total, "found": found_count, "unsure": unsure,
-            "missing": total - found_count, "rows": listed, "more": max(0, len(rows) - len(listed))}
+            "missing": total - found_count, "rows": listed, "more": max(0, len(rows) - len(listed)),
+            "preselect": preselect}
+
+
+# --- The preview of "take all over", in the background ----------------------------------------------------------------
+#
+# Over every playlist of a large library it takes seconds: it runs in a thread of its own, never in the thread of a
+# request, with a short pause after each playlist so that the requests of others keep their pace. The interface asks
+# for it, then for its progress and its result (``GET``); a person's choices by hand are counted in the browser, not by
+# a new preview.
+
+#: A preview pauses ``PREVIEW_PAUSE`` seconds after every ``PREVIEW_WORK`` seconds of work (``breathe``): a thread that
+#: works without a pause makes every other thread wait for Python's lock at each of its steps (measured: other requests
+#: up to 1.2 s instead of 0.04 s while a preview over 40,000 entries built its catalogue).
+PREVIEW_WORK = 0.02
+PREVIEW_PAUSE = 0.005
+_breather = threading.local()
+
+
+def breathe() -> None:
+    """In the thread of a preview: a short pause once ``PREVIEW_WORK`` went by since the last one (elsewhere nothing).
+    Called in the long loops a preview runs through."""
+    since = getattr(_breather, "since", None)
+    if since is None:
+        return
+    if time.perf_counter() - since >= PREVIEW_WORK:
+        time.sleep(PREVIEW_PAUSE)
+        _breather.since = time.perf_counter()
+
+
+class _Stopped(Exception):
+    """A preview asked anew, or nexmix stopping: the one under way ends."""
+
+
+@dataclass
+class Looking:
+    """One preview of "take all over" to a server: what was asked, how far it got, and its result."""
+
+    asked: tuple[Any, ...]
+    total: int
+    smart: int
+    done: int = 0
+    state: str = RUNNING
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    stop: threading.Event = field(default_factory=threading.Event)
+    thread: threading.Thread | None = None
+
+
+#: The last preview of each target server.
+_looking: dict[int, Looking] = {}
+_looking_lock = threading.Lock()
+
+
+def look_view(one: Looking | None) -> dict[str, Any] | None:
+    if one is None:
+        return None
+    return {"state": one.state, "done": one.done, "total": one.total, "error": one.error,
+            "result": one.result if one.state == DONE else None}
+
+
+def start_look(db: Session, target_id: int, mode: str, source_id: int | None,
+               choices: dict[int, int | None] | None = None) -> dict[str, Any]:
+    """The preview of "take all over" to ``target_id`` begins in the background (the same one under way already is
+    not begun twice; another one under way ends). Returns how it stands."""
+    target = _target(db, target_id)
+    chosen, smart = candidates(db, target.id, mode, source_id)
+    db.rollback()
+    picked = dict(choices or {})
+    asked = (mode, source_id, tuple(sorted(picked.items(), key=lambda pair: pair[0])))
+    with _looking_lock:
+        now = _looking.get(target.id)
+        if now is not None and now.asked == asked and now.state == RUNNING:
+            return look_view(now) or {}
+        if now is not None:
+            now.stop.set()
+        one = Looking(asked=asked, total=len(chosen), smart=smart)
+        _looking[target.id] = one
+        one.thread = threading.Thread(target=_look, args=(target.id, one, chosen, picked), daemon=True,
+                                      name=f"preview-{target.id}")
+        one.thread.start()
+    return look_view(one) or {}
+
+
+def look_of(target_id: int) -> dict[str, Any] | None:
+    with _looking_lock:
+        return look_view(_looking.get(target_id))
+
+
+def wait_look(target_id: int, timeout: float = 60.0) -> dict[str, Any] | None:
+    """For the tests: the preview under way of ``target_id`` at its end."""
+    with _looking_lock:
+        one = _looking.get(target_id)
+    if one is not None and one.thread is not None:
+        one.thread.join(timeout)
+    return look_view(one)
+
+
+def forget_looks() -> None:
+    """For the tests, and when nexmix stops: every preview under way ends, none is kept."""
+    with _looking_lock:
+        found = list(_looking.values())
+        _looking.clear()
+    for one in found:
+        one.stop.set()
+    for one in found:
+        if one.thread is not None and one.thread is not threading.current_thread():
+            one.thread.join(5)
+
+
+def _look(target_id: int, one: Looking, chosen: list[int], choices: dict[int, int | None]) -> None:
+    from ..db import SessionLocal
+
+    def progress(done: int) -> None:
+        one.done = done
+        if one.stop.is_set() or jobs.stopping.is_set():
+            raise _Stopped
+        breathe()
+
+    _breather.since = time.perf_counter()
+    try:
+        with SessionLocal() as db:
+            # Taking all over offers the unsure findings, it never takes them unasked.
+            found = preview(db, chosen, target_id, choices, progress=progress, preselect=False)
+        one.result = {**found, "playlists": len(chosen), "smart": one.smart}
+        one.done, one.state = len(chosen), DONE
+    except _Stopped:
+        one.state = STOPPED
+    except Exception:
+        logger.exception("Preview of a transfer failed server=%s", target_id)
+        one.state, one.error = FAILED, "internal_error"
+    finally:
+        _breather.since = None
 
 
 # --- Making a mirror, a copy, a move ----------------------------------------------------------------------------------
@@ -407,8 +564,10 @@ def _tell(db: Session, playlist_id: int, op: str) -> None:
 
 
 def make_mirror(db: Session, playlist_id: int, target_id: int, choices: dict[int, int | None] | None = None,
-                *, commit: bool = True) -> ServerPlaylist:
-    """The playlist mirrored on ``target_id``: a mirror row with each entry's track there, due at once."""
+                *, commit: bool = True, unsure: bool = True) -> ServerPlaylist:
+    """The playlist mirrored on ``target_id``: a mirror row with each entry's track there, due at once. ``unsure``:
+    an entry found only by an unsure step takes that track (copying one playlist, after its preview); else it has
+    none there unless chosen (taking all over)."""
     from . import playlists, sync
 
     target = _target(db, target_id)
@@ -423,6 +582,8 @@ def make_mirror(db: Session, playlist_id: int, target_id: int, choices: dict[int
         raise error("already_mirrored", "The playlist is mirrored there already.", 409)
     items = playlists.live_items(db, playlist_id)
     decided = decide(db, items, source_id, target.id, choices, ask=True)
+    if not unsure:
+        decided = {ident: one if taken(one, False) else Decision(None, match.NONE) for ident, one in decided.items()}
     _lock(db, playlist_id)
     now = clock.now()
     if row is None:
@@ -523,6 +684,9 @@ def move(db: Session, playlist_id: int, target_id: int, choices: dict[int, int |
     # The copy on the server before: a mirror of the entries as they are (each its own track), or deleted there.
     if source_row is not None:
         db.execute(delete(MirrorItem).where(MirrorItem.copy_id == source_row.id))
+        # Tracks "only there" belong to the part of a mirror: a copy that changes its part starts without (else a
+        # track that came in as an entry since would be held out of it, and taken for one taken out there).
+        db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == source_row.id))
         if old == "delete":
             if source_row.ext_key is None:
                 db.delete(source_row)
@@ -539,7 +703,9 @@ def move(db: Session, playlist_id: int, target_id: int, choices: dict[int, int |
                                   hint=item.plex_hint if item.plex_hint in (HINT_REFUSED, HINT_MISSING) else ""))
     db.flush()
     # The entries take the target's tracks; one without keeps its own and says it is not on the new source.
-    moving = {item.id: decided[item.id].track for item in items if decided[item.id].track is not None}
+    # Only sure findings and choices by hand: an entry found by an unsure step keeps its track and says it is not on
+    # the new source, never another song unasked.
+    moving = {item.id: decided[item.id].track for item in items if taken(decided[item.id], False)}
     known = playlists.catalogue_of(db, (track for track in moving.values() if track is not None), server_id=target.id)
     for item in items:
         if item.id in moving:
@@ -561,6 +727,9 @@ def move(db: Session, playlist_id: int, target_id: int, choices: dict[int, int |
     # The copy on the target: the mirror there becomes the source, with its common state; else one is made.
     if existing is not None:
         db.execute(delete(MirrorItem).where(MirrorItem.copy_id == existing.id))
+        # The tracks only there become entries at the source's first sync (they are in its list, not in the common
+        # state): as a source, the copy holds nothing out. The ones somebody dropped stay to be taken out there first.
+        db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == existing.id, MirrorExtra.discard.is_(False)))
         if existing.gone_there:
             sync.Round._forget_copy(existing)
             existing.gone_there = False
@@ -571,6 +740,7 @@ def move(db: Session, playlist_id: int, target_id: int, choices: dict[int, int |
         stale = db.scalars(select(ServerPlaylist).where(ServerPlaylist.playlist_id == playlist_id,
                                                         ServerPlaylist.server_id == target.id)).first()
         if stale is not None:
+            db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == stale.id))
             stale.settle, stale.state, stale.due_at, stale.tries, stale.error = "", sync.PENDING, now, 0, ""
             stale.mirror = False
             if stale.ext_key is not None:
@@ -607,6 +777,10 @@ def _rest(db: Session, row: ServerPlaylist) -> None:
     db.execute(delete(MirrorItem).where(MirrorItem.copy_id == row.id))
     db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == row.id))
     row.mirror, row.due_at, row.state, row.error = False, None, sync.SYNCED, ""
+    # Let go of: the copy there is the server's from now on. Never deleted there, not even when the playlist goes for
+    # good (``Round.run``); the row stays only so that the server's list never brings it in as a new
+    # playlist. Made a mirror or the source there again on purpose, it is taken up (``make_mirror``, ``move``).
+    row.settle = LET_GO
     if row.gone_there or row.ext_key is None:
         sync.Round._forget_copy(row)
         row.gone_there, row.resume = False, False
@@ -647,6 +821,9 @@ def choose(db: Session, playlist_id: int, server_id: int, entry_id: int, track: 
                                                     MirrorItem.item_id != entry_id)).first()
         if other is not None:
             raise error("track_taken", "Another entry stands for this track there.", 409)
+        # A track shown as "only there": the entry stands for it from now on, it is only there no more (else the sync
+        # would hold it out and write it there a second time for the entry).
+        db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == row.id, MirrorExtra.track_id == track))
     db.execute(delete(MirrorItem).where(MirrorItem.copy_id == row.id, MirrorItem.item_id == entry_id))
     db.flush()
     db.add(MirrorItem(copy_id=row.id, item_id=entry_id, track_id=track, how=match.HAND if track else SKIP))
@@ -695,6 +872,33 @@ def take_extra(db: Session, account: Account, playlist_id: int, server_id: int, 
     return playlists._changed(db, account, playlist, "add", playlists.live_items(db, playlist_id), [item])
 
 
+def emptied(db: Session, account: Account, playlist_id: int, server_id: int, empty: bool) -> None:
+    """The answer to a mirror emptied on its server. ``empty``: the playlist is emptied everywhere (in nexmix, on the
+    source and on every mirror; its entries taken out as by hand). Else it keeps its entries and the mirror is filled
+    with them again (the state both sides agreed on is forgotten, so every entry counts as one to put in there)."""
+    from . import playlists, sync
+
+    row = mirror_row(db, playlist_id, server_id)
+    note = dict(row.note) if row is not None and isinstance(row.note, dict) else {}
+    if row is None or row.gone_there or not note.get("emptied"):
+        raise error("not_found", "Not found.", 404)
+    _lock(db, playlist_id)
+    note.pop("emptied", None)
+    row.note = note or None
+    if not empty:
+        title = row.base.get("title") if isinstance(row.base, dict) else None
+        row.base, row.writing = {"title": title or "", "items": []}, None
+    row.state, row.error, row.tries, row.due_at = sync.PENDING, "", 0, clock.now()
+    db.commit()
+    logger.info("Mirror emptied on its server answered playlist=%s server=%s empty=%s", playlist_id, server_id, empty)
+    if empty:
+        entries = [item.id for item in playlists.live_items(db, playlist_id)]
+        db.rollback()
+        if entries:
+            playlists.remove(db, account, playlist_id, entries)
+    _tell(db, playlist_id, "mirror_emptied_answered")
+
+
 def drop_extra(db: Session, playlist_id: int, server_id: int, extra_id: int) -> None:
     """A track only in a mirror dropped: taken out of the mirror at its next sync."""
     from . import sync
@@ -736,11 +940,15 @@ def view(db: Session, playlist_id: int) -> list[dict[str, Any]]:
             state = "gone"
         elif not (server.active and server.section_key and server.generation):
             state = "off"
+        note = row.note if isinstance(row.note, dict) else {}
+        emptied = note.get("emptied") if isinstance(note.get("emptied"), dict) else None
         found.append({
             "server": server.id, "kind": server.kind, "name": server.name, "state": state,
             "error": row.error if state in (sync.ERROR, sync.WAITING) and row.error else None,
             "synced_at": row.synced_at.isoformat() if row.synced_at else None,
             "absent": absent, "extras": extras,
+            # Emptied there, waiting for "empty it here too" or "keep" (``emptied``).
+            "emptied": {"at": emptied.get("at"), "count": int(emptied.get("count") or 0)} if emptied else None,
         })
     return found
 
@@ -793,23 +1001,40 @@ def prepare(sync_round: Round, playlist_id: int) -> None:
     db = sync_round.db
     db.rollback()
     _map_new(db, sync_round.ident, playlist_id, sync_round.server_id)
-    extras = list(db.scalars(select(MirrorExtra).where(MirrorExtra.copy_id == sync_round.ident)))
+    # A track an entry stands for is never "only there" too (it would be held out, and written there again for the
+    # entry): such a line goes, also one dropped (the entry keeps the track there).
+    doubled = exists().where(MirrorItem.copy_id == sync_round.ident, MirrorItem.track_id == MirrorExtra.track_id)
+    if db.execute(delete(MirrorExtra).where(MirrorExtra.copy_id == sync_round.ident, doubled)).rowcount:
+        logger.info("Tracks only in the mirror that an entry stands for now playlist=%s", playlist_id)
+    db.commit()
+    extras = list(db.scalars(select(MirrorExtra).where(MirrorExtra.copy_id == sync_round.ident,
+                                                       MirrorExtra.discard.is_(False))))
     db.rollback()
     sync_round.held_out = {int(one.track_id) for one in extras}
-    dropping = [one for one in extras if one.discard]
-    key = sync_round.row.ext_key
-    if dropping and key is not None:
-        from . import sync
+    drop_discarded(sync_round, playlist_id)
 
-        there = {entry.track: entry for entry in sync._numbered(sync_round.server_id, sync_round.source.items(key),
-                                                                  by_track=sync_round.by_track)}
-        refs = [there[int(one.track_id)].ref for one in dropping if int(one.track_id) in there]
-        if refs:
-            sync_round.source.remove_many(key, refs)
-            logger.info("Tracks only in the mirror taken out there playlist=%s count=%s", playlist_id, len(refs))
-        db.execute(delete(MirrorExtra).where(MirrorExtra.id.in_([one.id for one in dropping])))
-        db.commit()
-        sync_round.held_out -= {int(one.track_id) for one in dropping}
+
+def drop_discarded(sync_round: Round, playlist_id: int) -> None:
+    """The tracks only there that somebody dropped are taken out of the copy before its sync reads it: a mirror's,
+    and a copy that became the source since (moved there before its mirror's sync took them out: they never become
+    entries)."""
+    db = sync_round.db
+    dropping = list(db.scalars(select(MirrorExtra).where(MirrorExtra.copy_id == sync_round.ident,
+                                                         MirrorExtra.discard.is_(True))))
+    db.rollback()
+    key = sync_round.row.ext_key
+    if not dropping or key is None:
+        return
+    from . import sync
+
+    there = {entry.track: entry for entry in sync._numbered(sync_round.server_id, sync_round.source.items(key),
+                                                              by_track=sync_round.by_track)}
+    refs = [there[int(one.track_id)].ref for one in dropping if int(one.track_id) in there]
+    if refs:
+        sync_round.source.remove_many(key, refs)
+        logger.info("Tracks only in the mirror taken out there playlist=%s count=%s", playlist_id, len(refs))
+    db.execute(delete(MirrorExtra).where(MirrorExtra.id.in_([one.id for one in dropping])))
+    db.commit()
 
 
 def _map_new(db: Session, copy_id: int, playlist_id: int, server_id: int) -> None:
@@ -843,6 +1068,8 @@ def _map_new(db: Session, copy_id: int, playlist_id: int, server_id: int) -> Non
     asked = {one.id for one in asking}
     used = {int(row.track_id) for item_id, row in rows.items()
             if item_id in live_ids and row.track_id is not None and item_id not in asked}
+    # A track shown "only there" may be found for a new entry: the entry stands for it from then on (``prepare`` takes
+    # it off the list of tracks only there).
     decided = decide(db, asking, int(source), server_id, taken=used) if source is not None else {}
     changed = 0
     for item in asking:
@@ -1211,7 +1438,7 @@ def run_transfer(db: Session, job: Job) -> None:
             if row.mode == "move":
                 move(db, playlist_id, row.server_id, choices, row.old, commit=False)
             else:
-                make_mirror(db, playlist_id, row.server_id, choices, commit=False)
+                make_mirror(db, playlist_id, row.server_id, choices, commit=False, unsure=False)
             outcome = "done"
         except HTTPException:
             db.rollback()

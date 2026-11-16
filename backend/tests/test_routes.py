@@ -239,6 +239,8 @@ TOKEN_ROUTES = {
     ("PUT", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/entries/{entry_id}"),
     ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}/take"),
     ("DELETE", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/extras/{extra_id}"),
+    # The answer to a mirror emptied on its server.
+    ("POST", "/api/v1/playlists/{playlist_id}/mirrors/{server_id}/emptied"),
 }
 
 #: The routes that only read and that a program with an API key reaches too (as the browser and a device do). A route
