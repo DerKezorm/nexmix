@@ -157,7 +157,7 @@ export function MediaServers({ sub = null, onSub }: { sub?: string | null; onSub
   return (
     <>
       {row.length > 0 && <TabRow under tabs={row} active={shown as string} onChange={(value) => value !== shown && choose(value)} label={t('servers.part')} />}
-      {plexCard && (all || (firstPlex && shown === String(firstPlex.id))) && <PlexCard key={round} />}
+      {plexCard && (all || (firstPlex && shown === String(firstPlex.id))) && <PlexCard key={round} onChanged={refresh} />}
       {others.filter((server) => shows(server.id)).map((server) => (
         <OtherPlexCard key={server.id} server={server} onChanged={refresh} />
       ))}

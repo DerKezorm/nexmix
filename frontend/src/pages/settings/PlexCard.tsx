@@ -80,7 +80,7 @@ function when(moment: string | null, language: string): string {
 
 /** `alongside`: connecting another Plex server beside the first one ("add a server"); `onDone` when it is there (or
  * given up). Without it, the card of the first Plex server. */
-export function PlexCard({ alongside = false, onDone }: { alongside?: boolean; onDone?: () => void } = {}) {
+export function PlexCard({ alongside = false, onDone, onChanged }: { alongside?: boolean; onDone?: () => void; onChanged?: () => Promise<void> | void } = {}) {
   const { t, i18n } = useTranslation()
   const [plex, setPlex] = useState<PlexState | null>(alongside ? { connected: false } : null)
   // The catalogue of this card's own server (another one may be the first connected). Asked at once, for the first
@@ -216,6 +216,8 @@ export function PlexCard({ alongside = false, onDone }: { alongside?: boolean; o
         setPlex({ connected: false })
         setFlow({ stage: 'idle' })
         await refresh()
+        // The media servers drop its tab and stop offering it as a target.
+        await onChanged?.()
       },
     })
 
