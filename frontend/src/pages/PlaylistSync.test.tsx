@@ -288,6 +288,40 @@ describe('the Plex card', () => {
     expect(server.changes()).toEqual(['POST /api/v1/plex/playlists/sync'])
   })
 
+  it('counts the playlists of the server and the mirrors there apart, one and many, in both languages', async () => {
+    const counted = (sources: number, mirrors: number) => ({
+      active: true, playlists: sources + mirrors, sources, mirrors, synced: sources + mirrors, pending: 0, waiting: 0, error: 0, smart: 0,
+      polled_at: '2026-11-13T14:45:00Z', poll_error: null,
+    })
+    let shown = false
+    const line = async () => {
+      if (shown) page.close()
+      await page.show(<PlexCard />)
+      shown = true
+      await until(() => page.box.querySelector('[data-testid="plex-playlists"]'))
+      return plain(page.box.querySelector('[data-testid="plex-playlists"]')!.textContent)
+    }
+    server.answers['GET /api/v1/plex/playlists'] = counted(1, 3)
+    expect(await line()).toContain('1 als Quelle, 3 Spiegel · 4 von 4 in Plex gespeichert')
+    server.answers['GET /api/v1/plex/playlists'] = counted(2, 1)
+    expect(await line()).toContain('2 als Quelle, 1 Spiegel · 3 von 3')
+    server.answers['GET /api/v1/plex/playlists'] = counted(0, 2)
+    const only = await line()
+    expect(only).toContain('2 Spiegel · 2 von 2')
+    expect(only).not.toContain('Quelle')
+    server.answers['GET /api/v1/plex/playlists'] = counted(0, 0)
+    expect(await line()).toContain('Noch keine.')
+    await changeLanguage('en')
+    try {
+      server.answers['GET /api/v1/plex/playlists'] = counted(1, 3)
+      expect(await line()).toContain('1 source, 3 mirrors · 4 of 4 saved in Plex')
+      server.answers['GET /api/v1/plex/playlists'] = counted(2, 1)
+      expect(await line()).toContain('2 sources, 1 mirror · 3 of 3')
+    } finally {
+      await changeLanguage('de')
+    }
+  })
+
   it('says when Plex was not reached at the last look', async () => {
     server.answers['GET /api/v1/plex/playlists'] = { active: true, playlists: 0, synced: 0, pending: 0, waiting: 0, error: 0, smart: 0, polled_at: '2026-11-13T14:45:00Z', poll_error: 'plex_unreachable' }
     await page.show(<PlexCard />)

@@ -8,8 +8,9 @@
 * ``media_item_added`` and ``media_item_deleted`` of a playlist: a look at the list now (a playlist made or deleted
   there).
 * ``music_sync_completed``: Music Assistant read its providers again (it says nothing of single tracks then): a full
-  run of the catalogue. Single tracks or albums changed outside such a run: a full run too, at most every
-  ``TRACKS_EVERY``.
+  run of the catalogue, at most every ``SCANS_EVERY``; one that comes sooner is made up for once that time is over
+  (``catch_up``), so that a server that says it again and again never keeps nexmix busy. Single tracks or albums
+  changed outside such a run: a full run too, at most every ``TRACKS_EVERY``.
 * The websocket broke (Music Assistant restarted, the network): whatever happened meanwhile is not told, so every
   playlist of that server is due and its list is looked at as soon as it answers again.
 
@@ -46,11 +47,40 @@ WAITS = (2.0, 5.0, 10.0, 15.0, 30.0)
 #: How long to wait while there is no Music Assistant to listen to.
 IDLE = 15.0
 
+#: How often the end of a scan in Music Assistant asks for a run of the catalogue at the most.
+SCANS_EVERY = 300.0
+
 _tracks_asked: dict[int, float] = {}
+#: When the end of a scan last asked for a run, by server, and the servers whose last scan still waits for its run.
+_scan_asked: dict[int, float] = {}
+_scan_owed: set[int] = set()
 
 
 def forget() -> None:
     _tracks_asked.clear()
+    _scan_asked.clear()
+    _scan_owed.clear()
+
+
+def _scan(server_id: int) -> bool:
+    """A run of the catalogue for the end of a scan, unless one was asked for less than ``SCANS_EVERY`` ago: then it is
+    owed and made up later (``catch_up``). True: asked for now."""
+    now = clock.monotonic()
+    if now - _scan_asked.get(server_id, -SCANS_EVERY) < SCANS_EVERY:
+        _scan_owed.add(server_id)
+        return False
+    _scan_asked[server_id] = now
+    _scan_owed.discard(server_id)
+    _full(server_id, "changes")
+    return True
+
+
+def catch_up(server_id: int) -> str:
+    """The run of the catalogue a scan that came too soon still waits for, once ``SCANS_EVERY`` is over (the listener
+    asks every second, the tests themselves). Returns what was done."""
+    if server_id not in _scan_owed:
+        return ""
+    return "catalogue" if _scan(server_id) else ""
 
 
 def _due(server_id: int, key: str) -> int:
@@ -91,8 +121,7 @@ def handle(server_id: int, message: dict[str, Any]) -> str:
         sync.look_now(server_id)
         return "look"
     if kind == "music_sync_completed":
-        _full(server_id, "changes")
-        return "catalogue"
+        return "catalogue" if _scan(server_id) else "later"
     if kind in ("media_item_added", "media_item_updated", "media_item_deleted") and TRACK_OR_ALBUM.fullmatch(target):
         now = clock.monotonic()
         if now - _tracks_asked.get(server_id, -TRACKS_EVERY) >= TRACKS_EVERY:
@@ -156,6 +185,11 @@ class Listener:
         # Opened anew: what happened while it was closed is looked at.
         sync.look_now(self.server_id)
         while not self._stop.is_set() and media.epoch(self.server_id) == started:
+            try:
+                catch_up(self.server_id)
+            except Exception as exc:  # noqa: BLE001 - tried again at the next pass
+                logger.warning("Music Assistant catalogue not asked for server=%s error=%s", self.server_id,
+                               type(exc).__name__)
             try:
                 message = connection.events.get(timeout=1.0)
             except queue.Empty:

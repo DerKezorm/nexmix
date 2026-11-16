@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import socket
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC
@@ -75,6 +76,23 @@ class PlexError(Exception):
         self.status = status
 
 
+def addresses(host: str, port: int) -> list[str]:
+    """The addresses of a server's name, looked up now and checked: ``outbound.Unreachable`` when it resolves to none,
+    ``outbound.Refused`` when one is a link-local or metadata address. Asked when the address is set and again at every
+    connection to the server (``outbound.PinnedBackend``): a name that later points somewhere refused is not reached."""
+    found = resolver(host, port)
+    if not found:
+        raise outbound.Unreachable(host)
+    for address in found:
+        try:
+            ip = outbound.ip_of(address)
+        except ValueError as exc:
+            raise outbound.Refused("refused") from exc
+        if outbound.never(ip):
+            raise outbound.Refused("refused")
+    return found
+
+
 def check_address(url: str) -> str:
     """The address of a Plex server as nexmix keeps it: ``http(s)://host[:port]``, no credentials, no path. A host
     that resolves to a link-local or metadata address is refused (``address_refused``), whoever typed it."""
@@ -89,32 +107,58 @@ def check_address(url: str) -> str:
     if parts.username or parts.password or parts.query or parts.fragment or parts.path not in ("", "/"):
         raise PlexError("bad_url", 422)
     try:
-        addresses = resolver(parts.hostname, port)
+        addresses(parts.hostname, port)
     except outbound.Unreachable as exc:
         raise PlexError("plex_unreachable") from exc
-    for address in addresses:
-        try:
-            ip = outbound.ip_of(address)
-        except ValueError as exc:
-            raise PlexError("address_refused", 422) from exc
-        if outbound.never(ip):
-            raise PlexError("address_refused", 422)
+    except outbound.Refused as exc:
+        raise PlexError("address_refused", 422) from exc
     return f"{parts.scheme}://{parts.netloc}"
 
 
+def _addresses(host: str, port: int) -> list[str]:
+    # Looked up at the call: the tests put their own ``resolver`` in.
+    return addresses(host, port)
+
+
 def http_client(timeout: float = 30.0) -> httpx.Client:
-    return httpx.Client(
-        transport=TRANSPORT, verify=outbound.tls(), trust_env=False, follow_redirects=False,
-        timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
-    )
+    return client_for(timeout, TRANSPORT)
 
 
 def async_client(timeout: float = 15.0) -> httpx.AsyncClient:
-    """For the sound of a preview, streamed: the same rules as ``http_client`` (no redirect, certificates checked)."""
-    return httpx.AsyncClient(
-        transport=ASYNC_TRANSPORT, verify=outbound.tls(), trust_env=False, follow_redirects=False,
-        timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
+    """For the sound of a preview, streamed: the same rules as ``http_client``."""
+    return async_client_for(timeout, ASYNC_TRANSPORT)
+
+
+def client_for(timeout: float, transport: httpx.BaseTransport | None) -> httpx.Client:
+    """A client to a media server: no redirect followed, certificates checked, and the server's name checked anew at
+    every connection (``addresses``). ``transport``: a stand-in of the tests (``TRANSPORT`` of each kind)."""
+    return httpx.Client(
+        transport=transport or outbound.pinned_transport(_addresses), verify=outbound.tls(), trust_env=False,
+        follow_redirects=False, timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
     )
+
+
+def async_client_for(timeout: float, transport: httpx.AsyncBaseTransport | None) -> httpx.AsyncClient:
+    """The same for the sound of a preview, streamed."""
+    return httpx.AsyncClient(
+        transport=transport or outbound.pinned_async_transport(_addresses), verify=outbound.tls(), trust_env=False,
+        follow_redirects=False, timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
+    )
+
+
+def connect_socket(host: str, port: int, timeout: float) -> socket.socket:
+    """The plain connection under a websocket to a media server: the name checked now (``addresses``), as for every
+    request."""
+    return outbound.pinned_socket(_addresses, host, port, timeout)
+
+
+def capped(answer: httpx.Response, limit: int) -> httpx.Response | None:
+    """A streamed answer read up to ``limit`` bytes, as one in memory; None when it is longer (nothing more is read) or
+    packed in a way nexmix does not unpack."""
+    try:
+        return outbound.unpacked(answer, outbound.read_capped(answer, limit))
+    except (outbound.TooLarge, outbound.Refused):
+        return None
 
 
 def sound_headers(token: str, client_id: str) -> dict[str, str]:
@@ -198,33 +242,37 @@ class PlexServer:
         return headers
 
     def _send(self, method: str, path: str, params: dict[str, Any] | None = None,
-              headers: dict[str, str] | None = None, timeout: float | None = None) -> httpx.Response:
+              headers: dict[str, str] | None = None, timeout: float | None = None, *, limit: int = ANSWER_BYTES,
+              too_large: str = "plex_error") -> httpx.Response:
+        """One request; the answer read up to ``limit`` bytes and no further (``too_large`` beyond)."""
         if self._stop is not None and self._stop():
             raise PlexError("stopped", 503)
         try:
-            answer = self._client.request(method, f"{self.url}{path}", params=params, headers=self._headers(headers),
-                                          timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT)
+            with self._client.stream(method, f"{self.url}{path}", params=params,
+                                     headers={**self._headers(headers), "Accept-Encoding": "gzip, deflate"},
+                                     timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT) as streamed:
+                stamp = _http_date(streamed.headers.get("date"))
+                if stamp is not None:
+                    self.clock = stamp
+                    if self.began is None:
+                        self.began = stamp
+                status = streamed.status_code
+                if status in (401, 403):
+                    raise PlexError("plex_refused")
+                if status == 404:
+                    raise PlexError("plex_not_found", 404)
+                if status == 503:
+                    raise PlexError("plex_busy", 503)
+                if status >= 300:
+                    # A redirect is not followed (it could lead anywhere), any other failure is Plex's.
+                    raise PlexError("plex_error")
+                answer = capped(streamed, limit)
         except httpx.TimeoutException as exc:
             raise PlexError("plex_timeout", 504) from exc
         except httpx.HTTPError as exc:
             raise PlexError("plex_unreachable") from exc
-        stamp = _http_date(answer.headers.get("date"))
-        if stamp is not None:
-            self.clock = stamp
-            if self.began is None:
-                self.began = stamp
-        status = answer.status_code
-        if status in (401, 403):
-            raise PlexError("plex_refused")
-        if status == 404:
-            raise PlexError("plex_not_found", 404)
-        if status == 503:
-            raise PlexError("plex_busy", 503)
-        if status >= 300:
-            # A redirect is not followed (it could lead anywhere), any other failure is Plex's.
-            raise PlexError("plex_error")
-        if len(answer.content) > ANSWER_BYTES:
-            raise PlexError("plex_error")
+        if answer is None:
+            raise PlexError(too_large)
         return answer
 
     def get(self, path: str, params: dict[str, Any] | None = None, *, start: int | None = None,
@@ -361,7 +409,8 @@ class PlexServer:
         if not THUMB.fullmatch(thumb) or size not in COVER_SIZES:
             raise PlexError("bad_path", 400)
         params = {"width": size, "height": size, "minSize": 1, "upscale": 1, "url": thumb}
-        answer = self._send("GET", "/photo/:/transcode", params, {"Accept": "image/*"}, 20.0)
+        answer = self._send("GET", "/photo/:/transcode", params, {"Accept": "image/*"}, 20.0, limit=COVER_BYTES,
+                            too_large="no_cover")
         kind = answer.headers.get("content-type", "").split(";")[0].strip().lower()
         if kind not in ("image/jpeg", "image/png"):
             raise PlexError("no_cover")

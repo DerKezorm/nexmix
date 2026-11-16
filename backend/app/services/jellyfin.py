@@ -37,7 +37,7 @@ from typing import Any, Self
 import httpx
 
 from .. import __version__
-from . import outbound, plex
+from . import plex
 from .plex import PlexError
 
 #: The tests put a stand-in Jellyfin here (``httpx.MockTransport``); None: the network.
@@ -91,18 +91,13 @@ def checked_id(value: Any) -> str:
 
 
 def http_client(timeout: float = 30.0) -> httpx.Client:
-    return httpx.Client(
-        transport=TRANSPORT, verify=outbound.tls(), trust_env=False, follow_redirects=False,
-        timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
-    )
+    """No redirect followed, certificates checked, the server's name checked anew at every connection."""
+    return plex.client_for(timeout, TRANSPORT)
 
 
 def async_client(timeout: float = 15.0) -> httpx.AsyncClient:
-    """For the sound of a preview, streamed: the same rules (no redirect, certificates checked)."""
-    return httpx.AsyncClient(
-        transport=ASYNC_TRANSPORT, verify=outbound.tls(), trust_env=False, follow_redirects=False,
-        timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)),
-    )
+    """For the sound of a preview, streamed: the same rules."""
+    return plex.async_client_for(timeout, ASYNC_TRANSPORT)
 
 
 def _quote(value: str) -> str:
@@ -180,46 +175,50 @@ class JellyfinServer:
         self._client.close()
 
     def _once(self, method: str, path: str, params: dict[str, Any] | None, body: Any,
-              timeout: float | None) -> httpx.Response:
+              timeout: float | None, limit: int, too_large: str) -> httpx.Response:
         if self._stop is not None and self._stop():
             raise JellyfinError("stopped", 503)
         try:
-            answer = self._client.request(
-                method, f"{self.url}{path}", params=params, json=body, headers=headers(self.device_id, self._token),
-                timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT)
+            with self._client.stream(
+                    method, f"{self.url}{path}", params=params, json=body,
+                    headers={**headers(self.device_id, self._token), "Accept-Encoding": "gzip, deflate"},
+                    timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT) as streamed:
+                moment = _http_date(streamed.headers.get("date"))
+                if moment is not None:
+                    self.clock = moment
+                    if self.began is None:
+                        self.began = moment
+                status = streamed.status_code
+                if status == 401:
+                    raise JellyfinError("jellyfin_refused")
+                if status == 403:
+                    # Signed in, but this user may not do it (another user's playlist, a library not shared with him).
+                    raise JellyfinError("jellyfin_forbidden")
+                if status == 404:
+                    raise JellyfinError("jellyfin_not_found", 404)
+                if status == 503:
+                    raise JellyfinError(STARTING, 503)
+                if status == 400:
+                    raise JellyfinError("jellyfin_bad_request", 400)
+                if status >= 300:
+                    raise JellyfinError("jellyfin_error")
+                # Read up to the limit and no further: a server taken over, or broken, never fills the memory.
+                answer = plex.capped(streamed, limit)
         except httpx.TimeoutException as exc:
             raise JellyfinError("jellyfin_timeout", 504) from exc
         except httpx.HTTPError as exc:
             raise JellyfinError("jellyfin_unreachable") from exc
-        moment = _http_date(answer.headers.get("date"))
-        if moment is not None:
-            self.clock = moment
-            if self.began is None:
-                self.began = moment
-        status = answer.status_code
-        if status == 401:
-            raise JellyfinError("jellyfin_refused")
-        if status == 403:
-            # Signed in, but this user may not do it (another user's playlist, a library not shared with him).
-            raise JellyfinError("jellyfin_forbidden")
-        if status == 404:
-            raise JellyfinError("jellyfin_not_found", 404)
-        if status == 503:
-            raise JellyfinError(STARTING, 503)
-        if status == 400:
-            raise JellyfinError("jellyfin_bad_request", 400)
-        if status >= 300:
-            raise JellyfinError("jellyfin_error")
-        if len(answer.content) > ANSWER_BYTES:
-            raise JellyfinError("jellyfin_error")
+        if answer is None:
+            raise JellyfinError(too_large)
         return answer
 
     def send(self, method: str, path: str, params: dict[str, Any] | None = None, body: Any = None,
-             timeout: float | None = None) -> httpx.Response:
+             timeout: float | None = None, *, limit: int = ANSWER_BYTES,
+             too_large: str = "jellyfin_error") -> httpx.Response:
         tries = 0
         while True:
             try:
-                return self._once(method, path, params, body, timeout)
+                return self._once(method, path, params, body, timeout, limit, too_large)
             except JellyfinError as exc:
                 if not self.patient or exc.code not in (STARTING, "jellyfin_unreachable") or tries >= len(WAITS):
                     raise
@@ -376,7 +375,8 @@ class JellyfinServer:
         if size not in COVER_SIZES:
             raise JellyfinError("bad_path", 400)
         answer = self.send("GET", f"/Items/{checked_id(album)}/Images/Primary",
-                           {"fillWidth": size, "fillHeight": size, "quality": 80, "format": "Jpg"}, timeout=20.0)
+                           {"fillWidth": size, "fillHeight": size, "quality": 80, "format": "Jpg"}, timeout=20.0,
+                           limit=COVER_BYTES, too_large="no_cover")
         kind = answer.headers.get("content-type", "").split(";")[0].strip().lower()
         if kind not in ("image/jpeg", "image/png") or not answer.content or len(answer.content) > COVER_BYTES:
             raise JellyfinError("no_cover")

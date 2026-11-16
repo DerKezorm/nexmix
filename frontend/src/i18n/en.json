@@ -100,6 +100,10 @@
     "fromPlex": "Added in {{server}}",
     "plex": {
       "title": "Playlists",
+      "sources_one": "{{count}} source",
+      "sources_other": "{{count}} sources",
+      "mirrors_one": "{{count}} mirror",
+      "mirrors_other": "{{count}} mirrors",
       "counts_one": "{{synced}} of {{count}} saved in {{server}}",
       "counts_other": "{{synced}} of {{count}} saved in {{server}}",
       "waiting_one": "{{count}} waiting for {{server}}",

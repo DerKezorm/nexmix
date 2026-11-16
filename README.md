@@ -129,7 +129,9 @@ The playlists live in that Plex account. **Add a server, Plex** connects a secon
 1. **Add a server, Jellyfin**, and the address (for instance `http://jellyfin:8096`).
 2. **Quick Connect**: nexmix shows a six-digit code; enter it in Jellyfin under your profile, Quick Connect (it must be
    switched on in Jellyfin's dashboard). nexmix never sees a password. Or make an **API key** in Jellyfin (Dashboard,
-   API Keys) and enter it instead.
+   API Keys) and enter it instead. An API key has the full rights of an administrator in Jellyfin, and nexmix keeps
+   it: Quick Connect with a user of its own who is no administrator is the narrower way
+   ([SECURITY.md](SECURITY.md#media-servers)).
 3. Choose the music library and the **Jellyfin user** the playlists will belong to there. nexmix makes them public, so
    that the other users of Jellyfin see them too, and that user's play counts tell nexmix which tracks are well known.
    Playlists made in Jellyfin come into nexmix only when it is connected as that user by Quick Connect: with an API
@@ -142,7 +144,9 @@ the address on to a browser or a guest.
 
 1. In Music Assistant, open your profile and make a **long-lived token**. Its user must have the **admin role**: nexmix
    must be able to cancel a change of its own there that it gave up waiting for. A token of any other user is refused
-   when connecting, and should the user lose the role later, nexmix stops taking tracks out and sorting there.
+   when connecting, and should the user lose the role later, nexmix stops taking tracks out and sorting there. The
+   token reaches all of Music Assistant and nexmix keeps it; protect nexmix and its backups accordingly
+   ([SECURITY.md](SECURITY.md#media-servers)).
 2. **Add a server, Music Assistant**, the address (for instance `http://music-assistant:8095`) and the token.
 3. Choose the **providers** whose tracks count. Leave out a provider that is a Plex or Jellyfin server nexmix also
    knows directly (nexmix says which): its tracks would stand twice, once for each server.

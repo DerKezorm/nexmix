@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import socket
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -32,7 +31,7 @@ from websockets.sync.client import ClientConnection, connect
 
 from ..db import SessionLocal
 from ..models import SERVER_JELLYFIN
-from . import jellyfin_link, media, outbound, plex_link, sync
+from . import jellyfin_link, media, outbound, plex, plex_link, sync
 from .jellyfin import authorization
 
 logger = logging.getLogger("nexmix.jellyfinevents")
@@ -121,7 +120,8 @@ def open_socket(url: str, token: str, device: str) -> Iterator[ClientConnection]
     lasts. The connection is made here, so a redirect is never followed (websockets follows none with a socket given);
     no proxy from the environment."""
     address, host, port, secure = socket_address(url)
-    raw = socket.create_connection((host, port), timeout=10.0)
+    # The name checked again now, as at every request: a later change in the DNS leads nowhere refused.
+    raw = plex.connect_socket(host, port, 10.0)
     try:
         with connect(address, sock=raw, ssl=outbound.tls() if secure else None,
                      server_hostname=host if secure else None, proxy=None, open_timeout=10.0,

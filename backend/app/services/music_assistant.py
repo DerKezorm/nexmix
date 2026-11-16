@@ -37,7 +37,6 @@ import json
 import logging
 import queue
 import re
-import socket
 import threading
 import time
 from collections.abc import Callable
@@ -124,14 +123,36 @@ def check_address(url: str) -> str:
 
 
 def http_client(timeout: float = 20.0) -> httpx.Client:
-    return httpx.Client(transport=TRANSPORT, verify=outbound.tls(), trust_env=False, follow_redirects=False,
-                        timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)))
+    """No redirect followed, certificates checked, the server's name checked anew at every connection."""
+    return plex.client_for(timeout, TRANSPORT)
 
 
 def async_client(timeout: float = 15.0) -> httpx.AsyncClient:
-    """For the sound of a preview, streamed: the same rules (no redirect, certificates checked)."""
-    return httpx.AsyncClient(transport=ASYNC_TRANSPORT, verify=outbound.tls(), trust_env=False,
-                             follow_redirects=False, timeout=httpx.Timeout(timeout, connect=min(timeout, 8.0)))
+    """For the sound of a preview, streamed: the same rules."""
+    return plex.async_client_for(timeout, ASYNC_TRANSPORT)
+
+
+#: The most the answer of ``/info`` may weigh.
+INFO_BYTES = 65536
+
+
+def _fetch(url: str, timeout: float, limit: int, accept: Callable[[httpx.Response], None],
+           **sent: Any) -> httpx.Response:
+    """One plain request: ``accept`` sees the head (and raises for a wrong status or type) before the body is read, the
+    body is read up to ``limit`` bytes and no further (``too_large`` beyond)."""
+    try:
+        with http_client(timeout) as client, client.stream(
+                "GET", url, headers={"Accept-Encoding": "gzip, deflate", **sent.pop("headers", {})},
+                **sent) as streamed:
+            accept(streamed)
+            answer = plex.capped(streamed, limit)
+    except httpx.TimeoutException as exc:
+        raise MaError("ma_timeout", 504) from exc
+    except httpx.HTTPError as exc:
+        raise MaError("ma_unreachable") from exc
+    if answer is None:
+        raise MaError("too_large")
+    return answer
 
 
 def token_expiry(token: str) -> datetime | None:
@@ -167,15 +188,17 @@ def check_token(token: str) -> str:
 def info(url: str, timeout: float = 10.0) -> dict[str, Any]:
     """Who the server at ``url`` is (``/info``, no sign-in): its id, name, version and schema. ``not_ma`` when it is
     none, ``ma_too_old`` when its schema is older than nexmix takes."""
+    def accept(streamed: httpx.Response) -> None:
+        if streamed.status_code != 200:
+            raise MaError("not_ma", 422)
+
     try:
-        with http_client(timeout) as client:
-            answer = client.get(f"{url.rstrip('/')}/info", headers={"Accept": "application/json"})
-    except httpx.TimeoutException as exc:
-        raise MaError("ma_timeout", 504) from exc
-    except httpx.HTTPError as exc:
-        raise MaError("ma_unreachable") from exc
-    if answer.status_code != 200 or len(answer.content) > 65536:
-        raise MaError("not_ma", 422)
+        answer = _fetch(f"{url.rstrip('/')}/info", timeout, INFO_BYTES, accept,
+                        headers={"Accept": "application/json"})
+    except MaError as exc:
+        if exc.code == "too_large":
+            raise MaError("not_ma", 422) from exc
+        raise
     try:
         found = answer.json()
     except ValueError as exc:
@@ -206,21 +229,28 @@ def picture(url: str, picture_id: str, size: int, timeout: float = 20.0) -> tupl
     there). Only a checked id and a fixed size reach the server."""
     if not PICTURE_ID.fullmatch(picture_id or "") or size not in PICTURE_SIZES:
         raise MaError("bad_path", 400)
+    def accept(streamed: httpx.Response) -> None:
+        if streamed.status_code == 404:
+            raise MaError("ma_not_found", 404)
+        if streamed.status_code != 200:
+            raise MaError("ma_error")
+        if _kind(streamed) not in ("image/jpeg", "image/png"):
+            raise MaError("no_cover")
+
     try:
-        with http_client(timeout) as client:
-            answer = client.get(f"{url.rstrip('/')}/imageproxy/{picture_id}", params={"size": size, "fmt": "jpeg"})
-    except httpx.TimeoutException as exc:
-        raise MaError("ma_timeout", 504) from exc
-    except httpx.HTTPError as exc:
-        raise MaError("ma_unreachable") from exc
-    if answer.status_code == 404:
-        raise MaError("ma_not_found", 404)
-    if answer.status_code != 200:
-        raise MaError("ma_error")
-    kind = answer.headers.get("content-type", "").split(";")[0].strip().lower()
-    if kind not in ("image/jpeg", "image/png") or not answer.content or len(answer.content) > plex.COVER_BYTES:
+        answer = _fetch(f"{url.rstrip('/')}/imageproxy/{picture_id}", timeout, plex.COVER_BYTES, accept,
+                        params={"size": size, "fmt": "jpeg"})
+    except MaError as exc:
+        if exc.code == "too_large":
+            raise MaError("no_cover") from exc
+        raise
+    if not answer.content:
         raise MaError("no_cover")
-    return answer.content, kind
+    return answer.content, _kind(answer)
+
+
+def _kind(answer: httpx.Response) -> str:
+    return answer.headers.get("content-type", "").split(";")[0].strip().lower()
 
 
 def preview_url(url: str, path: str) -> str:
@@ -264,7 +294,8 @@ class _Socket:
         from websockets.sync.client import connect
 
         address, host, port, secure = socket_address(url)
-        self._raw = socket.create_connection((host, port), timeout=OPEN_SECONDS)
+        # The name checked again now, as at every request: a later change in the DNS leads nowhere refused.
+        self._raw = plex.connect_socket(host, port, OPEN_SECONDS)
         try:
             self._socket = connect(address, sock=self._raw, ssl=outbound.tls() if secure else None,
                                    server_hostname=host if secure else None, proxy=None, open_timeout=OPEN_SECONDS,
@@ -310,10 +341,16 @@ def open_channel(url: str) -> Channel:
     return _Socket(url)
 
 
+class _TooLong(Exception):
+    """An answer in parts grew past ``MAX_MESSAGE``: the websocket is closed, as for one message too large."""
+
+
 @dataclass
 class _Waiting:
     done: threading.Event = field(default_factory=threading.Event)
     parts: list[Any] = field(default_factory=list)
+    #: The length of the parts so far, as they came (the text of each message).
+    size: int = 0
     result: Any = None
     error: str | None = None
 
@@ -413,15 +450,20 @@ class Connection:
                     continue
                 message = _parse(raw)
                 if message is not None:
-                    self._take(message)
+                    self._take(message, len(raw))
         except Closed:
             logger.debug("Music Assistant websocket ended")
+        except _TooLong:
+            # As for a single message too large: the websocket closes, whoever waits hears it broke.
+            logger.warning("Music Assistant answer too long, websocket closed")
         except Exception as exc:  # noqa: BLE001 - the reader ends, the next command opens it again
             logger.warning("Music Assistant websocket failed error=%s", type(exc).__name__)
         finally:
             self._end()
 
-    def _take(self, message: dict[str, Any]) -> None:
+    def _take(self, message: dict[str, Any], size: int = 0) -> None:
+        """One message as it came: an answer to whoever waits for it, an event into ``events``. The parts of a long
+        answer count together: past ``MAX_MESSAGE`` in all, ``_TooLong``."""
         ident = message.get("message_id")
         if ident is None:
             if "event" in message:
@@ -436,6 +478,9 @@ class Connection:
             waiting.done.set()
             return
         result = message.get("result")
+        waiting.size += size
+        if waiting.size > MAX_MESSAGE:
+            raise _TooLong
         if message.get("partial") is True:
             if isinstance(result, list):
                 waiting.parts.extend(result)

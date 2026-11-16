@@ -37,6 +37,7 @@
     "small": [
       "Music Assistant braucht den Token eines Admins, weil nexmix eigene Änderungen dort abbrechen können muss. Der Token gilt ein Jahr, nexmix sagt 30 Tage vorher Bescheid.",
       "„Bereit fürs Internet?“ prüft auch Jellyfin und Music Assistant.",
+      "Die Karte jedes Servers zählt seine Playlisten getrennt, als Quelle und als Spiegel.",
       "Die Schnittstelle unter /api/v1 kennt die Server, ihre Spiegel, Kopieren und Verschieben."
     ]
   },

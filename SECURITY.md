@@ -26,9 +26,10 @@ Set the server up first, from your own network, with the setup code from the log
 ## What the operator can reach
 
 The operator manages accounts, the settings and the backups. A backup holds the server's secret
-(`secret.key`) together with the database: with both, the Plex token, the mail credentials and the client secrets of the
-sign-in providers can be read. Keep backups as protected as the data folder. A device token never reaches the
-operator's side, not even the operator's own.
+(`secret.key`) together with the database: with both, every token of a media server (Plex, Jellyfin, Music Assistant,
+among them keys with the rights of an administrator there, see [Media servers](#media-servers)), the mail credentials
+and the client secrets of the sign-in providers can be read. Keep backups as protected as the data folder, and as the
+media servers themselves. A device token never reaches the operator's side, not even the operator's own.
 
 ## Who sees what
 
@@ -52,18 +53,42 @@ covered too.
 - **An API key** only reads, as its account; it never changes anything and never reaches an invitation.
 - **A device token** acts as its account, but never on the operator's side.
 
-## Plex
+## Media servers
 
-nexmix holds one Plex token. The usual way is the operator's sign-in at plex.tv, which hands it out; typing a server
-address and a token by hand is the fallback for a server plex.tv does not list. Either way it is sealed with
-the server's key the moment it is stored, sent to Plex in a header, never in an address, and never leaves the server: not
-in an answer, not in the log, not in an error. The browser names tracks and albums by their number; the server builds
-every request to Plex itself. Covers go through `photo/:/transcode` with fixed parameters only, for an album of the
-catalogue; listening in goes through Plex's converter for a track of the catalogue, at most about 1 MB and 90 seconds,
-one at a time per listener, 120 an hour, a few at once on the server. No address a browser sends is ever passed on.
+nexmix holds a token for every media server it is connected to, and what each one may do there is more than nexmix
+needs to read:
 
-The address of the Plex server is the one the operator chose; it is checked when it is set (no link-local or cloud
-metadata address) and used as it is after that.
+- **Plex**: the token of the Plex account, from the operator's sign-in at plex.tv (typing a server address and a token
+  by hand is the fallback for a server plex.tv does not list). It reaches whatever that account reaches.
+- **Jellyfin**: the token of a Jellyfin user from Quick Connect, or an **API key**. An API key of Jellyfin has the full
+  rights of an administrator there; Quick Connect with a user of its own who is no administrator is the narrower way and
+  does everything nexmix needs.
+- **Music Assistant**: a long-lived token whose user has the **admin role**. Music Assistant has no role in between,
+  and nexmix needs this one to cancel a change of its own that it gave up waiting for; without it, taking entries out by
+  their place could later hit the wrong track. A token of any other user is refused when connecting. Such a token
+  reaches all of Music Assistant: speakers, settings, providers.
+
+This is a choice made on purpose: whoever takes over nexmix, or a backup with its `secret.key`, holds these keys too.
+Every token is sealed with the server's key the moment it is stored, sent in a header or inside the websocket, never in
+an address, and never leaves the server: not in an answer, not in the log, not in an event, not in an error. The browser
+names tracks, albums and playlists by nexmix's numbers; the server builds every request to a media server itself.
+Covers go through each server's scaler with fixed sizes only, for an album of the catalogue (Plex: `photo/:/transcode`
+with fixed parameters; Jellyfin: an id of 32 hexadecimal characters; Music Assistant: `/imageproxy` with an id of 64);
+listening in goes through the server's converter for a track of the catalogue, at most about 1 MB and 90 seconds, one
+at a time per listener, 120 an hour, a few at once on the server. Jellyfin and Music Assistant serve sound and pictures
+without signing in: nexmix fetches them itself and never hands an id, an address or a token of a preview to a browser
+or a guest. No address a browser sends is ever passed on.
+
+What a media server answers is not trusted either: every answer is read up to its limit and no further (a list 64 MB,
+a cover 2 MB, the info of Music Assistant 64 KB, a message on a websocket 32 MB for Music Assistant and 4 MB for
+Jellyfin, an answer of Music Assistant in several parts 32 MB in all, a line of Plex's event stream 1 MB), names and
+texts are cut, and a server that says "read everything again" over and over asks for a full run of the catalogue at
+most every five minutes.
+
+The address of each server is the one the operator chose. Its name is checked when it is set and **again at every
+request and every websocket**: it is looked up, every address it gives is checked (never link-local, never a cloud
+metadata address), and the connection goes to exactly those addresses. A name that later points somewhere refused is
+not reached. Addresses inside your own network are allowed on purpose: that is where media servers live.
 
 ## Limits
 
@@ -124,9 +149,11 @@ storage card and in the log at the start, and does not stop: the decision stays 
 
 ## Addresses the server reaches out to
 
-The server talks only to what is set up: the Plex server the operator chose, plex.tv while connecting, the mail server,
-the sign-in providers, authentik during its one-step setup, the push services of the browsers, and api.github.com once a
-day for the newest release (can be turned off). Nothing else, and never an address a request names.
+The server talks only to what is set up: the media servers the operator chose (Plex; Jellyfin over HTTP and its
+websocket `/socket`; Music Assistant at `/info`, its websocket `/ws`, `/imageproxy` and `/preview`), plex.tv while
+connecting, the mail server, the sign-in providers, authentik during its one-step setup, the push services of the
+browsers, and api.github.com once a day for the newest release (can be turned off). Nothing else, and never an address
+a request names. The name of a media server is looked up and checked at every connection, as above.
 
 Web Push targets are checked like every way out: resolved once and connected to exactly as checked, never link-local or
 a cloud metadata address, no redirect followed, an answer read up to a few kilobytes, and one deadline for the whole

@@ -57,7 +57,12 @@ export type CatalogStatus = {
 /** The playlists' sync with Plex, for the Plex card. */
 export type PlaylistSync = {
   active: boolean
+  /** Every playlist kept on the server: the ones it is the source of and the mirrors there. */
   playlists: number
+  /** The playlists whose source is this server. */
+  sources?: number
+  /** Mirrors on this server of playlists whose source is another server. */
+  mirrors?: number
   synced: number
   pending: number
   waiting: number

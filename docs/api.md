@@ -422,7 +422,9 @@ come at its own sizes (80, 256, 512 for 80, 200, 400), always as JPEG, only by a
 The Plex connection lives under `/api/v1/plex` (`GET` the state; `POST /pin` and `GET /pin/{id}` sign in through
 plex.tv, `DELETE /pin/{id}` gives such a sign-in up; `POST /connect` with the PIN and a server, or with `url` and
 `token`; `GET /libraries`, `PUT /library`; `DELETE` disconnects and stops a sync under way; `GET /playlists` tells
-how the playlists stand in Plex, `POST /playlists/sync` syncs them all now and looks for new ones there), and
+how the playlists stand in Plex (`playlists` in all, `sources` with Plex as their source, `mirrors` of playlists of
+another server, and how many of them are `synced`, `waiting`, `error`; the same for Jellyfin and Music Assistant),
+`POST /playlists/sync` syncs them all now and looks for new ones there), and
 `POST /api/v1/catalog/sync` fetches the whole catalogue again (a run already waiting or running is not doubled:
 `{"started": false}`). Another Plex server beside the first one: `POST /plex/connect` with `"alongside": true`
 (nothing moves to it; `added` names it), its library with `GET /plex/libraries?server=` and `PUT /plex/library?server=`.

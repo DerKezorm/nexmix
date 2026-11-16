@@ -324,3 +324,27 @@ def test_a_playlist_emptied_from_the_trash_takes_its_mirror_from_its_server(clie
         assert playlist_service.purge(db, clock.now() + timedelta(days=31)) == 1
     sync(fake_plex)
     assert key not in fake.lists
+
+
+def test_the_card_of_each_server_counts_its_own_playlists_and_the_mirrors_there_apart(
+        client: TestClient, world: tuple) -> None:
+    """Plex holds two playlists of its own, Jellyfin one of its own and the mirror of one of Plex's: each card says so
+    ("2 sources", "1 source, 1 mirror"), the states count both, and a playlist in the trash counts nowhere."""
+    from .jellyfin_world import make as make_on_jellyfin
+
+    fake_plex, _fake, jelly, twins = world
+    playlist_id = mirrored(client, world)
+    other = make(client, "Nur Plex", plex_numbers([3001]))
+    make_on_jellyfin(client, jelly, "Nur Jellyfin", jelly_numbers(jelly, [next(iter(twins.values()))]))
+    sync(fake_plex)
+
+    def card(path: str) -> tuple[int, int, int, int]:
+        found = client.get(path).json()
+        return found["playlists"], found["sources"], found["mirrors"], found["synced"]
+
+    assert card("/api/v1/plex/playlists") == (2, 2, 0, 2)
+    assert card(f"/api/v1/jellyfin/{jelly}/playlists") == (2, 1, 1, 2)
+    assert client.delete(f"/api/v1/playlists/{playlist_id}").status_code in (200, 204)
+    assert client.delete(f"/api/v1/playlists/{other['id']}").status_code in (200, 204)
+    assert card("/api/v1/plex/playlists")[:3] == (0, 0, 0)
+    assert card(f"/api/v1/jellyfin/{jelly}/playlists")[:3] == (1, 1, 0)

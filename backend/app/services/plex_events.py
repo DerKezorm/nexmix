@@ -17,7 +17,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 import httpx
@@ -41,6 +41,8 @@ WAITS = (1, 2, 5, 10, 30, 60)
 STEADY = SILENCE
 #: How long to wait while there is no Plex to listen to.
 IDLE = 15.0
+#: The longest line of the stream taken (an event is a few hundred bytes): a longer one ends the stream.
+MAX_LINE = 1_000_000
 
 
 def _entries(data: Any) -> Iterable[dict[str, Any]]:
@@ -87,18 +89,35 @@ def read(lines: Iterable[str], on_playlists: Callable[[], None], stop: Callable[
     return count
 
 
+def lines_of(chunks: Iterable[bytes], limit: int = MAX_LINE) -> Iterator[str]:
+    """The lines of the stream as they come, never more than ``limit`` bytes held: a line without end (a server taken
+    over, or broken) ends the stream (``plex_error``) instead of filling the memory."""
+    held = bytearray()
+    for chunk in chunks:
+        held += chunk
+        while (at := held.find(b"\n")) >= 0:
+            line = bytes(held[:at])
+            del held[:at + 1]
+            yield line.decode("utf-8", "replace")
+        if len(held) > limit:
+            raise PlexError("plex_error")
+    if held:
+        yield held.decode("utf-8", "replace")
+
+
 def listen(server: PlexServer, stop: Callable[[], bool], server_id: int | None = None) -> int:
     """One stream of one server, until it ends: the number of events it brought (pings left out). ``server_id``: the
     server to look at when a playlist changed (None: every one)."""
     timeout = httpx.Timeout(SILENCE, connect=8.0)
-    headers = server._headers({"Accept": "text/event-stream"})
+    # Nothing packed: the lines are counted as they come.
+    headers = server._headers({"Accept": "text/event-stream", "Accept-Encoding": "identity"})
     try:
         with server._client.stream("GET", f"{server.url}{PATH}", headers=headers, timeout=timeout) as answer:
             if answer.status_code in (401, 403):
                 raise PlexError("plex_refused")
             if answer.status_code != 200:
                 raise PlexError("plex_error")
-            return read(answer.iter_lines(), lambda: sync.look_now(server_id), stop)
+            return read(lines_of(answer.iter_bytes()), lambda: sync.look_now(server_id), stop)
     except httpx.TimeoutException as exc:
         raise PlexError("plex_timeout", 504) from exc
     except httpx.HTTPError as exc:

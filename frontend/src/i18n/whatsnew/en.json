@@ -37,6 +37,7 @@
     "small": [
       "Music Assistant needs a token of a user with full rights there, because nexmix must be able to cancel its own changes. The token lasts a year, and nexmix says so 30 days before.",
       "“Ready for the internet?” checks Jellyfin and Music Assistant too.",
+      "The card of each server counts its playlists apart, as source and as mirror.",
       "The interface under /api/v1 knows the servers, their mirrors, copying and moving."
     ]
   },

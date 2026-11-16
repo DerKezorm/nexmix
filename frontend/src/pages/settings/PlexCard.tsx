@@ -451,8 +451,8 @@ function Connected({ status, onSync, onLibraries, onDisconnect, working }: {
 }
 
 /**
- * How the playlists stand on a server (Plex, Jellyfin or Music Assistant by `kind`): how many are saved there, waiting
- * or failed, the smart ones, the last look.
+ * How the playlists stand on a server (Plex, Jellyfin or Music Assistant by `kind`): how many have it as their source and
+ * how many are mirrors there, how many are saved there, waiting or failed, the smart ones, the last look.
  */
 export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load: () => Promise<PlaylistSync>; syncAll: () => Promise<PlaylistSync>; kind?: 'plex' | 'jellyfin' | 'music_assistant' }) {
   const { t, i18n } = useTranslation()
@@ -472,7 +472,14 @@ export function ServerPlaylists({ load: fetch, syncAll, kind = 'plex' }: { load:
     return () => window.clearInterval(timer)
   }, [load])
   if (!found || typeof found.playlists !== 'number') return null
-  const parts = [t('sync.plex.counts', { synced: found.synced, count: found.playlists, server })]
+  // The playlists of this server and the mirrors here of others, counted apart ("1 source, 3 mirrors").
+  const sources = found.sources ?? found.playlists
+  const mirrors = found.mirrors ?? 0
+  const split = [
+    ...(sources ? [t('sync.plex.sources', { count: sources })] : []),
+    ...(mirrors ? [t('sync.plex.mirrors', { count: mirrors })] : []),
+  ].join(', ')
+  const parts = [split, t('sync.plex.counts', { synced: found.synced, count: found.playlists, server })]
   if (found.waiting) parts.push(t('sync.plex.waiting', { count: found.waiting, server }))
   if (found.error) parts.push(t('sync.plex.error', { count: found.error }))
   if (found.smart) parts.push(t('sync.plex.smart', { count: found.smart }))

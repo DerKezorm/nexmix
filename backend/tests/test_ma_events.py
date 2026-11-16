@@ -85,3 +85,65 @@ def test_a_playlist_made_there_makes_a_look_and_a_closed_websocket_everything_du
     with SessionLocal() as db:
         assert all(row.due_at is not None for row in db.scalars(select(ServerPlaylist)))
     assert made
+
+
+def test_scans_said_again_and_again_ask_for_a_run_at_most_every_five_minutes(
+        client: TestClient, operator: object, fake_ma: FakeMA) -> None:
+    """A Music Assistant that says ``music_sync_completed`` again and again (broken, or taken over) never keeps nexmix
+    in one run of the catalogue after another: one run at once, the next at most ``SCANS_EVERY`` later, and a scan said
+    meanwhile is made up once that time is over, by the listener of the server."""
+    import pytest
+
+    server = connect(client, fake_ma)
+    jobs.run_pending(lane="catalog")
+    moment = [5000.0]
+    patch = pytest.MonkeyPatch()
+    patch.setattr(clock, "monotonic", lambda: moment[0])
+    try:
+        assert ma_events.SCANS_EVERY == 300
+        assert ma_events.handle(server, {"event": "music_sync_completed"}) == "catalogue"
+        assert _full_jobs(server) == 1
+        jobs.run_pending(lane="catalog")
+        for _ in range(50):
+            moment[0] += 5
+            assert ma_events.handle(server, {"event": "music_sync_completed"}) == "later"
+            assert ma_events.catch_up(server) == ""
+        assert _full_jobs(server) == 0
+        moment[0] += 50
+        assert ma_events.catch_up(server) == "catalogue"
+        assert _full_jobs(server) == 1
+        jobs.run_pending(lane="catalog")
+        # Made up once: nothing is owed after it.
+        moment[0] += 1000
+        assert ma_events.catch_up(server) == ""
+        assert _full_jobs(server) == 0
+        assert ma_events.handle(server, {"event": "music_sync_completed"}) == "catalogue"
+    finally:
+        patch.undo()
+
+
+def test_the_listener_makes_up_a_scan_owed(client: TestClient, operator: object, fake_ma: FakeMA) -> None:
+    import pytest
+
+    server = connect(client, fake_ma)
+    listener = ma_events.Listener(server)
+    asked: list[int] = []
+
+    def caught_up(ident: int) -> str:
+        asked.append(ident)
+        listener.stop()
+        return ""
+
+    import threading
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(ma_events, "catch_up", caught_up)
+    # A listener that never asks would listen on: it is stopped after a few seconds, and the test fails.
+    late = threading.Timer(5.0, listener.stop)
+    late.start()
+    try:
+        assert listener._session() is True
+    finally:
+        late.cancel()
+        patch.undo()
+    assert asked == [server]

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import itertools
+import math
 import socket
 import ssl
 import threading
@@ -259,6 +260,111 @@ def transport() -> httpx.HTTPTransport:
     return made
 
 
+# --- Checked at every connection --------------------------------------------------------------------------------------
+
+#: What gives the checked addresses of a name at each connection (``plex.addresses``): ``Unreachable`` or ``Refused``
+#: when there is none to take.
+Checker = Callable[[str, int], list[str]]
+
+
+class PinnedBackend(httpcore.NetworkBackend):
+    """The sockets of a client to a media server: the name is looked up and checked anew at every connection
+    (``check``), and the connection goes to exactly the addresses that passed, tried in turn. A name that later points
+    somewhere refused (a link-local or metadata address) is not reached, whatever its owner changes in the DNS. Host
+    header and TLS name stay the name."""
+
+    def __init__(self, check: Checker, inner: httpcore.NetworkBackend | None = None) -> None:
+        self._check = check
+        self._inner = inner or httpcore.SyncBackend()
+
+    def connect_tcp(self, host: str, port: int, timeout: float | None = None, local_address: str | None = None,
+                    socket_options: Iterable[Any] | None = None) -> httpcore.NetworkStream:
+        try:
+            addresses = self._check(host, port)
+        except (Unreachable, Refused) as exc:
+            raise httpcore.ConnectError("address not taken") from exc
+        last: Exception | None = None
+        for address in addresses:
+            try:
+                return self._inner.connect_tcp(address, port, timeout, local_address, socket_options)
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last = exc
+        raise last or httpcore.ConnectError("no address")
+
+    def connect_unix_socket(self, path: str, timeout: float | None = None,
+                            socket_options: Iterable[Any] | None = None) -> httpcore.NetworkStream:
+        raise httpcore.ConnectError("no unix sockets here")
+
+    def sleep(self, seconds: float) -> None:
+        self._inner.sleep(seconds)
+
+
+class AsyncPinnedBackend(httpcore.AsyncNetworkBackend):
+    """``PinnedBackend`` for the streamed sound of a preview: the lookup runs in a thread of its own."""
+
+    def __init__(self, check: Checker, inner: httpcore.AsyncNetworkBackend) -> None:
+        self._check = check
+        self._inner = inner
+
+    async def connect_tcp(self, host: str, port: int, timeout: float | None = None, local_address: str | None = None,
+                          socket_options: Iterable[Any] | None = None) -> httpcore.AsyncNetworkStream:
+        import anyio.to_thread
+
+        try:
+            addresses = await anyio.to_thread.run_sync(self._check, host, port)
+        except (Unreachable, Refused) as exc:
+            raise httpcore.ConnectError("address not taken") from exc
+        last: Exception | None = None
+        for address in addresses:
+            try:
+                return await self._inner.connect_tcp(address, port, timeout, local_address, socket_options)
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last = exc
+        raise last or httpcore.ConnectError("no address")
+
+    async def connect_unix_socket(self, path: str, timeout: float | None = None,
+                                  socket_options: Iterable[Any] | None = None) -> httpcore.AsyncNetworkStream:
+        raise httpcore.ConnectError("no unix sockets here")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+def pinned_transport(check: Checker) -> httpx.HTTPTransport:
+    """httpx's own transport, connecting only to what ``check`` passes at each connection (``PinnedBackend``)."""
+    made = httpx.HTTPTransport(verify=tls(), trust_env=False)
+    pool = made._pool
+    if not hasattr(pool, "_network_backend"):
+        raise RuntimeError("httpcore changed: the address cannot be checked at each connection")
+    pool._network_backend = PinnedBackend(check, pool._network_backend)
+    return made
+
+
+def pinned_async_transport(check: Checker) -> httpx.AsyncHTTPTransport:
+    made = httpx.AsyncHTTPTransport(verify=tls(), trust_env=False)
+    pool = made._pool
+    if not hasattr(pool, "_network_backend"):
+        raise RuntimeError("httpcore changed: the address cannot be checked at each connection")
+    pool._network_backend = AsyncPinnedBackend(check, pool._network_backend)
+    return made
+
+
+def pinned_socket(check: Checker, host: str, port: int, timeout: float) -> socket.socket:
+    """A plain connection for a websocket, to the addresses ``check`` passes now, tried in turn. ``OSError`` when there
+    is none to take or none answers."""
+    try:
+        addresses = check(host, port)
+    except (Unreachable, Refused) as exc:
+        raise OSError("address not taken") from exc
+    last: OSError | None = None
+    for address in addresses:
+        try:
+            return socket.create_connection((address, port), timeout=timeout)
+        except OSError as exc:
+            last = exc
+    raise last or OSError("no address")
+
+
 def client(chosen: httpx.BaseTransport | None) -> httpx.Client:
     """A client that follows no redirect, reads no proxy or certificate from the environment, and keeps the deadline
     in its sockets (a stand-in transport of the tests is taken as it is)."""
@@ -326,6 +432,25 @@ def _send(session: httpx.Client, method: str, place: Target, headers: dict[str, 
             last = exc
     assert last is not None
     raise last
+
+
+def read_capped(answer: httpx.Response, limit: int) -> bytes:
+    """The body of a streamed answer (``client.stream``), read up to ``limit`` bytes and no further: ``TooLarge`` as
+    soon as it says or turns out to be longer, whatever follows; ``Refused`` for a packing other than gzip or deflate.
+    For the answers of a media server, whose address the operator typed: a server taken over, or broken, never fills the
+    memory."""
+    declared = answer.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise TooLarge
+    return _read(answer, limit, math.inf, lambda: 0.0)
+
+
+def unpacked(answer: httpx.Response, body: bytes) -> httpx.Response:
+    """A streamed answer as one in memory, its body read (``read_capped``): the headers as they came, less those of a
+    packing that is undone already."""
+    kept = [(name, value) for name, value in answer.headers.raw
+            if name.lower() not in (b"content-encoding", b"content-length", b"transfer-encoding")]
+    return httpx.Response(answer.status_code, headers=kept, content=body, request=answer.request)
 
 
 def _read(answer: httpx.Response, limit: int, deadline: float, ticks: Callable[[], float]) -> bytes:

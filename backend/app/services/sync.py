@@ -561,18 +561,21 @@ def order_seconds(count: int) -> int:
 
 
 def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
-    """The sync of the playlists of a server (None: the first one connected), for the Plex card: how many stand how,
-    the smart ones, the last look at the server."""
+    """The sync of the playlists of a server (None: the first one connected), for the server's card: how many have the
+    server as their source and how many are mirrors there, how they stand, the smart ones, the last look at the
+    server."""
     server = media.get(db, server_id) if server_id is not None else media.primary(db)
     ident = server.id if server is not None else -1
-    rows = db.execute(select(ServerPlaylist.state, ServerPlaylist.smart).join(
-        Playlist, (Playlist.id == ServerPlaylist.playlist_id) & (Playlist.source_server_id == ServerPlaylist.server_id))
+    source = Playlist.source_server_id == ServerPlaylist.server_id
+    rows = db.execute(select(ServerPlaylist.state, ServerPlaylist.smart, source).join(
+        Playlist, (Playlist.id == ServerPlaylist.playlist_id) & (source | ServerPlaylist.mirror.is_(True)))
         .where(Playlist.deleted_at.is_(None), ServerPlaylist.server_id == ident)).all()
     counts = {SYNCED: 0, PENDING: 0, WAITING: 0, ERROR: 0}
-    smart = 0
-    for state, smart_one in rows:
+    smart = owned = 0
+    for state, smart_one, is_source in rows:
         counts[state] = counts.get(state, 0) + 1
         smart += 1 if smart_one else 0
+        owned += 1 if is_source else 0
     result = _poll_result.get(ident, {})
     at = result.get("at")
     missing = _missing_note.get(ident)
@@ -588,7 +591,11 @@ def overview(db: Session, server_id: int | None = None) -> dict[str, Any]:
     return {
         "active": _ready(db, ident) is not None,
         "kind": server.kind if server is not None else None,
+        # Every playlist kept on the server, the ones it is the source of and the mirrors there (copies of a playlist
+        # of another server); the states count both.
         "playlists": len(rows),
+        "sources": owned,
+        "mirrors": len(rows) - owned,
         **counts,
         "smart": smart,
         "order_minutes": 1 if marked else math.ceil(order_seconds(len(rows) - smart) / 60),
