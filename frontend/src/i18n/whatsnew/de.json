@@ -1,4 +1,18 @@
 {
+  "0.3.0": {
+    "lead": "nexmix hat ein neues Zeichen: eine Liste mit Play-Knopf.",
+    "sections": [
+      {
+        "title": "Neues Zeichen",
+        "body": "Die Liste mit dem vollen Play-Knopf ersetzt das alte Zeichen. Es folgt dem hellen und dunklen Modus, der Browser-Tab folgt dem System. Auch die Symbole für den Home-Bildschirm und das Abzeichen der Mitteilungen sind neu.",
+        "where": "Kopfzeile, Anmeldung, Browser-Tab, Home-Bildschirm"
+      }
+    ],
+    "smallTitle": "Außerdem",
+    "small": [
+      "Zeichen und Symbole fragt der Browser jetzt vor dem Benutzen nach, und ihre Adressen tragen eine Fassung. So kommt ein neues Zeichen auch in einer installierten Web-App an."
+    ]
+  },
   "0.2.1": {
     "lead": "nexmix 0.2.1 räumt auf: Was du im Editor mit einer Playlist machst, geht jetzt auch über das Menü „…“ ihrer Karte, und die Einstellungen sind in Reiter geteilt wie in den anderen nex-Apps.",
     "sections": [
