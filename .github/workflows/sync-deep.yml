@@ -1,0 +1,49 @@
+# The deep check of the sync with Plex and Jellyfin: 2,000 random runs and 200 wide ones, as the release check ran
+# them until 0.3.0. It takes over an hour and a half, so it runs once a week and by hand, not with every release.
+name: Sync, deep
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Random runs of the sync"
+        default: "2000"
+      wide:
+        description: "Wide random runs"
+        default: "200"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-deep
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Random runs of the sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install the backend
+        working-directory: backend
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Random runs
+        working-directory: backend
+        env:
+          NEXMIX_SYNC_RUNS: ${{ inputs.runs || '2000' }}
+          NEXMIX_WIDE_RUNS: ${{ inputs.wide || '200' }}
+        run: python -m pytest -q tests/test_plex_sync_random.py tests/test_jellyfin_sync_random.py tests/test_plex_sync_wide_random.py

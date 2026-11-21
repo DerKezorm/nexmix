@@ -38,12 +38,13 @@ jobs:
         working-directory: backend
         run: python -m pip install -r requirements-dev.txt
 
-      # The random runs over the sync with Plex, many more than in the everyday checks.
+      # The random runs over the sync with Plex and Jellyfin, five times as many as in the everyday checks. The full
+      # 2,000 runs (over an hour and a half) are in sync-deep.yml, once a week and by hand.
       - name: Lint and test the backend
         working-directory: backend
         env:
-          NEXMIX_SYNC_RUNS: "2000"
-          NEXMIX_WIDE_RUNS: "200"
+          NEXMIX_SYNC_RUNS: "300"
+          NEXMIX_WIDE_RUNS: "30"
         run: |
           python -m ruff check app tests
           python -m pytest -q
