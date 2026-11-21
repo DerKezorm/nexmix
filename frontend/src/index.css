@@ -2044,3 +2044,37 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The mark (components/Logo.tsx): a white tile in light mode, a dark one in dark mode. Source nexapps/icons-vergleich/neu.py. */
+:root {
+  --nmx-logo-grund: #ffffff;
+  --nmx-logo-rand: #5b2ee6;
+  --nmx-logo-rand-deckung: 0.35;
+  --nmx-logo-verlauf-1: #a78bfa;
+  --nmx-logo-verlauf-2: #5b2ee6;
+  --nmx-logo-verlauf-3: #2e1680;
+  --nmx-logo-knopf: #4a22c9;
+  --nmx-logo-play: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --nmx-logo-grund: #100c1e;
+    --nmx-logo-rand: #8b6cff;
+    --nmx-logo-rand-deckung: 0.45;
+    --nmx-logo-verlauf-1: #ddd3ff;
+    --nmx-logo-verlauf-2: #8b6cff;
+    --nmx-logo-verlauf-3: #5b2ee6;
+    --nmx-logo-knopf: #b39cff;
+    --nmx-logo-play: #100c1e;
+  }
+}
+:root[data-theme='dark'] {
+  --nmx-logo-grund: #100c1e;
+  --nmx-logo-rand: #8b6cff;
+  --nmx-logo-rand-deckung: 0.45;
+  --nmx-logo-verlauf-1: #ddd3ff;
+  --nmx-logo-verlauf-2: #8b6cff;
+  --nmx-logo-verlauf-3: #5b2ee6;
+  --nmx-logo-knopf: #b39cff;
+  --nmx-logo-play: #100c1e;
+}

@@ -1,1 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="16" fill="#ffffff"/><rect x="2" y="2" width="60" height="60" rx="16" fill="none" stroke="#5b2ee6" stroke-width="2.5"/><g stroke="#5b2ee6" stroke-width="3.2" stroke-linecap="round"><path d="M13 19h26M13 28h20M13 37h14M13 46h10"/></g><circle cx="44" cy="42" r="10.5" fill="none" stroke="#5b2ee6" stroke-width="2.8"/><path d="M41.2 37.2v9.6l8-4.8z" fill="#5b2ee6"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The mark: a white tile when the system is light, a dark one when it is dark (source nexapps/icons-vergleich/neu.py). -->
+  <style>
+    .grund { fill: #fff }
+    .rand { stroke: #5b2ee6; stroke-opacity: .35 }
+    .knopf { fill: #4a22c9; stroke: #fff }
+    .play { fill: #fff; stroke: #fff }
+    .v1 { stop-color: #a78bfa } .v2 { stop-color: #5b2ee6 } .v3 { stop-color: #2e1680 }
+    @media (prefers-color-scheme: dark) {
+      .grund { fill: #100c1e }
+      .rand { stroke: #8b6cff; stroke-opacity: .45 }
+      .knopf { fill: #b39cff; stroke: #100c1e }
+      .play { fill: #100c1e; stroke: #100c1e }
+      .v1 { stop-color: #ddd3ff } .v2 { stop-color: #8b6cff } .v3 { stop-color: #5b2ee6 }
+    }
+  </style>
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="54" y2="54">
+      <stop offset="0" class="v1"/>
+      <stop offset=".5" class="v2"/>
+      <stop offset="1" class="v3"/>
+    </linearGradient>
+  </defs>
+  <rect class="grund" x="2" y="2" width="60" height="60" rx="16"/>
+  <rect class="rand" x="2.75" y="2.75" width="58.5" height="58.5" rx="15.3" fill="none" stroke-width="1.5"/>
+  <path d="M13 18h27M13 27h21M13 36h14M13 45h10" stroke="url(#g)" stroke-width="4.2" stroke-linecap="round"/>
+  <circle class="knopf" cx="43" cy="41" r="11" stroke-width="2"/>
+  <path class="play" d="M40 35.8v10.4l8.6-5.2Z" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>

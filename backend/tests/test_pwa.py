@@ -34,7 +34,7 @@ def test_the_manifest_names_the_app_and_its_shortcuts() -> None:
     assert manifest["name"] == "nexmix" and manifest["short_name"] == "nexmix"
     assert manifest["start_url"] == "/" and manifest["display"] == "standalone"
     assert manifest["theme_color"] == "#5b2ee6" and manifest["background_color"] == "#f6f5fb"
-    assert manifest["icons"][0]["src"] == "/logo.svg"
+    assert manifest["icons"][0]["src"] == "/logo.svg?v=2"
     # The file speaks English; the server names the shortcuts in the browser's language (below).
     assert [(item["name"], item["url"]) for item in manifest["shortcuts"]] == [("Playlists", "/")]
     assert "share_target" not in manifest
@@ -66,7 +66,8 @@ def test_the_built_app_serves_the_worker_and_the_manifest_fresh(tmp_path: Path) 
         assert worker.status_code == 200 and "javascript" in worker.headers["content-type"]
         assert worker.headers["cache-control"] == "no-cache"
         assert browser.get("/manifest.webmanifest").headers["cache-control"] == "no-cache"
-        assert "cache-control" not in browser.get("/logo.svg").headers
+        # 21.11.2026: the mark and the icons too, or an installed app keeps its old mark after an update.
+        assert browser.get("/logo.svg").headers["cache-control"] == "no-cache"
 
 
 def test_phones_get_png_symbols_and_notifications_a_png_icon_and_a_badge() -> None:
@@ -81,16 +82,42 @@ def test_phones_get_png_symbols_and_notifications_a_png_icon_and_a_badge() -> No
     manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     pngs = {icon["src"]: icon for icon in manifest["icons"] if icon["type"] == "image/png"}
     assert {(src, icon["sizes"], icon["purpose"]) for src, icon in pngs.items()} == {
-        ("/icon-192.png", "192x192", "any"), ("/icon-512.png", "512x512", "any"),
-        ("/icon-maskable-512.png", "512x512", "maskable")}
+        ("/icon-192.png?v=2", "192x192", "any"), ("/icon-512.png?v=2", "512x512", "any"),
+        ("/icon-maskable-512.png?v=2", "512x512", "maskable")}
     for src, icon in pngs.items():
-        width, height = size_of(src.lstrip("/"))
+        width, height = size_of(src.lstrip("/").split("?")[0])
         assert f"{width}x{height}" == icon["sizes"], src
     assert size_of("apple-touch-icon.png") == (180, 180) and size_of("badge-96.png") == (96, 96)
     index = (PUBLIC.parent / "index.html").read_text(encoding="utf-8")
-    assert '<link rel="apple-touch-icon" href="/apple-touch-icon.png" />' in index
+    assert '<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />' in index
+    assert '<link rel="icon" type="image/svg+xml" href="/logo.svg?v=2" />' in index
     worker = (PUBLIC / "sw.js").read_text(encoding="utf-8")
-    assert "icon: '/icon-192.png'" in worker and "badge: '/badge-96.png'" in worker
+    assert "icon: '/icon-192.png?v=2'" in worker and "badge: '/badge-96.png?v=2'" in worker
+
+
+def test_every_file_at_the_top_of_public_is_asked_for_again(tmp_path: Path) -> None:
+    """21.11.2026: files without a hash in their names stayed in the browser after an update, and so did the old mark."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>nexmix</title>", encoding="utf-8")
+    (dist / "assets" / "app-1a2b3c.js").write_text("console.log(1)", encoding="utf-8")
+    files = [p.relative_to(PUBLIC).as_posix() for p in PUBLIC.rglob("*") if p.is_file()]
+    assert "logo.svg" in files and "badge-96.png" in files
+    for name in files:
+        (dist / name).parent.mkdir(parents=True, exist_ok=True)
+        (dist / name).write_bytes((PUBLIC / name).read_bytes())
+    built = FastAPI()
+    main._mount_frontend(built, dist)
+    with TestClient(built) as browser:
+        for name in files:
+            answer = browser.get("/" + name)
+            assert answer.status_code == 200 and answer.headers.get("cache-control") == "no-cache", name
+        assert "no-cache" not in browser.get("/assets/app-1a2b3c.js").headers.get("cache-control", "")
+
+
+def test_the_mark_follows_the_system() -> None:
+    mark = (PUBLIC / "logo.svg").read_text(encoding="utf-8")
+    assert "@media (prefers-color-scheme: dark)" in mark and "#100c1e" in mark
 
 
 # --- The manifest in the language of the browser ------------------------------------------------------------

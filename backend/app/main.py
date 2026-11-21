@@ -258,9 +258,9 @@ def create_app(*, api_docs: bool | None = None) -> FastAPI:
     return application
 
 
-#: Files a browser asks the server about again each time: the service worker (an old one would keep its old ways for a
-#: day). The manifest is asked about afresh too, and comes in the language of the browser (``_manifest`` below).
-FRESH = ("sw.js",)
+#: Every file outside assets/ (the service worker, the mark, the icons, theme.js) has no hash in its name: a browser
+#: asks the server about it again each time, or an old worker keeps its old ways and an installed app its old mark.
+#: The manifest is asked about afresh too, and comes in the language of the browser (``_manifest`` below).
 MANIFEST = "manifest.webmanifest"
 
 
@@ -294,9 +294,9 @@ def _mount_frontend(target: FastAPI, dist: Path) -> None:
             return JSONResponse(status_code=404, content={"detail": detail("not_found", "Not found.")})
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and root in candidate.parents and candidate != start_page:
-            if path in FRESH:
-                return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
-            return FileResponse(candidate)
+            if path.startswith("assets/"):
+                return FileResponse(candidate)
+            return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
